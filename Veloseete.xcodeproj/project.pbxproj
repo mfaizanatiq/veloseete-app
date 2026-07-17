@@ -1,0 +1,779 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		08DFE3397E7CE2D442F38B41 /* FirestoreRepository.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3CB688049B7786554F370E64 /* FirestoreRepository.swift */; };
+		0AAA22F6732EBCAE28AA5BAD /* AuthView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1D6A64AC85316ED1FB1F193A /* AuthView.swift */; };
+		0ADF9E69E2BBC958D25B91B4 /* FirebaseFirestore in Frameworks */ = {isa = PBXBuildFile; productRef = 32C989AA668D64C69595D10D /* FirebaseFirestore */; };
+		11791EB2D027F01AE3A0ED81 /* FluentEmoji in Resources */ = {isa = PBXBuildFile; fileRef = AE792FA01498EEABB68D8BCB /* FluentEmoji */; };
+		1441B5F41A73A88F41EE32CD /* TripLiveActivityController.swift in Sources */ = {isa = PBXBuildFile; fileRef = CAB93337EF3889E8516FA493 /* TripLiveActivityController.swift */; };
+		33EF7235CAC444208BD0316C /* VeloseeteApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = E08E5E2146EA750B5BEBC0DE /* VeloseeteApp.swift */; };
+		39F11C8082D17B4AF96E17E7 /* TripRecordingService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B70FF38C17A056E74CA59B04 /* TripRecordingService.swift */; };
+		3F60DBC1AFD8915F677AB407 /* AuthService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 873D378B91DBE12238CE4761 /* AuthService.swift */; };
+		42D402FF910A17B280189C8B /* FluentEmoji.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3F39C3DE6C6DA1496C373F94 /* FluentEmoji.swift */; };
+		48666A748C11F9368F00C94F /* TripPermissionsManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = F694C2983FF8F289315A17B5 /* TripPermissionsManager.swift */; };
+		553179B906447ACE5654AA56 /* TripActivityAttributes.swift in Sources */ = {isa = PBXBuildFile; fileRef = F45D0247EE51C0E3F476BACF /* TripActivityAttributes.swift */; };
+		57A042468492884909112FF7 /* RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50AD3F71588767E33C7983BD /* RootView.swift */; };
+		63B8235E9A940B210302F60E /* TripsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0525EBB0DBFEA1A2FBC29AD3 /* TripsView.swift */; };
+		698975EF12A294DC28B0C938 /* SplashView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4215F0FDD30582861414A9E /* SplashView.swift */; };
+		7501512F21A76B272AE85F51 /* RefuelSheetView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E2D03F5821346DD9CB163CB /* RefuelSheetView.swift */; };
+		77BDCB559F4E40817A499C77 /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA8C64FAF2E09B5C9D1B38E7 /* Models.swift */; };
+		81B2F8DA22FF3F54A9CFC19B /* FirebaseBootstrap.swift in Sources */ = {isa = PBXBuildFile; fileRef = E107223D7E9322440515BAFE /* FirebaseBootstrap.swift */; };
+		99BC245D41EA70E257B86FA5 /* TripActivityAttributes.swift in Sources */ = {isa = PBXBuildFile; fileRef = F45D0247EE51C0E3F476BACF /* TripActivityAttributes.swift */; };
+		A190EB6572A02389EDA2EDCD /* VeloseeteTripWidget.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = DF837A0683DA1E47EF9113EE /* VeloseeteTripWidget.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		A60272E8E5614BF61717265F /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 9431519E24928BF21DD4BA7B /* Assets.xcassets */; };
+		AB69738B2377CB8010930622 /* VSIcon.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5BEBBFE3A0702FEF839CEEE5 /* VSIcon.swift */; };
+		AC24231325EF9C9C5C9934B4 /* TripConfirmSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 95622FAF7EEA68AF70574E03 /* TripConfirmSheet.swift */; };
+		B3763817EE58A8BABBD8B09F /* DataStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 032D9685E63E087090A2889A /* DataStore.swift */; };
+		B54A52B0BE07BAC01A98668D /* Metrics.swift in Sources */ = {isa = PBXBuildFile; fileRef = FF78BFABE392DBE393254431 /* Metrics.swift */; };
+		C717BA273A6E967FDB7EE6D4 /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5C8ECCF8B347101E05AE05BF /* Theme.swift */; };
+		C993CEE9E96A91831F35B9A2 /* TripPermissionsOnboardingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE380E91E0F721685A913B2D /* TripPermissionsOnboardingView.swift */; };
+		CC1B3A24417C167CCF243AA4 /* Media in Resources */ = {isa = PBXBuildFile; fileRef = 8CCCB0D552ADF2C858E7B307 /* Media */; };
+		CD5113461FD49DA09C3067BF /* MainTabShell.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1AC2C5E99E0603B3725F36D /* MainTabShell.swift */; };
+		E56B5D4761318FAF61ED9EF5 /* TripPermissionsStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6D1A3E4EE9B0BEB713B1D5B0 /* TripPermissionsStore.swift */; };
+		EA183E66756DDCA3890ECD67 /* FirebaseAuth in Frameworks */ = {isa = PBXBuildFile; productRef = EF991BE6BE4E513059B9947D /* FirebaseAuth */; };
+		EC841A9AA4068093C17C015F /* Fonts in Resources */ = {isa = PBXBuildFile; fileRef = 03E2E1E23C22D331E66874CF /* Fonts */; };
+		F983209FA5BCEA0169A62034 /* TripLiveActivityWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2DC6CBCD403057F0E42E9DE2 /* TripLiveActivityWidget.swift */; };
+		F9F060079AC13AC8A73A9539 /* GarageView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1594DF57756A4459A585537A /* GarageView.swift */; };
+		FAA097877C34864C14669E4D /* DashboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 222F2B40313306BAE406CD4B /* DashboardView.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		5BDB89145D463C1DA405C40D /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = B49DC46AA492B3106B843E46 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = EF082251D839C5091E36843B;
+			remoteInfo = VeloseeteTripWidget;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		A2EDDA76B0571B507A3E8DD3 /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				A190EB6572A02389EDA2EDCD /* VeloseeteTripWidget.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
+/* Begin PBXFileReference section */
+		032D9685E63E087090A2889A /* DataStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DataStore.swift; sourceTree = "<group>"; };
+		03E2E1E23C22D331E66874CF /* Fonts */ = {isa = PBXFileReference; lastKnownFileType = folder; name = Fonts; path = Veloseete/Resources/Fonts; sourceTree = SOURCE_ROOT; };
+		0525EBB0DBFEA1A2FBC29AD3 /* TripsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TripsView.swift; sourceTree = "<group>"; };
+		1594DF57756A4459A585537A /* GarageView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GarageView.swift; sourceTree = "<group>"; };
+		1D6A64AC85316ED1FB1F193A /* AuthView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthView.swift; sourceTree = "<group>"; };
+		222F2B40313306BAE406CD4B /* DashboardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashboardView.swift; sourceTree = "<group>"; };
+		256658471BD7508658CD944C /* Veloseete.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = Veloseete.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		2DC6CBCD403057F0E42E9DE2 /* TripLiveActivityWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TripLiveActivityWidget.swift; sourceTree = "<group>"; };
+		3CB688049B7786554F370E64 /* FirestoreRepository.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FirestoreRepository.swift; sourceTree = "<group>"; };
+		3F39C3DE6C6DA1496C373F94 /* FluentEmoji.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FluentEmoji.swift; sourceTree = "<group>"; };
+		4E2D03F5821346DD9CB163CB /* RefuelSheetView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RefuelSheetView.swift; sourceTree = "<group>"; };
+		50AD3F71588767E33C7983BD /* RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootView.swift; sourceTree = "<group>"; };
+		5BEBBFE3A0702FEF839CEEE5 /* VSIcon.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VSIcon.swift; sourceTree = "<group>"; };
+		5C8ECCF8B347101E05AE05BF /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
+		6D1A3E4EE9B0BEB713B1D5B0 /* TripPermissionsStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TripPermissionsStore.swift; sourceTree = "<group>"; };
+		873D378B91DBE12238CE4761 /* AuthService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthService.swift; sourceTree = "<group>"; };
+		8CCCB0D552ADF2C858E7B307 /* Media */ = {isa = PBXFileReference; lastKnownFileType = folder; name = Media; path = Veloseete/Resources/Media; sourceTree = SOURCE_ROOT; };
+		9431519E24928BF21DD4BA7B /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		95622FAF7EEA68AF70574E03 /* TripConfirmSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TripConfirmSheet.swift; sourceTree = "<group>"; };
+		A1AC2C5E99E0603B3725F36D /* MainTabShell.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainTabShell.swift; sourceTree = "<group>"; };
+		AE792FA01498EEABB68D8BCB /* FluentEmoji */ = {isa = PBXFileReference; lastKnownFileType = folder; name = FluentEmoji; path = Veloseete/Resources/FluentEmoji; sourceTree = SOURCE_ROOT; };
+		B70FF38C17A056E74CA59B04 /* TripRecordingService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TripRecordingService.swift; sourceTree = "<group>"; };
+		C4215F0FDD30582861414A9E /* SplashView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SplashView.swift; sourceTree = "<group>"; };
+		CAB93337EF3889E8516FA493 /* TripLiveActivityController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TripLiveActivityController.swift; sourceTree = "<group>"; };
+		CE380E91E0F721685A913B2D /* TripPermissionsOnboardingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TripPermissionsOnboardingView.swift; sourceTree = "<group>"; };
+		DF837A0683DA1E47EF9113EE /* VeloseeteTripWidget.appex */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = "wrapper.app-extension"; path = VeloseeteTripWidget.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		E08E5E2146EA750B5BEBC0DE /* VeloseeteApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VeloseeteApp.swift; sourceTree = "<group>"; };
+		E107223D7E9322440515BAFE /* FirebaseBootstrap.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FirebaseBootstrap.swift; sourceTree = "<group>"; };
+		F45D0247EE51C0E3F476BACF /* TripActivityAttributes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TripActivityAttributes.swift; sourceTree = "<group>"; };
+		F694C2983FF8F289315A17B5 /* TripPermissionsManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TripPermissionsManager.swift; sourceTree = "<group>"; };
+		FA8C64FAF2E09B5C9D1B38E7 /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
+		FF78BFABE392DBE393254431 /* Metrics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Metrics.swift; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		C4D1A3CEDD3AD8C9643A5306 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				EA183E66756DDCA3890ECD67 /* FirebaseAuth in Frameworks */,
+				0ADF9E69E2BBC958D25B91B4 /* FirebaseFirestore in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		01E5890BE2D2339B8EFEE0F4 /* Models */ = {
+			isa = PBXGroup;
+			children = (
+				FA8C64FAF2E09B5C9D1B38E7 /* Models.swift */,
+			);
+			path = Models;
+			sourceTree = "<group>";
+		};
+		07CAE06BA83720C14266C710 /* Onboarding */ = {
+			isa = PBXGroup;
+			children = (
+				CE380E91E0F721685A913B2D /* TripPermissionsOnboardingView.swift */,
+			);
+			path = Onboarding;
+			sourceTree = "<group>";
+		};
+		16E6328311838B74CEC44956 /* VeloseeteTripWidget */ = {
+			isa = PBXGroup;
+			children = (
+				2DC6CBCD403057F0E42E9DE2 /* TripLiveActivityWidget.swift */,
+			);
+			path = VeloseeteTripWidget;
+			sourceTree = "<group>";
+		};
+		246F7234108446C2ABFCAD4C /* Services */ = {
+			isa = PBXGroup;
+			children = (
+				2EA9791C5548E1A003AFAFA4 /* Auth */,
+				DC44BF1EF560ADE6DAED8D86 /* Firestore */,
+				BA40ADAC08BE1F749BDD2984 /* Permissions */,
+				761CE7D67BD5901C6645859E /* Trips */,
+			);
+			path = Services;
+			sourceTree = "<group>";
+		};
+		2EA9791C5548E1A003AFAFA4 /* Auth */ = {
+			isa = PBXGroup;
+			children = (
+				873D378B91DBE12238CE4761 /* AuthService.swift */,
+			);
+			path = Auth;
+			sourceTree = "<group>";
+		};
+		4D645CBCFF81FC9AE4D81899 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				256658471BD7508658CD944C /* Veloseete.app */,
+				DF837A0683DA1E47EF9113EE /* VeloseeteTripWidget.appex */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		52F0396AED3A20C3A424FB63 /* Features */ = {
+			isa = PBXGroup;
+			children = (
+				E3D4D2F2E61B89CA17C90149 /* Auth */,
+				9909F4D291495FAAD48FAE3E /* Dashboard */,
+				7B5023CE1C039CA7C2696CF3 /* Garage */,
+				07CAE06BA83720C14266C710 /* Onboarding */,
+				6B28ED63C034EF7EBE38EB6A /* Refuel */,
+				9676E619C96D4AD1235B5877 /* Root */,
+				D1FF1E8528D395984C9E2EED /* Splash */,
+				B15330384B4EF5F64B074ECA /* Trips */,
+			);
+			path = Features;
+			sourceTree = "<group>";
+		};
+		6B28ED63C034EF7EBE38EB6A /* Refuel */ = {
+			isa = PBXGroup;
+			children = (
+				4E2D03F5821346DD9CB163CB /* RefuelSheetView.swift */,
+			);
+			path = Refuel;
+			sourceTree = "<group>";
+		};
+		752596DA54D7B366A89B6B31 /* Shared */ = {
+			isa = PBXGroup;
+			children = (
+				F45D0247EE51C0E3F476BACF /* TripActivityAttributes.swift */,
+			);
+			path = Shared;
+			sourceTree = "<group>";
+		};
+		761CE7D67BD5901C6645859E /* Trips */ = {
+			isa = PBXGroup;
+			children = (
+				CAB93337EF3889E8516FA493 /* TripLiveActivityController.swift */,
+				B70FF38C17A056E74CA59B04 /* TripRecordingService.swift */,
+			);
+			path = Trips;
+			sourceTree = "<group>";
+		};
+		7B5023CE1C039CA7C2696CF3 /* Garage */ = {
+			isa = PBXGroup;
+			children = (
+				1594DF57756A4459A585537A /* GarageView.swift */,
+			);
+			path = Garage;
+			sourceTree = "<group>";
+		};
+		9676E619C96D4AD1235B5877 /* Root */ = {
+			isa = PBXGroup;
+			children = (
+				A1AC2C5E99E0603B3725F36D /* MainTabShell.swift */,
+				50AD3F71588767E33C7983BD /* RootView.swift */,
+			);
+			path = Root;
+			sourceTree = "<group>";
+		};
+		9909F4D291495FAAD48FAE3E /* Dashboard */ = {
+			isa = PBXGroup;
+			children = (
+				222F2B40313306BAE406CD4B /* DashboardView.swift */,
+			);
+			path = Dashboard;
+			sourceTree = "<group>";
+		};
+		ABB1FEF1A5418800BB795175 /* Utilities */ = {
+			isa = PBXGroup;
+			children = (
+				FF78BFABE392DBE393254431 /* Metrics.swift */,
+			);
+			path = Utilities;
+			sourceTree = "<group>";
+		};
+		B15330384B4EF5F64B074ECA /* Trips */ = {
+			isa = PBXGroup;
+			children = (
+				95622FAF7EEA68AF70574E03 /* TripConfirmSheet.swift */,
+				0525EBB0DBFEA1A2FBC29AD3 /* TripsView.swift */,
+			);
+			path = Trips;
+			sourceTree = "<group>";
+		};
+		BA40ADAC08BE1F749BDD2984 /* Permissions */ = {
+			isa = PBXGroup;
+			children = (
+				F694C2983FF8F289315A17B5 /* TripPermissionsManager.swift */,
+				6D1A3E4EE9B0BEB713B1D5B0 /* TripPermissionsStore.swift */,
+			);
+			path = Permissions;
+			sourceTree = "<group>";
+		};
+		C627DC7AE48FFC25E80952C0 /* App */ = {
+			isa = PBXGroup;
+			children = (
+				E08E5E2146EA750B5BEBC0DE /* VeloseeteApp.swift */,
+			);
+			path = App;
+			sourceTree = "<group>";
+		};
+		D1FF1E8528D395984C9E2EED /* Splash */ = {
+			isa = PBXGroup;
+			children = (
+				C4215F0FDD30582861414A9E /* SplashView.swift */,
+			);
+			path = Splash;
+			sourceTree = "<group>";
+		};
+		D849952ECB48B00234E9C3F5 /* Veloseete */ = {
+			isa = PBXGroup;
+			children = (
+				C627DC7AE48FFC25E80952C0 /* App */,
+				D94E1ED4A9F3A641520DA7D7 /* Design */,
+				52F0396AED3A20C3A424FB63 /* Features */,
+				01E5890BE2D2339B8EFEE0F4 /* Models */,
+				DC52011A27E8058E76947A0C /* Resources */,
+				246F7234108446C2ABFCAD4C /* Services */,
+				ABB1FEF1A5418800BB795175 /* Utilities */,
+			);
+			path = Veloseete;
+			sourceTree = "<group>";
+		};
+		D94E1ED4A9F3A641520DA7D7 /* Design */ = {
+			isa = PBXGroup;
+			children = (
+				3F39C3DE6C6DA1496C373F94 /* FluentEmoji.swift */,
+				5C8ECCF8B347101E05AE05BF /* Theme.swift */,
+				5BEBBFE3A0702FEF839CEEE5 /* VSIcon.swift */,
+			);
+			path = Design;
+			sourceTree = "<group>";
+		};
+		DA2171A46D760A19BCA7D1A2 = {
+			isa = PBXGroup;
+			children = (
+				752596DA54D7B366A89B6B31 /* Shared */,
+				D849952ECB48B00234E9C3F5 /* Veloseete */,
+				16E6328311838B74CEC44956 /* VeloseeteTripWidget */,
+				4D645CBCFF81FC9AE4D81899 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		DC44BF1EF560ADE6DAED8D86 /* Firestore */ = {
+			isa = PBXGroup;
+			children = (
+				032D9685E63E087090A2889A /* DataStore.swift */,
+				E107223D7E9322440515BAFE /* FirebaseBootstrap.swift */,
+				3CB688049B7786554F370E64 /* FirestoreRepository.swift */,
+			);
+			path = Firestore;
+			sourceTree = "<group>";
+		};
+		DC52011A27E8058E76947A0C /* Resources */ = {
+			isa = PBXGroup;
+			children = (
+				9431519E24928BF21DD4BA7B /* Assets.xcassets */,
+				AE792FA01498EEABB68D8BCB /* FluentEmoji */,
+				03E2E1E23C22D331E66874CF /* Fonts */,
+				8CCCB0D552ADF2C858E7B307 /* Media */,
+			);
+			path = Resources;
+			sourceTree = "<group>";
+		};
+		E3D4D2F2E61B89CA17C90149 /* Auth */ = {
+			isa = PBXGroup;
+			children = (
+				1D6A64AC85316ED1FB1F193A /* AuthView.swift */,
+			);
+			path = Auth;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		167A01CC7974FB0668295765 /* Veloseete */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 4C1D01B6DC09BDEF9597C2A2 /* Build configuration list for PBXNativeTarget "Veloseete" */;
+			buildPhases = (
+				491E92C3DAE323695413CD27 /* Sources */,
+				1B71ECF6C3F31BA5B6717FEA /* Ensure Fonts Copied */,
+				043C4BF9F50907C6C9A37E0A /* Resources */,
+				C4D1A3CEDD3AD8C9643A5306 /* Frameworks */,
+				A2EDDA76B0571B507A3E8DD3 /* Embed Foundation Extensions */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				D338CC2C97BC5252249ED843 /* PBXTargetDependency */,
+			);
+			name = Veloseete;
+			packageProductDependencies = (
+				EF991BE6BE4E513059B9947D /* FirebaseAuth */,
+				32C989AA668D64C69595D10D /* FirebaseFirestore */,
+			);
+			productName = Veloseete;
+			productReference = 256658471BD7508658CD944C /* Veloseete.app */;
+			productType = "com.apple.product-type.application";
+		};
+		EF082251D839C5091E36843B /* VeloseeteTripWidget */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 1D2A517B2B79DB4EF950BC17 /* Build configuration list for PBXNativeTarget "VeloseeteTripWidget" */;
+			buildPhases = (
+				5996B499407923FDFC91A630 /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = VeloseeteTripWidget;
+			packageProductDependencies = (
+			);
+			productName = VeloseeteTripWidget;
+			productReference = DF837A0683DA1E47EF9113EE /* VeloseeteTripWidget.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		B49DC46AA492B3106B843E46 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = YES;
+				LastUpgradeCheck = 1430;
+				TargetAttributes = {
+					167A01CC7974FB0668295765 = {
+						DevelopmentTeam = B97UDSSKPC;
+						ProvisioningStyle = Automatic;
+					};
+					EF082251D839C5091E36843B = {
+						DevelopmentTeam = B97UDSSKPC;
+						ProvisioningStyle = Automatic;
+					};
+				};
+			};
+			buildConfigurationList = F7CAD2532EFA8EF909FE63EC /* Build configuration list for PBXProject "Veloseete" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				Base,
+				en,
+			);
+			mainGroup = DA2171A46D760A19BCA7D1A2;
+			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				0D11698FA6967308CC7B3461 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */,
+			);
+			preferredProjectObjectVersion = 77;
+			productRefGroup = 4D645CBCFF81FC9AE4D81899 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				167A01CC7974FB0668295765 /* Veloseete */,
+				EF082251D839C5091E36843B /* VeloseeteTripWidget */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		043C4BF9F50907C6C9A37E0A /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A60272E8E5614BF61717265F /* Assets.xcassets in Resources */,
+				11791EB2D027F01AE3A0ED81 /* FluentEmoji in Resources */,
+				EC841A9AA4068093C17C015F /* Fonts in Resources */,
+				CC1B3A24417C167CCF243AA4 /* Media in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXShellScriptBuildPhase section */
+		1B71ECF6C3F31BA5B6717FEA /* Ensure Fonts Copied */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "Ensure Fonts Copied";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "set -e\nDEST=\"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}\"\nSRC=\"${SRCROOT}/Veloseete/Resources/Fonts\"\nmkdir -p \"$DEST\"\nif [ -d \"$SRC\" ]; then\n  cp -f \"$SRC\"/*.ttf \"$DEST/\" 2>/dev/null || true\n  echo \"Copied fonts to $DEST\"\n  ls -la \"$DEST\"/*.ttf 2>/dev/null || echo \"No ttf in dest\"\nfi\n";
+		};
+/* End PBXShellScriptBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		491E92C3DAE323695413CD27 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				3F60DBC1AFD8915F677AB407 /* AuthService.swift in Sources */,
+				0AAA22F6732EBCAE28AA5BAD /* AuthView.swift in Sources */,
+				FAA097877C34864C14669E4D /* DashboardView.swift in Sources */,
+				B3763817EE58A8BABBD8B09F /* DataStore.swift in Sources */,
+				81B2F8DA22FF3F54A9CFC19B /* FirebaseBootstrap.swift in Sources */,
+				08DFE3397E7CE2D442F38B41 /* FirestoreRepository.swift in Sources */,
+				42D402FF910A17B280189C8B /* FluentEmoji.swift in Sources */,
+				F9F060079AC13AC8A73A9539 /* GarageView.swift in Sources */,
+				CD5113461FD49DA09C3067BF /* MainTabShell.swift in Sources */,
+				B54A52B0BE07BAC01A98668D /* Metrics.swift in Sources */,
+				77BDCB559F4E40817A499C77 /* Models.swift in Sources */,
+				7501512F21A76B272AE85F51 /* RefuelSheetView.swift in Sources */,
+				57A042468492884909112FF7 /* RootView.swift in Sources */,
+				698975EF12A294DC28B0C938 /* SplashView.swift in Sources */,
+				C717BA273A6E967FDB7EE6D4 /* Theme.swift in Sources */,
+				99BC245D41EA70E257B86FA5 /* TripActivityAttributes.swift in Sources */,
+				AC24231325EF9C9C5C9934B4 /* TripConfirmSheet.swift in Sources */,
+				1441B5F41A73A88F41EE32CD /* TripLiveActivityController.swift in Sources */,
+				48666A748C11F9368F00C94F /* TripPermissionsManager.swift in Sources */,
+				C993CEE9E96A91831F35B9A2 /* TripPermissionsOnboardingView.swift in Sources */,
+				E56B5D4761318FAF61ED9EF5 /* TripPermissionsStore.swift in Sources */,
+				39F11C8082D17B4AF96E17E7 /* TripRecordingService.swift in Sources */,
+				63B8235E9A940B210302F60E /* TripsView.swift in Sources */,
+				AB69738B2377CB8010930622 /* VSIcon.swift in Sources */,
+				33EF7235CAC444208BD0316C /* VeloseeteApp.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		5996B499407923FDFC91A630 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				553179B906447ACE5654AA56 /* TripActivityAttributes.swift in Sources */,
+				F983209FA5BCEA0169A62034 /* TripLiveActivityWidget.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		D338CC2C97BC5252249ED843 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = EF082251D839C5091E36843B /* VeloseeteTripWidget */;
+			targetProxy = 5BDB89145D463C1DA405C40D /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		297F0CFD9FC914F3FE87AF2C /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = B97UDSSKPC;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = VeloseeteTripWidget/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks @executable_path/../../Frameworks";
+				MARKETING_VERSION = 1.0.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.veloseete.app.TripWidget;
+				PRODUCT_NAME = VeloseeteTripWidget;
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				SWIFT_VERSION = 5.9;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Debug;
+		};
+		6BEC5881FD13120F00E14D7D /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"$(inherited)",
+					"DEBUG=1",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.9;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Debug;
+		};
+		84E47B5226D5AEFEB1F4FE85 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = Veloseete/Veloseete.entitlements;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = B97UDSSKPC;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = Veloseete/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.veloseete.app;
+				PRODUCT_NAME = Veloseete;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Debug;
+		};
+		9842E8ADA1F2624283D64DF5 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = Veloseete/Veloseete.entitlements;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = B97UDSSKPC;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = Veloseete/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.veloseete.app;
+				PRODUCT_NAME = Veloseete;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Release;
+		};
+		D93A32000561145DD2E455E6 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = B97UDSSKPC;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = VeloseeteTripWidget/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks @executable_path/../../Frameworks";
+				MARKETING_VERSION = 1.0.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.veloseete.app.TripWidget;
+				PRODUCT_NAME = VeloseeteTripWidget;
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				SWIFT_VERSION = 5.9;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Release;
+		};
+		E6D4561325958F65EA9E4DA9 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 5.9;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		1D2A517B2B79DB4EF950BC17 /* Build configuration list for PBXNativeTarget "VeloseeteTripWidget" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				297F0CFD9FC914F3FE87AF2C /* Debug */,
+				D93A32000561145DD2E455E6 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		4C1D01B6DC09BDEF9597C2A2 /* Build configuration list for PBXNativeTarget "Veloseete" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				84E47B5226D5AEFEB1F4FE85 /* Debug */,
+				9842E8ADA1F2624283D64DF5 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		F7CAD2532EFA8EF909FE63EC /* Build configuration list for PBXProject "Veloseete" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				6BEC5881FD13120F00E14D7D /* Debug */,
+				E6D4561325958F65EA9E4DA9 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+/* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		0D11698FA6967308CC7B3461 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/firebase/firebase-ios-sdk";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 11.0.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		32C989AA668D64C69595D10D /* FirebaseFirestore */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 0D11698FA6967308CC7B3461 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseFirestore;
+		};
+		EF991BE6BE4E513059B9947D /* FirebaseAuth */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 0D11698FA6967308CC7B3461 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseAuth;
+		};
+/* End XCSwiftPackageProductDependency section */
+	};
+	rootObject = B49DC46AA492B3106B843E46 /* Project object */;
+}
