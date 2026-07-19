@@ -14,6 +14,13 @@ final class TripLiveActivityController {
     func start(vehicleName: String, startedAt: Date) {
         guard ActivityAuthorizationInfo().areActivitiesEnabled else { return }
 
+        // A new recording owns a fresh activity. Remove anything stale first.
+        for existing in Activity<TripActivityAttributes>.activities {
+            Task {
+                await existing.end(nil, dismissalPolicy: .immediate)
+            }
+        }
+
         let attributes = TripActivityAttributes(vehicleName: vehicleName, startedAt: startedAt)
         let state = TripActivityAttributes.ContentState(
             distanceKm: 0,
@@ -42,7 +49,8 @@ final class TripLiveActivityController {
         maxSpeedKmh: Double,
         isPaused: Bool
     ) {
-        guard let activity else { return }
+        guard let activity = activity ?? Activity<TripActivityAttributes>.activities.first else { return }
+        self.activity = activity
         let state = TripActivityAttributes.ContentState(
             distanceKm: distanceKm,
             durationSec: durationSec,
@@ -57,7 +65,8 @@ final class TripLiveActivityController {
     }
 
     func end(finalDistanceKm: Double, durationSec: Double, maxSpeedKmh: Double) {
-        guard let activity else { return }
+        guard let activity = activity ?? Activity<TripActivityAttributes>.activities.first else { return }
+        self.activity = activity
         let state = TripActivityAttributes.ContentState(
             distanceKm: finalDistanceKm,
             durationSec: durationSec,
@@ -67,15 +76,17 @@ final class TripLiveActivityController {
             statusLabel: "Saved"
         )
         Task {
-            await activity.end(.init(state: state, staleDate: nil), dismissalPolicy: .after(.now + 8))
+            await activity.end(.init(state: state, staleDate: nil), dismissalPolicy: .immediate)
         }
         self.activity = nil
     }
 
     func cancel() {
-        guard let activity else { return }
-        Task {
-            await activity.end(nil, dismissalPolicy: .immediate)
+        let activities = Activity<TripActivityAttributes>.activities
+        for activity in activities {
+            Task {
+                await activity.end(nil, dismissalPolicy: .immediate)
+            }
         }
         self.activity = nil
     }

@@ -36,7 +36,24 @@ struct GarageView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            accountBanner
+            if let onComplete {
+                HStack {
+                    Text("Add vehicle")
+                        .font(VS.Typography.heading(17, weight: .bold))
+                        .foregroundStyle(VS.Color.textPrimary)
+                    Spacer()
+                    ModalCloseButton(action: onComplete)
+                }
+                .padding(.horizontal, 16)
+                .frame(height: 52)
+                .overlay(Rectangle().fill(VS.Color.divider).frame(height: 1), alignment: .bottom)
+            }
+
+            if store.vehicles.isEmpty {
+                accountBanner
+            } else {
+                addVehicleBanner
+            }
 
             HStack {
                 if step > 1 {
@@ -77,25 +94,17 @@ struct GarageView: View {
                     .padding(.horizontal, 20)
             }
 
-            Button {
+            PrimaryCTAButton(
+                title: step == 3 ? "Finish setup" : "Continue",
+                icon: step == 3 ? .checkCircle : nil,
+                isLoading: isSubmitting,
+                isEnabled: canContinue
+            ) {
                 Task { await advance() }
-            } label: {
-                HStack {
-                    if isSubmitting { ProgressView().tint(VS.Color.navPill) }
-                    Text(step == 3 ? "Finish setup" : "Continue")
-                        .font(VS.Typography.heading(17))
-                }
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 16)
-                .background(canContinue ? VS.Color.accent : VS.Color.accent.opacity(0.35))
-                .foregroundStyle(VS.Color.navPill)
-                .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
             }
-            .disabled(!canContinue || isSubmitting)
-            .buttonStyle(ScaleButtonStyle())
             .padding(20)
         }
-        .background(VS.Color.bgPrimary.ignoresSafeArea())
+        .veloseetePage()
         .onAppear {
             currency = Locale.current.currency?.identifier == "USD" ? "USD"
                 : Locale.current.region?.identifier == "AE" ? "AED"
@@ -151,7 +160,25 @@ struct GarageView: View {
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(VS.Color.bgSecondary)
-        .overlay(Rectangle().frame(height: 1).foregroundStyle(Color.white.opacity(0.08)), alignment: .bottom)
+        .overlay(Rectangle().frame(height: 1).foregroundStyle(VS.Color.divider), alignment: .bottom)
+    }
+
+    private var addVehicleBanner: some View {
+        HStack(spacing: 12) {
+            VSIcon(icon: .plusCircle, size: 22, weight: .fill, tint: VS.Color.accent)
+            VStack(alignment: .leading, spacing: 3) {
+                Text("Add another vehicle")
+                    .font(VS.Typography.heading(15))
+                    .foregroundStyle(VS.Color.textPrimary)
+                Text("You already have \(store.vehicles.count) \(store.vehicles.count == 1 ? "vehicle" : "vehicles") in your garage.")
+                    .font(VS.Typography.body(12))
+                    .foregroundStyle(VS.Color.textSecondary)
+            }
+            Spacer()
+        }
+        .padding(14)
+        .background(VS.Color.bgSecondary)
+        .overlay(Rectangle().frame(height: 1).foregroundStyle(VS.Color.divider), alignment: .bottom)
     }
 
     private var canContinue: Bool {
@@ -164,7 +191,7 @@ struct GarageView: View {
 
     private var stepBasics: some View {
         VStack(alignment: .leading, spacing: 20) {
-            titleBlock("Let's set up your first vehicle", "Takes about 30 seconds")
+            titleBlock(store.vehicles.isEmpty ? "Let's set up your first vehicle" : "Add a vehicle", "Takes about 30 seconds")
 
             fieldLabel("Vehicle name")
             TextField("My car", text: $nickname)
@@ -182,7 +209,7 @@ struct GarageView: View {
                             .frame(width: 36, height: 36)
                             .background(
                                 RoundedRectangle(cornerRadius: 10)
-                                    .fill(icon == item ? VS.Color.accent.opacity(0.2) : Color.white.opacity(0.04))
+                                    .fill(icon == item ? VS.Color.accent.opacity(0.2) : VS.Color.controlDisabled)
                             )
                             .overlay(
                                 RoundedRectangle(cornerRadius: 10)
@@ -213,7 +240,7 @@ struct GarageView: View {
                                 .font(VS.Typography.body(12, weight: .medium))
                                 .padding(.horizontal, 12)
                                 .padding(.vertical, 8)
-                                .background(Capsule().fill(make == m ? VS.Color.accent.opacity(0.2) : Color.white.opacity(0.06)))
+                                .background(Capsule().fill(make == m ? VS.Color.accent.opacity(0.2) : VS.Color.chip))
                                 .foregroundStyle(make == m ? VS.Color.accent : VS.Color.textSecondary)
                         }
                     }
@@ -255,7 +282,7 @@ struct GarageView: View {
                             .padding(.vertical, 16)
                             .background(
                                 RoundedRectangle(cornerRadius: 14)
-                                    .fill(fuelType == type.0 ? VS.Color.accent.opacity(0.18) : Color.white.opacity(0.04))
+                                    .fill(fuelType == type.0 ? VS.Color.accent.opacity(0.18) : VS.Color.controlDisabled)
                             )
                             .overlay(
                                 RoundedRectangle(cornerRadius: 14)
@@ -274,7 +301,7 @@ struct GarageView: View {
                             .font(VS.Typography.body(13, weight: .semibold))
                             .padding(.horizontal, 14)
                             .padding(.vertical, 10)
-                            .background(Capsule().fill(currency == code ? VS.Color.accent : Color.white.opacity(0.06)))
+                            .background(Capsule().fill(currency == code ? VS.Color.accent : VS.Color.chip))
                             .foregroundStyle(currency == code ? VS.Color.navPill : VS.Color.textSecondary)
                     }
                 }

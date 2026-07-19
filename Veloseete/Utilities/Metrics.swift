@@ -34,10 +34,11 @@ enum DistanceFormat {
 struct EfficiencyMetrics {
     let current: Double?
     let monthlySpend: Double
-    let spendChange: Double
-    let avgEfficiency: Double
+    let spendChange: Double?
+    let avgEfficiency: Double?
     let totalDistance: Double
     let refuelCount: Int
+    let efficiencySampleCount: Int
     let recentLogs: [FuelLog]
 }
 
@@ -47,24 +48,13 @@ enum MetricsCalculator {
             .filter { $0.vehicleId == vehicle.id }
             .sorted { $0.timestamp < $1.timestamp }
 
-        var current: Double?
-        if vehicleLogs.count >= 2 {
-            var intervals: [Double] = []
-            for i in 1..<vehicleLogs.count {
-                let prev = vehicleLogs[i - 1]
-                let curr = vehicleLogs[i]
-                let distance = curr.odometerReading - prev.odometerReading
-                let fuel = curr.fuelVolume
-                guard distance > 0, fuel > 0 else { continue }
-                let shouldCalculate = vehicleLogs.count == 2
-                    ? true
-                    : (curr.isFullTank && prev.isFullTank)
-                if shouldCalculate {
-                    intervals.append((fuel / distance) * 100)
-                }
-            }
-            current = intervals.last
-        }
+        let intervals = fullTankIntervals(in: vehicleLogs)
+        // A rolling, distance-weighted result is less sensitive to one unusual fill
+        // than comparing the brochure against only the latest interval.
+        let recentIntervals = intervals.suffix(3)
+        let recentDistance = recentIntervals.reduce(0) { $0 + $1.distance }
+        let recentFuel = recentIntervals.reduce(0) { $0 + $1.fuel }
+        let current = recentDistance > 0 ? (recentFuel / recentDistance) * 100 : nil
 
         let cal = Calendar.current
         let now = Date()
@@ -77,16 +67,14 @@ enum MetricsCalculator {
 
         let totalSpent = monthLogs.reduce(0) { $0 + $1.totalCost }
         let lastSpent = lastMonthLogs.reduce(0) { $0 + $1.totalCost }
-        let spendChange = lastSpent > 0 ? ((totalSpent - lastSpent) / lastSpent) * 100 : 0
+        let spendChange = lastSpent > 0 ? ((totalSpent - lastSpent) / lastSpent) * 100 : nil
 
-        let sorted = monthLogs.sorted { $0.odometerReading < $1.odometerReading }
-        let totalDistance = sorted.count > 1
-            ? sorted.last!.odometerReading - sorted.first!.odometerReading
-            : 0
-        let totalLiters = monthLogs.reduce(0) { $0 + $1.fuelVolume }
-        let avgEfficiency = totalDistance > 0 && totalLiters > 0
-            ? (totalLiters / totalDistance) * 100
-            : 0
+        // Attribute a fill-to-fill interval to the month in which its closing fill occurred.
+        // This excludes the first fill (which has no measured distance) and all partial fills.
+        let monthIntervals = intervals.filter { $0.endedAt >= startOfMonth }
+        let totalDistance = monthIntervals.reduce(0) { $0 + $1.distance }
+        let intervalFuel = monthIntervals.reduce(0) { $0 + $1.fuel }
+        let avgEfficiency = totalDistance > 0 ? (intervalFuel / totalDistance) * 100 : nil
 
         let recent = Array(vehicleLogs.reversed().prefix(5))
 
@@ -97,8 +85,40 @@ enum MetricsCalculator {
             avgEfficiency: avgEfficiency,
             totalDistance: totalDistance,
             refuelCount: monthLogs.count,
+            efficiencySampleCount: intervals.count,
             recentLogs: recent
         )
+    }
+
+    private struct FullTankInterval {
+        let endedAt: Date
+        let distance: Double
+        let fuel: Double
+    }
+
+    private static func fullTankIntervals(in logs: [FuelLog]) -> [FullTankInterval] {
+        guard logs.count >= 2 else { return [] }
+        var result: [FullTankInterval] = []
+        var anchor: FuelLog?
+        var fuelSinceAnchor = 0.0
+
+        for log in logs {
+            guard log.fuelVolume > 0 else { continue }
+            guard let currentAnchor = anchor else {
+                if log.isFullTank { anchor = log }
+                continue
+            }
+
+            fuelSinceAnchor += log.fuelVolume
+            guard log.isFullTank else { continue }
+            let distance = log.odometerReading - currentAnchor.odometerReading
+            if distance > 0 {
+                result.append(FullTankInterval(endedAt: log.timestamp, distance: distance, fuel: fuelSinceAnchor))
+            }
+            anchor = log
+            fuelSinceAnchor = 0
+        }
+        return result
     }
 }
 
@@ -107,7 +127,7 @@ struct EfficiencyVibe {
     let emoji: String
     let tone: Tone
 
-    enum Tone { case excellent, good, neutral, watch, learning }
+    enum Tone: Equatable { case excellent, good, neutral, watch, learning }
 }
 
 enum DashboardCopy {
@@ -128,10 +148,14 @@ enum DashboardCopy {
         return EfficiencyVibe(label: "Needs some love", emoji: "🩺", tone: .watch)
     }
 
-    static func status(efficiency: Double?, standard: Double?) -> (text: String, tone: EfficiencyVibe.Tone) {
-        guard let efficiency, let standard else {
+    static func status(efficiency: Double?, standard: Double?, sampleCount: Int) -> (text: String, tone: EfficiencyVibe.Tone) {
+        guard let efficiency else {
             return ("Add refuels to unlock comparison", .learning)
         }
+        guard sampleCount >= 2 else {
+            return ("Based on 1 interval — add another full tank", .learning)
+        }
+        guard let standard else { return ("No verified manufacturer spec", .learning) }
         let deviation = ((efficiency - standard) / standard) * 100
         let abs = Int(abs(deviation).rounded())
         if deviation <= 0 { return ("\(abs)% better than spec", .excellent) }
@@ -140,7 +164,8 @@ enum DashboardCopy {
         return ("\(abs)% above spec — worth a check", .watch)
     }
 
-    static func spendTrend(_ change: Double) -> String {
+    static func spendTrend(_ change: Double?) -> String {
+        guard let change else { return "No prior month to compare" }
         if abs(change) < 1 { return "Flat vs last month" }
         let absVal = Int(abs(change).rounded())
         return change < 0 ? "↓ \(absVal)% vs last month" : "↑ \(absVal)% vs last month"

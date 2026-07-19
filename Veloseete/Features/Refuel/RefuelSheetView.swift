@@ -30,14 +30,25 @@ struct RefuelSheetView: View {
         return logs.first?.odometerReading ?? vehicle?.currentOdometer ?? 0
     }
 
+    private var estimate: OdometerEstimate? {
+        store.odometerEstimate(vehicleId: vehicleId, through: selectedDate)
+    }
+
+    private var enteredOdometer: Double? { Double(odometer) }
+
+    private var varianceKm: Double? {
+        guard let enteredOdometer, let estimate else { return nil }
+        return enteredOdometer - estimate.estimatedKm
+    }
+
     private var pricePerLiter: Double? {
         guard let cost = Double(totalCost), let vol = Double(liters), vol > 0, cost > 0 else { return nil }
         return cost / vol
     }
 
     private var canSubmit: Bool {
-        guard let cost = Double(totalCost), let vol = Double(liters), Double(odometer) != nil else { return false }
-        return cost > 0 && vol > 0
+        guard let cost = Double(totalCost), let vol = Double(liters), let enteredOdometer else { return false }
+        return cost > 0 && vol > 0 && enteredOdometer >= lastOdometer
     }
 
     var body: some View {
@@ -55,13 +66,7 @@ struct RefuelSheetView: View {
                             .foregroundStyle(VS.Color.accentSecondary)
                     }
 
-                    fieldLabel("Odometer (km)")
-                    TextField(lastOdometer > 0 ? String(format: "%.0f", lastOdometer) : "0", text: $odometer)
-                        .keyboardType(.numberPad)
-                        .font(VS.Typography.heading(22, weight: .bold))
-                        .foregroundStyle(VS.Color.textPrimary)
-                        .padding(14)
-                        .glassCard(radius: 12)
+                    odometerSection
 
                     if let entered = Double(odometer), entered < lastOdometer {
                         Text("Lower than last reading (\(DistanceFormat.formatOdometer(lastOdometer, unit: "km")))")
@@ -104,46 +109,85 @@ struct RefuelSheetView: View {
                 }
                 .padding(20)
             }
-            .background(VS.Color.bgPrimary.ignoresSafeArea())
+            .veloseetePage()
             .navigationTitle("Add Refuel")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
-                    Button {
-                        dismiss()
-                    } label: {
-                        VSIcon(icon: .x, size: 16, weight: .bold, tint: VS.Color.textSecondary)
-                    }
+                    Button("Cancel") { dismiss() }
+                        .foregroundStyle(VS.Color.textSecondary)
                 }
             }
             .safeAreaInset(edge: .bottom) {
-                Button {
+                PrimaryCTAButton(
+                    title: "Save refuel",
+                    icon: .gasPump,
+                    isLoading: isSubmitting,
+                    isEnabled: canSubmit
+                ) {
                     Task { await submit() }
-                } label: {
-                    HStack {
-                        if isSubmitting { ProgressView().tint(VS.Color.navPill) }
-                        Text("Save refuel")
-                            .font(VS.Typography.heading(17))
-                    }
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 16)
-                    .background(canSubmit ? VS.Color.accent : VS.Color.accent.opacity(0.35))
-                    .foregroundStyle(VS.Color.navPill)
-                    .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
                 }
-                .disabled(!canSubmit || isSubmitting)
-                .buttonStyle(ScaleButtonStyle())
                 .padding(20)
-                .background(VS.Color.bgPrimary.opacity(0.95))
+                .background(VS.Color.bgPrimary.opacity(0.96))
             }
             .onAppear {
-                if odometer.isEmpty, lastOdometer > 0 {
+                if odometer.isEmpty, let estimate {
+                    odometer = String(format: "%.0f", estimate.estimatedKm)
+                } else if odometer.isEmpty, lastOdometer > 0 {
                     odometer = String(format: "%.0f", lastOdometer)
                 }
             }
         }
         .presentationDetents([.large])
-        .presentationDragIndicator(.visible)
+        .veloseeteSheet()
+    }
+
+    private var odometerSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                fieldLabel("Dashboard odometer (km)")
+                Spacer()
+                if let estimate {
+                    Text("Estimate " + String(format: "%.0f", estimate.estimatedKm))
+                        .font(VS.Typography.body(11, weight: .semibold))
+                        .foregroundStyle(VS.Color.accent)
+                }
+            }
+
+            TextField(lastOdometer > 0 ? String(format: "%.0f", lastOdometer) : "0", text: $odometer)
+                .keyboardType(.numberPad)
+                .font(VS.Typography.heading(26, weight: .bold))
+                .foregroundStyle(VS.Color.textPrimary)
+                .padding(14)
+                .glassCard(radius: 12, elevated: true)
+
+            Text("Enter the number physically shown in your vehicle. This becomes the new verified reading.")
+                .font(VS.Typography.body(12))
+                .foregroundStyle(VS.Color.textTertiary)
+
+            if let varianceKm {
+                HStack(spacing: 9) {
+                    VSIcon(
+                        icon: abs(varianceKm) <= 2 ? .checkCircle : .warningCircle,
+                        size: 18,
+                        weight: .fill,
+                        tint: abs(varianceKm) <= 2 ? VS.Color.success : VS.Color.warning
+                    )
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(abs(varianceKm) <= 2 ? "Tracking matches closely" : "Reconciles GPS variance")
+                            .font(VS.Typography.body(12, weight: .semibold))
+                            .foregroundStyle(VS.Color.textPrimary)
+                        Text(String(format: "%@%.1f km versus the trip estimate", varianceKm >= 0 ? "+" : "", varianceKm))
+                            .font(VS.Typography.body(11))
+                            .foregroundStyle(VS.Color.textTertiary)
+                    }
+                }
+                .padding(12)
+                .metricInset()
+                .transition(.opacity.combined(with: .move(edge: .top)))
+            }
+        }
+        .animation(.snappy(duration: 0.28), value: varianceKm)
     }
 
     private var costField: some View {

@@ -7,8 +7,6 @@ struct TripConfirmSheet: View {
 
     let pending: PendingTripSave
 
-    @State private var odometerText = ""
-    @State private var applyOdometer = true
     @State private var isSaving = false
     @State private var errorMessage: String?
 
@@ -30,22 +28,17 @@ struct TripConfirmSheet: View {
                         confirmMetric(String(format: "%.0f", pending.maxSpeedKmh), "max km/h")
                     }
 
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("New odometer")
-                            .font(VS.Typography.body(12, weight: .semibold))
-                            .foregroundStyle(VS.Color.textTertiary)
-                        TextField("Odometer", text: $odometerText)
-                            .keyboardType(.decimalPad)
-                            .font(VS.Typography.heading(22, weight: .bold))
-                            .foregroundStyle(VS.Color.textPrimary)
-                            .vsInputField()
-
-                        Toggle(isOn: $applyOdometer) {
-                            Text("Apply to vehicle odometer")
-                                .font(VS.Typography.body(14))
-                                .foregroundStyle(VS.Color.textSecondary)
+                    HStack(spacing: 12) {
+                        VSIcon(icon: .gauge, size: 22, weight: .duotone, tint: VS.Color.accent)
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text("Adds to your estimate")
+                                .font(VS.Typography.heading(15))
+                                .foregroundStyle(VS.Color.textPrimary)
+                            Text("Your verified odometer changes only when you enter the number shown in your car, usually at the next refuel.")
+                                .font(VS.Typography.body(12))
+                                .foregroundStyle(VS.Color.textTertiary)
+                                .fixedSize(horizontal: false, vertical: true)
                         }
-                        .tint(VS.Color.accent)
                     }
                     .padding(14)
                     .glassCard()
@@ -56,21 +49,13 @@ struct TripConfirmSheet: View {
                             .foregroundStyle(VS.Color.error)
                     }
 
-                    Button {
+                    PrimaryCTAButton(
+                        title: "Save drive",
+                        icon: .checkCircle,
+                        isLoading: isSaving
+                    ) {
                         Task { await save() }
-                    } label: {
-                        HStack {
-                            if isSaving { ProgressView().tint(VS.Color.navPill) }
-                            Text("Save drive")
-                                .font(VS.Typography.heading(17))
-                        }
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 16)
-                        .background(VS.Color.accent, in: RoundedRectangle(cornerRadius: VS.Radius.card, style: .continuous))
-                        .foregroundStyle(VS.Color.navPill)
                     }
-                    .disabled(isSaving)
-                    .buttonStyle(ScaleButtonStyle())
 
                     Button("Discard") {
                         recorder.discardPending()
@@ -82,20 +67,14 @@ struct TripConfirmSheet: View {
                 }
                 .padding(20)
             }
-            .background(VS.Color.bgPrimary.ignoresSafeArea())
+            .veloseetePage()
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button {
-                        dismiss()
-                    } label: {
-                        VSIcon(icon: .x, size: 16, weight: .bold, tint: VS.Color.textSecondary)
-                    }
+                    ModalCloseButton { dismiss() }
                 }
             }
-            .onAppear {
-                odometerText = String(format: "%.1f", pending.suggestedOdometer)
-            }
         }
+        .veloseeteSheet()
     }
 
     private func confirmMetric(_ value: String, _ label: String) -> some View {
@@ -121,14 +100,10 @@ struct TripConfirmSheet: View {
     }
 
     private func save() async {
-        guard let odo = Double(odometerText), odo >= 0 else {
-            errorMessage = "Enter a valid odometer reading"
-            return
-        }
         isSaving = true
         errorMessage = nil
         do {
-            _ = try await store.saveTrip(pending, odometer: odo, applyOdometer: applyOdometer)
+            _ = try await store.saveTrip(pending, odometer: pending.suggestedOdometer, applyOdometer: false)
             recorder.discardPending()
             if recorder.autoTrackingEnabled {
                 recorder.setAutoTracking(true)

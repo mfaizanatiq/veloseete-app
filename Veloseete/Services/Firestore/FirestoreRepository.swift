@@ -36,6 +36,7 @@ final class FirestoreRepository {
 
     func updateUserProfile(
         userId: String,
+        userName: String? = nil,
         currency: String? = nil,
         distanceUnit: String? = nil,
         currentVehicleId: String? = nil,
@@ -44,6 +45,10 @@ final class FirestoreRepository {
         var data: [String: Any] = [
             "metadata.lastSync": FieldValue.serverTimestamp()
         ]
+        if let userName {
+            data["profile.userName"] = userName
+            data["profile.updatedAt"] = FieldValue.serverTimestamp()
+        }
         if let currency {
             data["profile.defaultCurrency"] = currency
             data["profile.updatedAt"] = FieldValue.serverTimestamp()
@@ -119,6 +124,21 @@ final class FirestoreRepository {
             "currentOdometer": odometer,
             "updatedAt": FieldValue.serverTimestamp()
         ])
+    }
+
+    func updateVehicle(vehicle: Vehicle) async throws {
+        var data: [String: Any] = [
+            "nickname": vehicle.nickname,
+            "make": vehicle.make,
+            "model": vehicle.model,
+            "fuelType": vehicle.fuelType,
+            "currentOdometer": vehicle.currentOdometer,
+            "currency": vehicle.currency,
+            "updatedAt": FieldValue.serverTimestamp()
+        ]
+        data["fuelTankCapacity"] = vehicle.fuelTankCapacity.map { $0 as Any } ?? NSNull()
+        data["icon"] = vehicle.icon.map { $0 as Any } ?? NSNull()
+        try await db.collection("vehicles").document(vehicle.id).updateData(data)
     }
 
     // MARK: - Fuel logs
@@ -197,6 +217,64 @@ final class FirestoreRepository {
         }
     }
 
+    struct ServiceLogInput {
+        var vehicleId: String
+        var timestamp: Date
+        var odometerReading: Double
+        var serviceType: String
+        var description: String?
+        var cost: Double?
+        var currency: String
+        var nextServiceOdometer: Double?
+        var nextServiceDate: Date?
+    }
+
+    func addServiceLog(userId: String, input: ServiceLogInput) async throws -> String {
+        let ref = db.collection("serviceLogs").document()
+        try await ref.setData(serviceData(userId: userId, input: input, includeCreatedAt: true))
+        return ref.documentID
+    }
+
+    func updateServiceLog(serviceId: String, userId: String, input: ServiceLogInput) async throws {
+        let ref = db.collection("serviceLogs").document(serviceId)
+        let snapshot = try await ref.getDocument()
+        guard snapshot.data()?["userId"] as? String == userId else {
+            throw NSError(domain: "Veloseete", code: 403, userInfo: [NSLocalizedDescriptionKey: "This service record does not belong to your account."])
+        }
+        try await ref.setData(serviceData(userId: userId, input: input, includeCreatedAt: false), merge: true)
+    }
+
+    func deleteServiceLog(serviceId: String, userId: String) async throws {
+        let ref = db.collection("serviceLogs").document(serviceId)
+        let snapshot = try await ref.getDocument()
+        guard snapshot.data()?["userId"] as? String == userId else {
+            throw NSError(domain: "Veloseete", code: 403, userInfo: [NSLocalizedDescriptionKey: "This service record does not belong to your account."])
+        }
+        try await ref.delete()
+    }
+
+    private func serviceData(userId: String, input: ServiceLogInput, includeCreatedAt: Bool) -> [String: Any] {
+        var data: [String: Any] = [
+            "userId": userId,
+            "vehicle_id": input.vehicleId,
+            "timestamp": Timestamp(date: input.timestamp),
+            "odometer_reading": input.odometerReading,
+            "service_type": input.serviceType,
+            "currency": input.currency,
+            "updatedAt": FieldValue.serverTimestamp()
+        ]
+        if includeCreatedAt { data["createdAt"] = FieldValue.serverTimestamp() }
+        func optional(_ key: String, _ value: Any?) {
+            if let value { data[key] = value }
+            else if !includeCreatedAt { data[key] = FieldValue.delete() }
+        }
+        optional("description", input.description)
+        optional("cost", input.cost)
+        optional("next_service_odometer", input.nextServiceOdometer)
+        optional("next_service_date", input.nextServiceDate.map(Timestamp.init(date:)))
+        return data
+    }
+
     // MARK: - Trips
 
     struct NewTripInput {
@@ -265,15 +343,23 @@ final class FirestoreRepository {
     // MARK: - Manufacturer standards
 
     func fetchManufacturerStandard(make: String, model: String) async throws -> Double? {
+        let normalizedMake = make.trimmingCharacters(in: .whitespacesAndNewlines)
+        let normalizedModel = model.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalizedMake.isEmpty,
+              !normalizedModel.isEmpty,
+              normalizedMake.lowercased() != "unknown",
+              normalizedModel.lowercased() != "unknown" else { return nil }
         let snap = try await db.collection("manufacturerStandards")
-            .whereField("manufacturer", isEqualTo: make)
+            .whereField("manufacturer", isEqualTo: normalizedMake)
             .limit(to: 25)
             .getDocuments()
 
         let match = snap.documents.first { doc in
             let data = doc.data()
             let m = (data["model"] as? String ?? "").lowercased()
-            return m.contains(model.lowercased()) || model.lowercased().contains(m)
+            guard !m.isEmpty else { return false }
+            let requested = normalizedModel.lowercased()
+            return m == requested || m.contains(requested) || requested.contains(m)
         }
 
         guard let data = match?.data() else { return nil }

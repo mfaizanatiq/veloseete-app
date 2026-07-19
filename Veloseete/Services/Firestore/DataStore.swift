@@ -1,6 +1,15 @@
 import Foundation
 import Combine
 
+struct OdometerEstimate: Equatable {
+    var verifiedKm: Double
+    var verifiedAt: Date
+    var verifiedSource: String
+    var trackedSinceKm: Double
+
+    var estimatedKm: Double { verifiedKm + trackedSinceKm }
+}
+
 @MainActor
 final class DataStore: ObservableObject {
     static let shared = DataStore()
@@ -38,6 +47,32 @@ final class DataStore: ObservableObject {
     var fuelLogsForCurrentVehicle: [FuelLog] {
         guard let id = currentVehicle?.id else { return [] }
         return fuelLogs.filter { $0.vehicleId == id }
+    }
+
+    /// Physical fuel/service readings are anchors. GPS trips only advance an estimate.
+    func odometerEstimate(vehicleId: String, through date: Date = Date()) -> OdometerEstimate? {
+        guard let vehicle = vehicles.first(where: { $0.id == vehicleId }) else { return nil }
+
+        let fuelAnchors = fuelLogs
+            .filter { $0.vehicleId == vehicleId && $0.timestamp <= date }
+            .map { ($0.timestamp, $0.odometerReading, "Fuel entry") }
+        let serviceAnchors = serviceLogs
+            .filter { $0.vehicleId == vehicleId && $0.timestamp <= date }
+            .map { ($0.timestamp, $0.odometerReading, "Service entry") }
+        let anchor = (fuelAnchors + serviceAnchors).max { $0.0 < $1.0 }
+        let verifiedAt = anchor?.0 ?? vehicle.createdAt
+        let verifiedKm = anchor?.1 ?? vehicle.currentOdometer
+        let source = anchor?.2 ?? "Vehicle reading"
+        let tracked = trips
+            .filter { $0.vehicleId == vehicleId && $0.endedAt > verifiedAt && $0.endedAt <= date }
+            .reduce(0) { $0 + $1.distanceKm }
+
+        return OdometerEstimate(
+            verifiedKm: verifiedKm,
+            verifiedAt: verifiedAt,
+            verifiedSource: source,
+            trackedSinceKm: tracked
+        )
     }
 
     func loadAll(userId: String) async {
@@ -115,6 +150,30 @@ final class DataStore: ObservableObject {
 
     // MARK: - Writes
 
+    func updateProfile(userName: String, currency: String, distanceUnit: String) async throws {
+        guard let userId = AuthService.shared.userId else {
+            throw NSError(domain: "Veloseete", code: 401, userInfo: [NSLocalizedDescriptionKey: "Not signed in"])
+        }
+
+        try await FirestoreRepository.shared.updateUserProfile(
+            userId: userId,
+            userName: userName,
+            currency: currency,
+            distanceUnit: distanceUnit
+        )
+
+        if var document = userDocument {
+            document.profile.userName = userName
+            document.profile.defaultCurrency = currency
+            document.profile.defaultDistanceUnit = distanceUnit
+            userDocument = document
+        }
+
+        let change = AuthService.shared.user?.createProfileChangeRequest()
+        change?.displayName = userName
+        try await change?.commitChanges()
+    }
+
     func addVehicle(
         nickname: String,
         make: String,
@@ -180,6 +239,31 @@ final class DataStore: ObservableObject {
         await refreshManufacturerStandard(for: vehicle)
     }
 
+    func selectVehicle(_ vehicleId: String) async throws {
+        guard let userId = AuthService.shared.userId,
+              let vehicle = vehicles.first(where: { $0.id == vehicleId }) else {
+            throw NSError(domain: "Veloseete", code: 404, userInfo: [NSLocalizedDescriptionKey: "Vehicle not found"])
+        }
+
+        try await FirestoreRepository.shared.updateUserProfile(
+            userId: userId,
+            currentVehicleId: vehicleId
+        )
+        if var document = userDocument {
+            document.currentVehicleId = vehicleId
+            userDocument = document
+        }
+        await refreshManufacturerStandard(for: vehicle)
+    }
+
+    func updateVehicle(_ vehicle: Vehicle) async throws {
+        try await FirestoreRepository.shared.updateVehicle(vehicle: vehicle)
+        vehicles = vehicles.map { $0.id == vehicle.id ? vehicle : $0 }
+        if currentVehicle?.id == vehicle.id {
+            await refreshManufacturerStandard(for: vehicle)
+        }
+    }
+
     func addFuelLog(
         vehicleId: String,
         odometerReading: Double,
@@ -226,6 +310,42 @@ final class DataStore: ObservableObject {
             updated.currentOdometer = odometerReading
             return updated
         }
+    }
+
+    func saveServiceLog(id: String?, input: FirestoreRepository.ServiceLogInput) async throws {
+        guard let userId = AuthService.shared.userId else {
+            throw NSError(domain: "Veloseete", code: 401, userInfo: [NSLocalizedDescriptionKey: "Not signed in"])
+        }
+        let resolvedId: String
+        if let id {
+            try await FirestoreRepository.shared.updateServiceLog(serviceId: id, userId: userId, input: input)
+            resolvedId = id
+        } else {
+            resolvedId = try await FirestoreRepository.shared.addServiceLog(userId: userId, input: input)
+        }
+        let saved = ServiceLog(
+            id: resolvedId,
+            vehicleId: input.vehicleId,
+            timestamp: input.timestamp,
+            odometerReading: input.odometerReading,
+            serviceType: input.serviceType,
+            description: input.description,
+            cost: input.cost,
+            currency: input.currency,
+            nextServiceOdometer: input.nextServiceOdometer,
+            nextServiceDate: input.nextServiceDate
+        )
+        serviceLogs.removeAll { $0.id == resolvedId }
+        serviceLogs.append(saved)
+        serviceLogs.sort { $0.timestamp > $1.timestamp }
+    }
+
+    func deleteServiceLog(_ log: ServiceLog) async throws {
+        guard let userId = AuthService.shared.userId else {
+            throw NSError(domain: "Veloseete", code: 401, userInfo: [NSLocalizedDescriptionKey: "Not signed in"])
+        }
+        try await FirestoreRepository.shared.deleteServiceLog(serviceId: log.id, userId: userId)
+        serviceLogs.removeAll { $0.id == log.id }
     }
 
     @discardableResult

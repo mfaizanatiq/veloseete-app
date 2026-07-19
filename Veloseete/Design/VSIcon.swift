@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 enum VSIconName: String {
     case arrowLeft = "arrow-left"
@@ -47,7 +48,7 @@ struct VSIcon: View {
     var tint: Color = VS.Color.textSecondary
 
     var body: some View {
-        Image(assetName)
+        Image(resolvedAssetName)
             .renderingMode(.template)
             .resizable()
             .aspectRatio(contentMode: .fit)
@@ -55,7 +56,19 @@ struct VSIcon: View {
             .foregroundStyle(tint)
     }
 
-    private var assetName: String {
+    private var resolvedAssetName: String {
+        let preferred = assetName(for: weight)
+        if UIImage(named: preferred) != nil { return preferred }
+
+        // Fall back so a missing weight never renders a blank icon.
+        for candidate in [VSIconWeight.regular, .fill, .bold, .duotone] where candidate != weight {
+            let name = assetName(for: candidate)
+            if UIImage(named: name) != nil { return name }
+        }
+        return preferred
+    }
+
+    private func assetName(for weight: VSIconWeight) -> String {
         "ph-\(icon.rawValue)-\(weight.rawValue)"
     }
 }

@@ -8,11 +8,13 @@ struct SplashView: View {
     /// Fraction of the screen the video occupies. Lower = smaller logo.
     private let scale: CGFloat = 0.6
 
+    /// Match the splash mp4 plate (#050505) — not brand green — so no letterbox mask.
+    private static let plate = Color(red: 5 / 255, green: 5 / 255, blue: 5 / 255)
+
     var body: some View {
         GeometryReader { proxy in
             ZStack {
-                Color(red: 5 / 255, green: 5 / 255, blue: 5 / 255)
-                    .ignoresSafeArea()
+                Self.plate.ignoresSafeArea()
 
                 SplashVideoPlayer(resourceName: "VeloseeteSplash", onFinished: onFinished)
                     .frame(
@@ -22,6 +24,7 @@ struct SplashView: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
+        .background(Self.plate.ignoresSafeArea())
         .ignoresSafeArea()
         .accessibilityHidden(true)
     }
@@ -37,7 +40,9 @@ private struct SplashVideoPlayer: UIViewRepresentable {
 
     func makeUIView(context: Context) -> PlayerView {
         let view = PlayerView()
+        // Same plate as SplashView so aspect-fit bars don't show green.
         view.backgroundColor = UIColor(red: 5 / 255, green: 5 / 255, blue: 5 / 255, alpha: 1)
+        view.playerLayer.backgroundColor = UIColor(red: 5 / 255, green: 5 / 255, blue: 5 / 255, alpha: 1).cgColor
 
         guard let url = Bundle.main.url(forResource: resourceName, withExtension: "mp4", subdirectory: "Media")
             ?? Bundle.main.url(forResource: resourceName, withExtension: "mp4") else {

@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
+  <title id="title">Veloseete small-size optical mark</title>
+  <desc id="desc">Optically corrected one-ring Veloseete mark for compact sizes.</desc>
+  <g id="background">
+    <rect width="512" height="512" rx="112" fill="#C7FF3D"/>
+  </g>
+  <g id="memory-track" fill="none" stroke="#050505" stroke-width="34" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M356 269V301C356 331 331 356 301 356H211C181 356 156 331 156 301V211C156 181 181 156 211 156H301C331 156 356 181 356 211V197"/>
+  </g>
+  <g id="memory-core">
+    <rect x="234" y="234" width="44" height="44" rx="13" fill="#050505"/>
+  </g>
+</svg>

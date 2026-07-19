@@ -177,7 +177,7 @@ final class TripPermissionsManager: NSObject, ObservableObject {
     }
 }
 
-extension TripPermissionsManager: CLLocationManagerDelegate {
+extension TripPermissionsManager: @preconcurrency CLLocationManagerDelegate {
     func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
         refreshLocationStatus(from: manager.authorizationStatus)
     }

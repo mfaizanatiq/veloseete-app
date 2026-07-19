@@ -46,8 +46,7 @@ struct RootView: View {
 private struct LoadingView: View {
     var body: some View {
         ZStack {
-            Color(red: 5 / 255, green: 5 / 255, blue: 5 / 255)
-                .ignoresSafeArea()
+            VeloseeteBackground()
 
             Image("VeloseeteMark")
                 .resizable()

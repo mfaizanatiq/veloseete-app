@@ -2,6 +2,7 @@ import SwiftUI
 
 struct DashboardView: View {
     @EnvironmentObject private var store: DataStore
+    @EnvironmentObject private var avatarStore: ProfileAvatarStore
     var onProfile: () -> Void
 
     @State private var showRefuel = false
@@ -34,7 +35,7 @@ struct DashboardView: View {
                         vehicle: vehicle,
                         efficiency: metrics.current,
                         manufacturerStandard: store.manufacturerStandard,
-                        refuelCount: metrics.refuelCount,
+                        refuelCount: metrics.efficiencySampleCount,
                         distanceUnit: store.defaultDistanceUnit
                     )
 
@@ -53,9 +54,10 @@ struct DashboardView: View {
                 }
             }
             .padding(.horizontal, 16)
-            .padding(.top, 8)
             .padding(.bottom, 110)
+            .tracksBottomNavScroll()
         }
+        .veloseetePage()
         .refreshable {
             if let uid = AuthService.shared.userId {
                 await store.loadAll(userId: uid)
@@ -88,19 +90,11 @@ struct DashboardView: View {
     }
 
     private var topBar: some View {
-        HStack {
-            Button(action: onProfile) {
-                Text("Veloseete")
-                    .font(VS.Typography.heading(20))
-                    .foregroundStyle(VS.Color.textPrimary)
-            }
-            Spacer()
-            Button(action: onProfile) {
-                VSIcon(icon: .user, size: 18, weight: .fill, tint: VS.Color.textSecondary)
-                    .frame(width: 40, height: 40)
-                    .glassCard(radius: 20)
-            }
-        }
+        MainTabHeader(
+            "Fuel",
+            subtitle: vehicle.map { "\($0.nickname) · Fuel tracking" } ?? "Fuel tracking",
+            onProfile: onProfile
+        )
     }
 
     private func recentSection(_ logs: [FuelLog]) -> some View {
@@ -126,9 +120,9 @@ struct DashboardView: View {
             } else {
                 VStack(spacing: 0) {
                     ForEach(logs) { log in
-                        RefuelRowView(log: log)
+                        RefuelRowView(log: log, unit: store.defaultDistanceUnit)
                         if log.id != logs.last?.id {
-                            Divider().overlay(Color.white.opacity(0.08))
+                            Divider().overlay(VS.Color.divider)
                         }
                     }
                 }
@@ -151,7 +145,7 @@ struct HeroCard: View {
     }
 
     private var status: (text: String, tone: EfficiencyVibe.Tone) {
-        DashboardCopy.status(efficiency: efficiency, standard: manufacturerStandard)
+        DashboardCopy.status(efficiency: efficiency, standard: manufacturerStandard, sampleCount: refuelCount)
     }
 
     var body: some View {
@@ -251,38 +245,6 @@ struct HeroCard: View {
     }
 }
 
-struct PrimaryCTAButton: View {
-    var action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            HStack(spacing: 12) {
-                VSIcon(icon: .gasPump, size: 22, weight: .fill, tint: VS.Color.navPill)
-                Text("+ Add Refuel")
-                    .font(VS.Typography.heading(18))
-            }
-            .foregroundStyle(VS.Color.navPill)
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 16)
-            .background(
-                RoundedRectangle(cornerRadius: VS.Radius.card, style: .continuous)
-                    .fill(VS.Color.accent)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: VS.Radius.card, style: .continuous)
-                            .fill(
-                                LinearGradient(
-                                    colors: [Color.white.opacity(0.25), .clear],
-                                    startPoint: .top,
-                                    endPoint: .center
-                                )
-                            )
-                    )
-            )
-        }
-        .buttonStyle(PrimaryCTAStyle())
-    }
-}
-
 struct MetricsRow: View {
     let metrics: EfficiencyMetrics
     let currency: String
@@ -298,8 +260,10 @@ struct MetricsRow: View {
                 )
                 metricCard(
                     label: "Avg efficiency",
-                    value: metrics.avgEfficiency > 0 ? String(format: "%.1f L/100", metrics.avgEfficiency) : "—",
-                    helper: "\(metrics.refuelCount) refuels"
+                    value: metrics.avgEfficiency.map { String(format: "%.1f L/100", $0) } ?? "—",
+                    helper: metrics.efficiencySampleCount == 0
+                        ? "Needs two full-tank fills"
+                        : "\(metrics.efficiencySampleCount) valid interval\(metrics.efficiencySampleCount == 1 ? "" : "s")"
                 )
             }
             metricCard(
@@ -334,6 +298,7 @@ struct MetricsRow: View {
 
 struct RefuelRowView: View {
     let log: FuelLog
+    let unit: String
 
     var body: some View {
         HStack {
@@ -341,7 +306,7 @@ struct RefuelRowView: View {
                 Text(log.timestamp.formatted(date: .abbreviated, time: .omitted))
                     .font(VS.Typography.heading(14))
                     .foregroundStyle(VS.Color.textPrimary)
-                Text(String(format: "%.1f L · %@", log.fuelVolume, DistanceFormat.formatOdometer(log.odometerReading, unit: "km")))
+                Text(String(format: "%.1f L · %@", log.fuelVolume, DistanceFormat.formatOdometer(log.odometerReading, unit: unit)))
                     .font(VS.Typography.body(12))
                     .foregroundStyle(VS.Color.textTertiary)
             }

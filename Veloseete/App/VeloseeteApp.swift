@@ -1,13 +1,34 @@
 import SwiftUI
 import FirebaseCore
 import UIKit
+import UserNotifications
+
+final class VeloseeteAppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDelegate {
+    func application(
+        _ application: UIApplication,
+        didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
+    ) -> Bool {
+        UNUserNotificationCenter.current().delegate = self
+        return true
+    }
+
+    func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        willPresent notification: UNNotification,
+        withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
+    ) {
+        completionHandler([.banner, .sound])
+    }
+}
 
 @main
 struct VeloseeteApp: App {
+    @UIApplicationDelegateAdaptor(VeloseeteAppDelegate.self) private var appDelegate
     @StateObject private var authService = AuthService.shared
     @StateObject private var dataStore = DataStore.shared
     @StateObject private var tripPermissions = TripPermissionsManager()
     @StateObject private var tripPermissionsStore = TripPermissionsStore.shared
+    @StateObject private var profileAvatarStore = ProfileAvatarStore.shared
     private let tripRecorder = TripRecordingService.shared
     @State private var isShowingSplash = true
 
@@ -36,9 +57,13 @@ struct VeloseeteApp: App {
             .environmentObject(dataStore)
             .environmentObject(tripPermissions)
             .environmentObject(tripPermissionsStore)
+            .environmentObject(profileAvatarStore)
             .environmentObject(tripRecorder)
             .preferredColorScheme(.dark)
             .tint(VS.Color.accent)
+            .task(id: authService.userId) {
+                profileAvatarStore.load(userId: authService.userId)
+            }
         }
     }
 

@@ -136,7 +136,7 @@ struct AuthView: View {
             }
             .padding(.horizontal, 20)
         }
-        .background(Color.clear)
+        .veloseetePage()
         .sheet(isPresented: $showForgot) {
             forgotSheet
         }
@@ -181,15 +181,15 @@ struct AuthView: View {
                 Spacer()
             }
             .padding(20)
-            .background(VS.Color.bgPrimary)
+            .veloseetePage()
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button("Close") { showForgot = false }
-                        .foregroundStyle(VS.Color.accent)
+                    ModalCloseButton { showForgot = false }
                 }
             }
         }
         .presentationDetents([.medium])
+        .veloseeteSheet()
     }
 
     private func authField(

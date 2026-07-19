@@ -3,7 +3,7 @@ import CoreLocation
 import CoreMotion
 import Foundation
 import UIKit
-import UserNotifications
+@preconcurrency import UserNotifications
 
 enum TripRecordingPhase: Equatable {
     case idle
@@ -24,6 +24,7 @@ struct ActiveTripSnapshot: Equatable {
     var source: String
     var vehicleId: String
     var vehicleName: String
+    var route: [TripCoordinate]
 }
 
 struct PendingTripSave: Equatable {
@@ -49,6 +50,8 @@ final class TripRecordingService: NSObject, ObservableObject {
     @Published private(set) var phase: TripRecordingPhase = .idle
     @Published private(set) var autoTrackingEnabled = false
     @Published private(set) var snapshot: ActiveTripSnapshot?
+    @Published private(set) var liveRoute: [TripCoordinate] = []
+    @Published private(set) var lastLocationAccuracy: Double?
     @Published var pendingSave: PendingTripSave?
     @Published var lastError: String?
 
@@ -59,6 +62,7 @@ final class TripRecordingService: NSObject, ObservableObject {
 
     private var vehicleId: String?
     private var vehicleName: String = "Vehicle"
+    private var driverName: String = ""
     private var baseOdometer: Double = 0
     private var source: String = "manual"
     private var startedAt: Date?
@@ -67,7 +71,6 @@ final class TripRecordingService: NSObject, ObservableObject {
     private var isPaused = false
 
     private var lastLocation: CLLocation?
-    private var route: [TripCoordinate] = []
     private var distanceMeters: Double = 0
     private var maxSpeedMps: Double = 0
     private var automotiveSince: Date?
@@ -91,6 +94,10 @@ final class TripRecordingService: NSObject, ObservableObject {
         locationManager.pausesLocationUpdatesAutomatically = false
         locationManager.showsBackgroundLocationIndicator = true
         autoTrackingEnabled = UserDefaults.standard.bool(forKey: Keys.autoTracking)
+
+        // Recording sessions are not restored after a terminated app, so any
+        // surviving system activity would be stale while this service is idle.
+        TripLiveActivityController.shared.cancel()
     }
 
     private enum Keys {
@@ -99,10 +106,11 @@ final class TripRecordingService: NSObject, ObservableObject {
 
     // MARK: - Public API
 
-    func configure(vehicleId: String, vehicleName: String, currentOdometer: Double) {
+    func configure(vehicleId: String, vehicleName: String, currentOdometer: Double, driverName: String = "") {
         self.vehicleId = vehicleId
         self.vehicleName = vehicleName
         self.baseOdometer = currentOdometer
+        self.driverName = driverName.trimmingCharacters(in: .whitespacesAndNewlines)
         if phase == .watching {
             // Keep watching with new vehicle context
         }
@@ -153,6 +161,7 @@ final class TripRecordingService: NSObject, ObservableObject {
 
     func discardPending() {
         pendingSave = nil
+        liveRoute = []
         phase = autoTrackingEnabled ? .watching : .idle
         if autoTrackingEnabled { startWatchingIfNeeded() }
     }
@@ -188,7 +197,8 @@ final class TripRecordingService: NSObject, ObservableObject {
         pauseStartedAt = nil
         isPaused = false
         lastLocation = nil
-        route = []
+        liveRoute = []
+        lastLocationAccuracy = nil
         distanceMeters = 0
         maxSpeedMps = 0
         automotiveSince = nil
@@ -202,8 +212,8 @@ final class TripRecordingService: NSObject, ObservableObject {
         let start = startedAt ?? Date()
         TripLiveActivityController.shared.start(vehicleName: vehicleName, startedAt: start)
         scheduleDriveNotification(
-            title: "Drive started",
-            body: "Veloseete is tracking \(vehicleName)."
+            title: personalized("your drive is now being tracked"),
+            body: "\(vehicleName) started \(source == "auto" ? "automatically" : "manually"). Keep Veloseete running in the background—your route, distance and time are recording."
         )
         publishSnapshot()
         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
@@ -238,6 +248,10 @@ final class TripRecordingService: NSObject, ObservableObject {
             lastError = autoEnded
                 ? "Short movement ignored (< \(String(format: "%.1f", minSaveDistanceKm)) km)."
                 : "Drive too short to save. Need at least \(String(format: "%.1f", minSaveDistanceKm)) km."
+            scheduleDriveNotification(
+                title: personalized("this drive wasn’t saved"),
+                body: String(format: "%@ recorded %.1f km, below the %.1f km minimum. Your odometer was not changed.", vehicleName, distanceKm, minSaveDistanceKm)
+            )
             resetSession()
             phase = autoTrackingEnabled ? .watching : .idle
             if autoTrackingEnabled { startWatchingIfNeeded() }
@@ -253,9 +267,9 @@ final class TripRecordingService: NSObject, ObservableObject {
             durationSec: duration,
             avgSpeedKmh: avgSpeed,
             maxSpeedKmh: maxSpeed,
-            startCoordinate: route.first,
-            endCoordinate: route.last,
-            route: downsample(route),
+            startCoordinate: liveRoute.first,
+            endCoordinate: liveRoute.last,
+            route: downsample(liveRoute),
             source: source,
             suggestedOdometer: baseOdometer + distanceKm
         )
@@ -265,9 +279,10 @@ final class TripRecordingService: NSObject, ObservableObject {
         resetSession()
 
         scheduleDriveNotification(
-            title: "Drive ready",
-            body: String(format: "%.1f km recorded — confirm to update odometer.", distanceKm)
+            title: personalized("your drive is ready to review"),
+            body: String(format: "%@ tracked %.1f km in %@. Open Veloseete to confirm and save it.", vehicleName, distanceKm, durationText(duration))
         )
+
         UINotificationFeedbackGenerator().notificationOccurred(.success)
 
         if autoTrackingEnabled {
@@ -281,7 +296,6 @@ final class TripRecordingService: NSObject, ObservableObject {
         pauseStartedAt = nil
         isPaused = false
         lastLocation = nil
-        route = []
         distanceMeters = 0
         maxSpeedMps = 0
         automotiveSince = nil
@@ -290,6 +304,16 @@ final class TripRecordingService: NSObject, ObservableObject {
     }
 
     private func beginLocationUpdates(background: Bool) {
+        if phase == .recording {
+            locationManager.desiredAccuracy = kCLLocationAccuracyBestForNavigation
+            locationManager.distanceFilter = 8
+            locationManager.pausesLocationUpdatesAutomatically = false
+        } else {
+            // Background auto-detection does not need turn-by-turn precision.
+            locationManager.desiredAccuracy = kCLLocationAccuracyHundredMeters
+            locationManager.distanceFilter = 100
+            locationManager.pausesLocationUpdatesAutomatically = true
+        }
         locationManager.allowsBackgroundLocationUpdates = background
             && (locationManager.authorizationStatus == .authorizedAlways
                 || locationManager.authorizationStatus == .authorizedWhenInUse)
@@ -351,7 +375,8 @@ final class TripRecordingService: NSObject, ObservableObject {
     }
 
     private func ingest(_ location: CLLocation) {
-        guard location.horizontalAccuracy >= 0, location.horizontalAccuracy <= 45 else { return }
+        guard TripTrackingLogic.accepts(horizontalAccuracy: location.horizontalAccuracy) else { return }
+        lastLocationAccuracy = location.horizontalAccuracy
 
         if phase == .watching {
             let speedKmh = max(0, location.speed) * 3.6
@@ -368,12 +393,12 @@ final class TripRecordingService: NSObject, ObservableObject {
 
         guard phase == .recording, !isPaused else { return }
 
+        let acceptedSegment: Double
         if let last = lastLocation {
-            let delta = location.distance(from: last)
-            let dt = location.timestamp.timeIntervalSince(last.timestamp)
-            if delta > 2, delta < 200, dt > 0, dt < 30 {
-                distanceMeters += delta
-            }
+            acceptedSegment = TripTrackingLogic.acceptedSegmentDistance(from: last, to: location)
+            distanceMeters += acceptedSegment
+        } else {
+            acceptedSegment = 0
         }
 
         let speed = max(0, location.speed)
@@ -393,8 +418,15 @@ final class TripRecordingService: NSObject, ObservableObject {
 
         lastLocation = location
         let point = TripCoordinate(latitude: location.coordinate.latitude, longitude: location.coordinate.longitude)
-        if route.last != point {
-            route.append(point)
+        // Keep the route and its distance calculation on the same acceptance path.
+        // Previously rejected GPS jumps still appeared as sharp spikes on the map.
+        let shouldAppendRoutePoint = liveRoute.isEmpty || acceptedSegment > 0
+        let updatedRoute = shouldAppendRoutePoint
+            ? TripTrackingLogic.appending(point, to: liveRoute)
+            : liveRoute
+        if updatedRoute.count != liveRoute.count {
+            liveRoute = updatedRoute
+            print("[TripRoute] accepted point \(liveRoute.count), accuracy \(Int(location.horizontalAccuracy))m")
         }
         publishSnapshot()
         updateLiveActivity(force: false)
@@ -419,11 +451,12 @@ final class TripRecordingService: NSObject, ObservableObject {
             currentSpeedKmh: max(0, (lastLocation?.speed ?? 0) * 3.6),
             maxSpeedKmh: maxSpeedMps * 3.6,
             avgSpeedKmh: avg,
-            routePointCount: route.count,
+            routePointCount: liveRoute.count,
             isPaused: isPaused,
             source: source,
             vehicleId: vehicleId ?? "",
-            vehicleName: vehicleName
+            vehicleName: vehicleName,
+            route: liveRoute
         )
     }
 
@@ -442,37 +475,63 @@ final class TripRecordingService: NSObject, ObservableObject {
     }
 
     private func downsample(_ points: [TripCoordinate]) -> [TripCoordinate] {
-        guard points.count > 200 else { return points }
-        let step = max(1, points.count / 180)
-        var reduced: [TripCoordinate] = []
-        for (idx, point) in points.enumerated() where idx % step == 0 {
-            reduced.append(point)
-        }
-        if let last = points.last, reduced.last != last {
-            reduced.append(last)
-        }
-        return reduced
+        TripTrackingLogic.downsample(points)
     }
 
     private func scheduleDriveNotification(title: String, body: String) {
-        let content = UNMutableNotificationContent()
-        content.title = title
-        content.body = body
-        content.sound = .default
-        let request = UNNotificationRequest(
-            identifier: "trip-\(UUID().uuidString)",
-            content: content,
-            trigger: nil
-        )
-        UNUserNotificationCenter.current().add(request, withCompletionHandler: nil)
+        let center = UNUserNotificationCenter.current()
+        center.getNotificationSettings { settings in
+            let deliver: () -> Void = {
+                let content = UNMutableNotificationContent()
+                content.title = title
+                content.body = body
+                content.sound = .default
+                content.categoryIdentifier = "TRIP_STATUS"
+                let request = UNNotificationRequest(
+                    identifier: "trip-\(UUID().uuidString)",
+                    content: content,
+                    trigger: UNTimeIntervalNotificationTrigger(timeInterval: 0.2, repeats: false)
+                )
+                center.add(request) { error in
+                    if let error { print("[TripNotification] delivery failed: \(error)") }
+                }
+            }
+
+            switch settings.authorizationStatus {
+            case .authorized, .provisional, .ephemeral:
+                deliver()
+            case .notDetermined:
+                center.requestAuthorization(options: [.alert, .sound, .badge]) { granted, error in
+                    if granted { deliver() }
+                    if let error { print("[TripNotification] authorization failed: \(error)") }
+                }
+            case .denied:
+                print("[TripNotification] notifications are disabled in Settings")
+            @unknown default:
+                break
+            }
+        }
+    }
+
+    private func personalized(_ message: String) -> String {
+        driverName.isEmpty
+            ? message.prefix(1).uppercased() + String(message.dropFirst())
+            : "\(driverName), \(message)"
+    }
+
+    private func durationText(_ seconds: TimeInterval) -> String {
+        let minutes = max(1, Int(seconds / 60))
+        if minutes < 60 { return "\(minutes) min" }
+        return "\(minutes / 60) hr \(minutes % 60) min"
     }
 }
 
 extension TripRecordingService: CLLocationManagerDelegate {
     nonisolated func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
-        guard let location = locations.last else { return }
         Task { @MainActor in
-            self.ingest(location)
+            for location in locations.sorted(by: { $0.timestamp < $1.timestamp }) {
+                self.ingest(location)
+            }
         }
     }
 

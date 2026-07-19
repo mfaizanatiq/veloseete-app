@@ -15,6 +15,7 @@ enum VS {
         static let success = SwiftUI.Color(hex: 0x4ADE80)
         static let error = SwiftUI.Color(hex: 0xF87171)
         static let warning = SwiftUI.Color(hex: 0xFBBF24)
+        static let routeEnd = SwiftUI.Color(hex: 0xFF6B4A)
         static let navPill = SwiftUI.Color(hex: 0x020206)
         static let navActive = SwiftUI.Color(hex: 0x101012)
         /// web `bg-white/5`
@@ -23,6 +24,9 @@ enum VS {
         static let hairline = SwiftUI.Color.white.opacity(0.10)
         static let hairlineStrong = SwiftUI.Color.white.opacity(0.14)
         static let sheen = SwiftUI.Color.white.opacity(0.08)
+        static let divider = SwiftUI.Color.white.opacity(0.08)
+        static let chip = SwiftUI.Color.white.opacity(0.06)
+        static let controlDisabled = SwiftUI.Color.white.opacity(0.04)
     }
 
     enum Radius {
@@ -40,6 +44,8 @@ enum VS {
         static let sm: CGFloat = 12
         static let md: CGFloat = 16
         static let lg: CGFloat = 24
+        static let pageInset: CGFloat = 16
+        static let sheetInset: CGFloat = 20
     }
 
     enum Typography {
@@ -205,6 +211,63 @@ struct PrimaryCTAStyle: ButtonStyle {
     }
 }
 
+/// Canonical Veloseete primary action. Fuel established this visual language;
+/// every feature uses this component instead of recreating a lime button.
+struct PrimaryCTAButton: View {
+    let title: String
+    var icon: VSIconName? = nil
+    var isLoading = false
+    var isEnabled = true
+    var action: () -> Void
+
+    init(
+        title: String = "+ Add Refuel",
+        icon: VSIconName? = .gasPump,
+        isLoading: Bool = false,
+        isEnabled: Bool = true,
+        action: @escaping () -> Void
+    ) {
+        self.title = title
+        self.icon = icon
+        self.isLoading = isLoading
+        self.isEnabled = isEnabled
+        self.action = action
+    }
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 12) {
+                if isLoading {
+                    ProgressView().tint(VS.Color.navPill)
+                } else if let icon {
+                    VSIcon(icon: icon, size: 22, weight: .fill, tint: VS.Color.navPill)
+                }
+                Text(title)
+                    .font(VS.Typography.heading(18))
+            }
+            .foregroundStyle(VS.Color.navPill)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 16)
+            .background(
+                RoundedRectangle(cornerRadius: VS.Radius.card, style: .continuous)
+                    .fill(VS.Color.accent.opacity(isEnabled ? 1 : 0.35))
+                    .overlay {
+                        RoundedRectangle(cornerRadius: VS.Radius.card, style: .continuous)
+                            .fill(
+                                LinearGradient(
+                                    colors: [Color.white.opacity(isEnabled ? 0.25 : 0.08), .clear],
+                                    startPoint: .top,
+                                    endPoint: .center
+                                )
+                            )
+                    }
+            )
+        }
+        .buttonStyle(PrimaryCTAStyle())
+        .disabled(!isEnabled || isLoading)
+    }
+}
+
 extension View {
     func glassCard(radius: CGFloat = VS.Radius.card, elevated: Bool = false, bordered: Bool = true) -> some View {
         modifier(GlassCard(cornerRadius: radius, elevated: elevated, bordered: bordered))
@@ -216,6 +279,18 @@ extension View {
 
     func vsInputField(focused: Bool = false) -> some View {
         modifier(VSInputField(focused: focused))
+    }
+
+    /// Standard atmospheric surface for every full-screen app destination.
+    func veloseetePage() -> some View {
+        background { VeloseeteBackground() }
+    }
+
+    /// Standard presentation chrome shared by all sheets and modals.
+    func veloseeteSheet() -> some View {
+        presentationBackground(VS.Color.bgPrimary)
+            .presentationCornerRadius(VS.Radius.sheet)
+            .presentationDragIndicator(.visible)
     }
 }
 
@@ -279,5 +354,21 @@ struct VeloseeteBackground: View {
             .allowsHitTesting(false)
             .blendMode(.overlay)
         }
+    }
+}
+
+/// Canonical dismissal control for read-only sheets and modal destinations.
+struct ModalCloseButton: View {
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            VSIcon(icon: .x, size: 15, weight: .bold, tint: VS.Color.textSecondary)
+                .frame(width: 36, height: 36)
+                .background(.ultraThinMaterial, in: Circle())
+                .overlay(Circle().stroke(Color.white.opacity(0.12), lineWidth: 1))
+        }
+        .buttonStyle(ScaleButtonStyle())
+        .accessibilityLabel("Close")
     }
 }

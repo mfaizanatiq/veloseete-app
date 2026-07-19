@@ -1,440 +1,538 @@
 import SwiftUI
 
-private enum TripPermissionStep: Int, CaseIterable {
-    case intro
-    case location
-    case motion
-    case notifications
-
-    var title: String {
-        switch self {
-        case .intro:
-            return "Set up trip tracking"
-        case .location:
-            return "Enable location"
-        case .motion:
-            return "Enable motion"
-        case .notifications:
-            return "Enable alerts"
-        }
-    }
-
-    var icon: VSIconName {
-        switch self {
-        case .intro:
-            return .roadHorizon
-        case .location:
-            return .mapPin
-        case .motion:
-            return .personSimpleRun
-        case .notifications:
-            return .bellRinging
-        }
-    }
+private enum OnboardingPage: Int, CaseIterable {
+    case drives
+    case insights
+    case permissions
 }
 
 struct TripPermissionsOnboardingView: View {
     @EnvironmentObject private var permissions: TripPermissionsManager
     @EnvironmentObject private var permissionsStore: TripPermissionsStore
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    var onComplete: (() -> Void)? = nil
+    var onComplete: (() -> Void)?
 
-    @State private var step: TripPermissionStep = .intro
+    @State private var page: OnboardingPage
+    @State private var routeProgress: CGFloat = 0
+    @State private var routeArrival = false
+    @State private var insightProgress: Double = 0
+    @State private var insightArrival = false
+
+    init(startAtPermissions: Bool = false, onComplete: (() -> Void)? = nil) {
+        self.onComplete = onComplete
+        _page = State(initialValue: startAtPermissions ? .permissions : .drives)
+    }
 
     var body: some View {
         ZStack {
             VeloseeteBackground()
+            ambientGlow
 
             VStack(spacing: 0) {
-                header
+                topBar
 
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 22) {
-                        hero
-                        stepBody
-                        statusList
+                Group {
+                    switch page {
+                    case .drives:
+                        valuePage(
+                            eyebrow: "YOUR CAR, REMEMBERED",
+                            title: "Every drive tells\na story.",
+                            subtitle: "Veloseete turns everyday trips into a living history of your car — without the admin.",
+                            visual: AnyView(routeVisual)
+                        )
+                    case .insights:
+                        valuePage(
+                            eyebrow: "LESS GUESSING. MORE GOING.",
+                            title: "Know your car.\nEnjoy the drive.",
+                            subtitle: "See distance, fuel rhythm and recent routes together, so the useful stuff is ready when you need it.",
+                            visual: AnyView(insightVisual)
+                        )
+                    case .permissions:
+                        permissionsPage
                     }
-                    .padding(.horizontal, 20)
-                    .padding(.top, 14)
-                    .padding(.bottom, 140)
                 }
-            }
+                .id(page)
+                .transition(.asymmetric(
+                    insertion: .move(edge: .trailing).combined(with: .opacity),
+                    removal: .move(edge: .leading).combined(with: .opacity)
+                ))
 
-            VStack {
-                Spacer()
-                actionBar
+                bottomBar
             }
         }
         .onAppear {
             permissions.refreshStatuses()
+            animateCurrentPage()
         }
+        .onChange(of: page) { _, _ in animateCurrentPage() }
         .onChange(of: scenePhase) { _, phase in
-            if phase == .active {
-                permissions.refreshStatuses()
-            }
+            if phase == .active { permissions.refreshStatuses() }
         }
     }
 
-    private var header: some View {
-        HStack {
-            Text("Veloseete")
-                .font(VS.Typography.heading(20, weight: .bold))
-                .foregroundStyle(VS.Color.textPrimary)
+    private var ambientGlow: some View {
+        Circle()
+            .fill(VS.Color.accent.opacity(0.10))
+            .frame(width: 330, height: 330)
+            .blur(radius: 90)
+            .offset(x: 170, y: page == .permissions ? 250 : -170)
+            .animation(.easeInOut(duration: 0.7), value: page)
+            .allowsHitTesting(false)
+    }
+
+    private var topBar: some View {
+        HStack(spacing: 14) {
+            Image("VeloseeteMark")
+                .resizable()
+                .scaledToFit()
+                .frame(width: 30, height: 30)
+                .accessibilityHidden(true)
+
             Spacer()
-            Text("\(step.rawValue + 1) of \(TripPermissionStep.allCases.count)")
-                .font(VS.Typography.body(12, weight: .semibold))
-                .foregroundStyle(VS.Color.textTertiary)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 7)
-                .background(Color.white.opacity(0.06), in: Capsule())
+
+            HStack(spacing: 6) {
+                ForEach(OnboardingPage.allCases, id: \.rawValue) { item in
+                    Capsule()
+                        .fill(item == page ? VS.Color.accent : Color.white.opacity(0.16))
+                        .frame(width: item == page ? 24 : 7, height: 7)
+                }
+            }
+            .animation(.spring(response: 0.35, dampingFraction: 0.82), value: page)
+
+            if page != .permissions {
+                Button("Skip") { goToPermissions() }
+                    .font(VS.Typography.body(13, weight: .semibold))
+                    .foregroundStyle(VS.Color.textSecondary)
+                    .frame(width: 44, alignment: .trailing)
+            } else {
+                Color.clear.frame(width: 44, height: 1)
+            }
         }
-        .padding(.horizontal, 20)
-        .padding(.top, 16)
+        .padding(.horizontal, 22)
+        .padding(.top, 14)
         .padding(.bottom, 8)
     }
 
-    private var hero: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            HStack {
-                ZStack {
-                    Circle()
-                        .fill(VS.Color.accent.opacity(0.14))
-                        .frame(width: 64, height: 64)
-                    VSIcon(icon: step.icon, size: 34, weight: .duotone, tint: VS.Color.accent)
-                }
-                Spacer()
-                progressDots
-            }
+    private func valuePage(
+        eyebrow: String,
+        title: String,
+        subtitle: String,
+        visual: AnyView
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Spacer(minLength: 8)
+            visual
+                .frame(maxWidth: .infinity)
+                .frame(height: 315)
 
-            VStack(alignment: .leading, spacing: 8) {
-                Text(step.title)
-                    .font(VS.Typography.heading(30, weight: .bold))
-                    .foregroundStyle(VS.Color.textPrimary)
-                Text(stepSubtitle)
-                    .font(VS.Typography.body(15))
-                    .foregroundStyle(VS.Color.textSecondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
+            Spacer(minLength: 16)
+
+            Text(eyebrow)
+                .font(VS.Typography.body(11, weight: .bold))
+                .tracking(1.5)
+                .foregroundStyle(VS.Color.accent)
+
+            Text(title)
+                .font(VS.Typography.heading(39, weight: .bold))
+                .tracking(-1.2)
+                .foregroundStyle(VS.Color.textPrimary)
+                .padding(.top, 10)
+
+            Text(subtitle)
+                .font(VS.Typography.body(15))
+                .foregroundStyle(VS.Color.textSecondary)
+                .lineSpacing(4)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.top, 12)
         }
-        .padding(18)
+        .padding(.horizontal, 24)
+        .padding(.bottom, 10)
+    }
+
+    private var routeVisual: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 38, style: .continuous)
+                .fill(Color.white.opacity(0.035))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 38, style: .continuous)
+                        .stroke(VS.Color.divider, lineWidth: 1)
+                }
+                .rotationEffect(.degrees(-3))
+
+            Path { path in
+                path.move(to: CGPoint(x: 52, y: 252))
+                path.addCurve(
+                    to: CGPoint(x: 280, y: 62),
+                    control1: CGPoint(x: 94, y: 135),
+                    control2: CGPoint(x: 222, y: 206)
+                )
+            }
+            .trim(from: 0, to: routeProgress * 0.98)
+            .stroke(
+                VS.Color.accent,
+                style: StrokeStyle(lineWidth: 5, lineCap: .round, dash: [2, 13])
+            )
+            .shadow(color: VS.Color.accent.opacity(0.45), radius: 10)
+
+            visualPin(icon: .car, label: "YOU", alignment: .bottomLeading)
+                .scaleEffect(routeArrival ? 1 : 0.82)
+                .opacity(routeArrival ? 1 : 0)
+            visualPin(icon: .target, label: "48.2 KM", alignment: .topTrailing)
+                .scaleEffect(routeArrival ? 1 : 0.82)
+                .opacity(routeArrival ? 1 : 0)
+
+            Text("DRIVE LOGGED")
+                .font(VS.Typography.body(10, weight: .bold))
+                .tracking(1.2)
+                .foregroundStyle(VS.Color.navPill)
+                .padding(.horizontal, 13)
+                .padding(.vertical, 9)
+                .background(VS.Color.accent, in: Capsule())
+                .rotationEffect(.degrees(5))
+                .offset(x: 62, y: 22)
+                .scaleEffect(routeArrival ? 1 : 0.7)
+                .opacity(routeArrival ? 1 : 0)
+        }
+    }
+
+    private func visualPin(icon: VSIconName, label: String, alignment: Alignment) -> some View {
+        VStack(spacing: 7) {
+            VSIcon(icon: icon, size: 25, weight: .fill, tint: VS.Color.navPill)
+                .frame(width: 54, height: 54)
+                .background(VS.Color.accent, in: Circle())
+                .shadow(color: VS.Color.accent.opacity(0.30), radius: 14)
+            Text(label)
+                .font(VS.Typography.body(10, weight: .bold))
+                .tracking(1)
+                .foregroundStyle(VS.Color.textSecondary)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: alignment)
+        .padding(26)
+    }
+
+    private var insightVisual: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 38, style: .continuous)
+                .fill(Color.white.opacity(0.035))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 38, style: .continuous)
+                        .stroke(VS.Color.divider, lineWidth: 1)
+                }
+                .rotationEffect(.degrees(2))
+
+            VStack(spacing: 12) {
+                HStack(spacing: 12) {
+                    insightTile(icon: .gauge, value: "\(Int(612 * insightProgress))", label: "KM THIS MONTH", tint: VS.Color.accent)
+                    insightTile(icon: .gasPump, value: String(format: "%.1f", 7.4 * insightProgress), label: "L / 100 KM", tint: VS.Color.accentSecondary)
+                }
+                HStack(spacing: 10) {
+                    VSIcon(icon: .wrench, size: 21, weight: .regular, tint: VS.Color.accent)
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("Next service in 1,840 km")
+                            .font(VS.Typography.heading(14))
+                            .foregroundStyle(VS.Color.textPrimary)
+                        Text("You’re comfortably on track")
+                            .font(VS.Typography.body(11))
+                            .foregroundStyle(VS.Color.textTertiary)
+                    }
+                    Spacer()
+                    Text("NICE")
+                        .font(VS.Typography.body(9, weight: .bold))
+                        .tracking(1)
+                        .foregroundStyle(VS.Color.navPill)
+                        .padding(.horizontal, 9)
+                        .padding(.vertical, 6)
+                        .background(VS.Color.accent, in: Capsule())
+                }
+                .padding(16)
+                .glassCard()
+                .offset(y: insightArrival ? 0 : 16)
+                .opacity(insightArrival ? 1 : 0)
+            }
+            .padding(24)
+        }
+    }
+
+    private func insightTile(icon: VSIconName, value: String, label: String, tint: Color) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            VSIcon(icon: icon, size: 22, weight: .regular, tint: tint)
+            Spacer()
+            Text(value)
+                .font(VS.Typography.heading(28, weight: .bold))
+                .foregroundStyle(VS.Color.textPrimary)
+            Text(label)
+                .font(VS.Typography.body(9, weight: .bold))
+                .tracking(0.8)
+                .foregroundStyle(VS.Color.textTertiary)
+        }
+        .frame(maxWidth: .infinity, minHeight: 126, alignment: .leading)
+        .padding(16)
         .glassCard(elevated: true)
     }
 
-    private var progressDots: some View {
-        HStack(spacing: 6) {
-            ForEach(TripPermissionStep.allCases, id: \.rawValue) { item in
-                Capsule()
-                    .fill(item.rawValue <= step.rawValue ? VS.Color.accent : Color.white.opacity(0.14))
-                    .frame(width: item == step ? 22 : 7, height: 7)
-                    .animation(.spring(response: 0.3, dampingFraction: 0.85), value: step)
+    private func animateCurrentPage() {
+        if reduceMotion {
+            routeProgress = 1
+            routeArrival = true
+            insightProgress = 1
+            insightArrival = true
+            return
+        }
+
+        switch page {
+        case .drives:
+            routeProgress = 0
+            routeArrival = false
+            withAnimation(.easeInOut(duration: 1.05)) { routeProgress = 1 }
+            withAnimation(.spring(response: 0.5, dampingFraction: 0.68).delay(0.72)) {
+                routeArrival = true
             }
+        case .insights:
+            insightProgress = 0
+            insightArrival = false
+            withAnimation(.easeOut(duration: 0.9)) { insightProgress = 1 }
+            withAnimation(.spring(response: 0.55, dampingFraction: 0.78).delay(0.35)) {
+                insightArrival = true
+            }
+        case .permissions:
+            break
         }
     }
 
-    @ViewBuilder
-    private var stepBody: some View {
-        switch step {
-        case .intro:
-            VStack(alignment: .leading, spacing: 12) {
-                permissionCard(
-                    icon: .target,
-                    title: "Accurate kilometers",
-                    body: "Veloseete will use trips to keep distance, routes, and efficiency honest."
-                )
-                permissionCard(
-                    icon: .heartStraight,
-                    title: "Built for control",
-                    body: "You can skip now, enable later, or change permissions from iPhone Settings anytime."
-                )
+    private var permissionsPage: some View {
+        ScrollView(showsIndicators: false) {
+            VStack(alignment: .leading, spacing: 22) {
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("ONE LAST PIT STOP")
+                        .font(VS.Typography.body(11, weight: .bold))
+                        .tracking(1.5)
+                        .foregroundStyle(VS.Color.accent)
+                    Text("Make the magic\nwork.")
+                        .font(VS.Typography.heading(38, weight: .bold))
+                        .tracking(-1.1)
+                        .foregroundStyle(VS.Color.textPrimary)
+                    Text("Switch on what you’re comfortable with. Each one has a clear job — and you stay in control.")
+                        .font(VS.Typography.body(15))
+                        .foregroundStyle(VS.Color.textSecondary)
+                        .lineSpacing(4)
+                }
+
+                VStack(spacing: 0) {
+                    permissionRow(
+                        icon: .mapPin,
+                        title: "Location",
+                        detail: locationDetail,
+                        state: locationControlState,
+                        action: handleLocationAction
+                    )
+                    divider
+                    permissionRow(
+                        icon: .personSimpleRun,
+                        title: "Motion",
+                        detail: "Knows a drive from a walk",
+                        state: motionControlState,
+                        action: handleMotionAction
+                    )
+                    divider
+                    permissionRow(
+                        icon: .bell,
+                        title: "Notifications",
+                        detail: "Confirms trips at the right moment",
+                        state: notificationControlState,
+                        action: handleNotificationAction
+                    )
+                }
+                .glassCard(elevated: true)
+
+                HStack(spacing: 8) {
+                    VSIcon(icon: .eye, size: 16, weight: .regular, tint: VS.Color.textTertiary)
+                    Text("No ads. No selling your movement. Change access anytime in Settings.")
+                        .font(VS.Typography.body(11))
+                        .foregroundStyle(VS.Color.textTertiary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .padding(.horizontal, 4)
             }
-        case .location:
-            VStack(alignment: .leading, spacing: 12) {
-                permissionCard(
-                    icon: .navigationArrow,
-                    title: "When In Use first",
-                    body: "We ask while the app is open before upgrading to background detection."
-                )
-                permissionCard(
-                    icon: .mapPin,
-                    title: "Always for background drives",
-                    body: "Always location lets future smart tracking keep counting kilometers after you leave the app."
-                )
-            }
-        case .motion:
-            permissionCard(
-                icon: .personSimpleRun,
-                title: "Fewer false starts",
-                body: "Motion helps Veloseete tell driving apart from walking or idle time."
-            )
-        case .notifications:
-            permissionCard(
-                icon: .bell,
-                title: "Trip prompts",
-                body: "Alerts prepare Veloseete to ask when a drive starts or needs odometer confirmation."
-            )
+            .padding(.horizontal, 22)
+            .padding(.top, 22)
+            .padding(.bottom, 20)
         }
     }
 
-    private var statusList: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            statusRow(
-                icon: .mapPin,
-                title: "Location",
-                status: locationStatusText,
-                ready: permissions.locationStatus == .always
-            )
-            statusRow(
-                icon: .personSimpleRun,
-                title: "Motion",
-                status: motionStatusText,
-                ready: permissions.motionStatus.isReady
-            )
-            statusRow(
-                icon: .bell,
-                title: "Notifications",
-                status: notificationStatusText,
-                ready: permissions.notificationStatus.isReady
-            )
-        }
-        .padding(14)
-        .glassCard()
+    private var divider: some View {
+        Rectangle()
+            .fill(VS.Color.divider)
+            .frame(height: 1)
+            .padding(.leading, 72)
     }
 
-    private var actionBar: some View {
+    private enum PermissionControlState {
+        case off
+        case partial
+        case on
+        case settings
+    }
+
+    private func permissionRow(
+        icon: VSIconName,
+        title: String,
+        detail: String,
+        state: PermissionControlState,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            HStack(spacing: 14) {
+                VSIcon(icon: icon, size: 22, weight: .regular, tint: state == .on ? VS.Color.navPill : VS.Color.accent)
+                    .frame(width: 46, height: 46)
+                    .background(state == .on ? VS.Color.accent : VS.Color.accent.opacity(0.10), in: RoundedRectangle(cornerRadius: 15, style: .continuous))
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(title)
+                        .font(VS.Typography.heading(15))
+                        .foregroundStyle(VS.Color.textPrimary)
+                    Text(detail)
+                        .font(VS.Typography.body(11))
+                        .foregroundStyle(state == .settings ? VS.Color.warning : VS.Color.textTertiary)
+                        .lineLimit(2)
+                }
+
+                Spacer(minLength: 8)
+                permissionSwitch(state)
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 13)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityValue(accessibilityValue(for: state))
+    }
+
+    private func permissionSwitch(_ state: PermissionControlState) -> some View {
+        ZStack(alignment: state == .off || state == .settings ? .leading : .trailing) {
+            Capsule()
+                .fill(state == .on ? VS.Color.accent : state == .partial ? VS.Color.warning : Color.white.opacity(0.13))
+                .frame(width: 50, height: 30)
+            Circle()
+                .fill(state == .on ? VS.Color.navPill : Color.white)
+                .frame(width: 24, height: 24)
+                .padding(3)
+        }
+        .overlay {
+            if state == .partial {
+                Text("1×")
+                    .font(.system(size: 8, weight: .bold))
+                    .foregroundStyle(VS.Color.navPill)
+                    .offset(x: -9)
+            }
+        }
+        .animation(.spring(response: 0.3, dampingFraction: 0.78), value: String(describing: state))
+    }
+
+    private var bottomBar: some View {
         VStack(spacing: 10) {
-            Button(primaryButtonTitle) {
-                handlePrimaryAction()
+            PrimaryCTAButton(
+                title: page == .permissions ? "Start exploring" : "Keep going",
+                icon: page == .permissions ? .checkCircle : nil
+            ) {
+                if page == .permissions { complete() } else { advance() }
             }
-            .font(VS.Typography.heading(17))
-            .foregroundStyle(VS.Color.navPill)
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 16)
-            .background(VS.Color.accent, in: RoundedRectangle(cornerRadius: VS.Radius.card, style: .continuous))
-            .buttonStyle(ScaleButtonStyle())
 
-            Button(secondaryButtonTitle) {
-                handleSecondaryAction()
+            if page == .permissions {
+                Button("I’ll do this later") { complete() }
+                    .font(VS.Typography.body(13, weight: .semibold))
+                    .foregroundStyle(VS.Color.textSecondary)
             }
-            .font(VS.Typography.body(14, weight: .semibold))
-            .foregroundStyle(VS.Color.textSecondary)
         }
-        .padding(.horizontal, 20)
-        .padding(.top, 16)
-        .padding(.bottom, 24)
+        .padding(.horizontal, 22)
+        .padding(.top, 12)
+        .padding(.bottom, 18)
         .background(
             LinearGradient(
-                colors: [.clear, VS.Color.bgPrimary.opacity(0.95), VS.Color.bgPrimary],
+                colors: [.clear, VS.Color.bgPrimary.opacity(0.96), VS.Color.bgPrimary],
                 startPoint: .top,
-                endPoint: .bottom
+                endPoint: .center
             )
             .ignoresSafeArea()
         )
     }
 
-    private func permissionCard(icon: VSIconName, title: String, body: String) -> some View {
-        HStack(alignment: .top, spacing: 12) {
-            VSIcon(icon: icon, size: 22, weight: .regular, tint: VS.Color.accent)
-                .frame(width: 34, height: 34)
-                .background(VS.Color.accent.opacity(0.10), in: Circle())
-
-            VStack(alignment: .leading, spacing: 5) {
-                Text(title)
-                    .font(VS.Typography.heading(15))
-                    .foregroundStyle(VS.Color.textPrimary)
-                Text(body)
-                    .font(VS.Typography.body(13))
-                    .foregroundStyle(VS.Color.textSecondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-        }
-        .padding(14)
-        .glassCard()
-    }
-
-    private func statusRow(icon: VSIconName, title: String, status: String, ready: Bool) -> some View {
-        HStack(spacing: 12) {
-            VSIcon(icon: icon, size: 18, weight: .regular, tint: ready ? VS.Color.accent : VS.Color.textTertiary)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title)
-                    .font(VS.Typography.body(13, weight: .semibold))
-                    .foregroundStyle(VS.Color.textPrimary)
-                Text(status)
-                    .font(VS.Typography.body(12))
-                    .foregroundStyle(VS.Color.textTertiary)
-            }
-            Spacer()
-            VSIcon(
-                icon: ready ? .checkCircle : .warningCircle,
-                size: 20,
-                weight: ready ? .fill : .regular,
-                tint: ready ? VS.Color.accent : VS.Color.warning
-            )
-        }
-    }
-
-    private var stepSubtitle: String {
-        switch step {
-        case .intro:
-            return "A few permissions make future automatic trip tracking accurate without extra typing."
-        case .location:
-            return "Location powers route distance and background drive detection when trip tracking is enabled."
-        case .motion:
-            return "Motion keeps trip starts smarter, so a walk or quick stop does not become a drive."
-        case .notifications:
-            return "Notifications prepare the app to confirm detected drives and keep Live Activity prompts visible."
-        }
-    }
-
-    private var primaryButtonTitle: String {
-        switch step {
-        case .intro:
-            return "Continue"
-        case .location:
-            switch permissions.locationStatus {
-            case .notDetermined:
-                return "Enable location"
-            case .whenInUse:
-                return "Enable background tracking"
-            case .always:
-                return "Continue"
-            case .denied, .restricted:
-                return "Open Settings"
-            }
-        case .motion:
-            switch permissions.motionStatus {
-            case .notDetermined:
-                return "Enable motion"
-            case .denied, .restricted:
-                return "Open Settings"
-            case .authorized, .unavailable:
-                return "Continue"
-            }
-        case .notifications:
-            switch permissions.notificationStatus {
-            case .notDetermined:
-                return "Enable notifications"
-            case .denied:
-                return "Open Settings"
-            case .authorized, .provisional, .ephemeral:
-                return "Finish setup"
-            }
-        }
-    }
-
-    private var secondaryButtonTitle: String {
-        step == .notifications ? "Not now" : "Skip for now"
-    }
-
-    private var locationStatusText: String {
+    private var locationDetail: String {
         switch permissions.locationStatus {
-        case .notDetermined:
-            return "Not requested"
-        case .whenInUse:
-            return "Allowed while using"
-        case .always:
-            return "Ready for background trips"
-        case .denied:
-            return "Denied"
-        case .restricted:
-            return "Restricted"
+        case .whenInUse: return "Tap again for automatic background trips"
+        case .always: return "Logs route and distance automatically"
+        case .denied, .restricted: return "Open Settings to allow access"
+        case .notDetermined: return "Logs route and distance automatically"
         }
     }
 
-    private var motionStatusText: String {
+    private var locationControlState: PermissionControlState {
+        switch permissions.locationStatus {
+        case .notDetermined: return .off
+        case .whenInUse: return .partial
+        case .always: return .on
+        case .denied, .restricted: return .settings
+        }
+    }
+
+    private var motionControlState: PermissionControlState {
         switch permissions.motionStatus {
-        case .notDetermined:
-            return "Not requested"
-        case .authorized:
-            return "Ready"
-        case .denied:
-            return "Denied"
-        case .restricted:
-            return "Restricted"
-        case .unavailable:
-            return "Unavailable on this device"
+        case .authorized, .unavailable: return .on
+        case .notDetermined: return .off
+        case .denied, .restricted: return .settings
         }
     }
 
-    private var notificationStatusText: String {
+    private var notificationControlState: PermissionControlState {
         switch permissions.notificationStatus {
-        case .notDetermined:
-            return "Not requested"
-        case .authorized:
-            return "Ready"
-        case .denied:
-            return "Denied"
-        case .provisional:
-            return "Quiet alerts enabled"
-        case .ephemeral:
-            return "Temporary alerts enabled"
+        case .authorized, .provisional, .ephemeral: return .on
+        case .notDetermined: return .off
+        case .denied: return .settings
         }
     }
 
-    private func handlePrimaryAction() {
-        switch step {
-        case .intro:
-            advance()
-        case .location:
-            handleLocationAction()
-        case .motion:
-            handleMotionAction()
-        case .notifications:
-            handleNotificationAction()
+    private func accessibilityValue(for state: PermissionControlState) -> String {
+        switch state {
+        case .off: return "Off"
+        case .partial: return "While using enabled; background access available"
+        case .on: return "On"
+        case .settings: return "Needs Settings"
         }
     }
 
     private func handleLocationAction() {
         switch permissions.locationStatus {
-        case .notDetermined:
-            permissions.requestWhenInUseLocation()
-        case .whenInUse:
-            permissions.requestAlwaysLocation()
-        case .always:
-            advance()
-        case .denied, .restricted:
-            permissions.openSettings()
+        case .notDetermined: permissions.requestWhenInUseLocation()
+        case .whenInUse: permissions.requestAlwaysLocation()
+        case .always: break
+        case .denied, .restricted: permissions.openSettings()
         }
     }
 
     private func handleMotionAction() {
         switch permissions.motionStatus {
-        case .notDetermined:
-            permissions.requestMotion()
-        case .authorized, .unavailable:
-            advance()
-        case .denied, .restricted:
-            permissions.openSettings()
+        case .notDetermined: permissions.requestMotion()
+        case .denied, .restricted: permissions.openSettings()
+        case .authorized, .unavailable: break
         }
     }
 
     private func handleNotificationAction() {
         switch permissions.notificationStatus {
-        case .notDetermined:
-            permissions.requestNotifications()
-        case .authorized, .provisional, .ephemeral:
-            complete()
-        case .denied:
-            permissions.openSettings()
-        }
-    }
-
-    private func handleSecondaryAction() {
-        if step == .notifications {
-            complete()
-        } else {
-            advance()
+        case .notDetermined: permissions.requestNotifications()
+        case .denied: permissions.openSettings()
+        case .authorized, .provisional, .ephemeral: break
         }
     }
 
     private func advance() {
-        guard let next = TripPermissionStep(rawValue: step.rawValue + 1) else {
-            complete()
-            return
-        }
-        withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
-            step = next
-        }
+        guard let next = OnboardingPage(rawValue: page.rawValue + 1) else { return }
+        withAnimation(.spring(response: 0.42, dampingFraction: 0.88)) { page = next }
+    }
+
+    private func goToPermissions() {
+        withAnimation(.spring(response: 0.42, dampingFraction: 0.88)) { page = .permissions }
     }
 
     private func complete() {

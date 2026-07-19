@@ -1,15 +1,14 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
   <title id="title">Veloseete vehicle-memory mark</title>
-  <desc id="desc">Two interrupted memory tracks surround a lime data core on black.</desc>
+  <desc id="desc">One black interrupted memory track surrounds a black data core on lime.</desc>
   <g id="background">
-    <rect width="512" height="512" rx="112" fill="#050505"/>
+    <rect width="512" height="512" rx="112" fill="#C7FF3D"/>
   </g>
-  <g id="memory-tracks" fill="none" stroke="#F4F5F0" stroke-width="24" stroke-linecap="round" stroke-linejoin="round">
-    <path id="track-outer" d="M199 68H313C385 68 444 127 444 199V284C444 372 372 444 284 444H204C129 444 68 383 68 308V204C68 148 103 99 154 79"/>
+  <g id="memory-tracks" fill="none" stroke="#050505" stroke-width="24" stroke-linecap="round" stroke-linejoin="round">
     <path id="track-inner" d="M356 257V301C356 331 331 356 301 356H211C181 356 156 331 156 301V211C156 181 181 156 211 156H301C331 156 356 181 356 211"/>
   </g>
   <g id="memory-core">
-    <rect x="238" y="238" width="36" height="36" rx="11" fill="#C7FF3D"/>
+    <rect x="238" y="238" width="36" height="36" rx="11" fill="#050505"/>
   </g>
 </svg>
