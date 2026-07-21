@@ -27,7 +27,8 @@ struct ActiveTripSnapshot: Equatable {
     var route: [TripCoordinate]
 }
 
-struct PendingTripSave: Equatable {
+struct PendingTripSave: Codable, Equatable, Identifiable {
+    var id: UUID
     var vehicleId: String
     var vehicleName: String
     var startedAt: Date
@@ -59,8 +60,11 @@ final class TripRecordingService: NSObject, ObservableObject {
     @Published private(set) var followCourseDegrees: Double = -1
     /// Bumps whenever follow pose changes so the map can re-pitch/follow.
     @Published private(set) var followTick: UInt = 0
-    @Published var pendingSave: PendingTripSave?
+    @Published private(set) var pendingSaves: [PendingTripSave] = []
     @Published var lastError: String?
+
+    /// Kept for CarPlay and older call sites that act on the next trip in line.
+    var pendingSave: PendingTripSave? { pendingSaves.first }
 
     private let locationManager = CLLocationManager()
     private let motionManager = CMMotionActivityManager()
@@ -101,6 +105,7 @@ final class TripRecordingService: NSObject, ObservableObject {
         locationManager.pausesLocationUpdatesAutomatically = false
         locationManager.showsBackgroundLocationIndicator = true
         autoTrackingEnabled = UserDefaults.standard.bool(forKey: Keys.autoTracking)
+        restorePendingSaves()
 
         // Recording sessions are not restored after a terminated app, so any
         // surviving system activity would be stale while this service is idle.
@@ -133,6 +138,7 @@ final class TripRecordingService: NSObject, ObservableObject {
 
     private enum Keys {
         static let autoTracking = "tripRecording.autoTrackingEnabled"
+        static let pendingSaves = "tripRecording.pendingSaves.v1"
     }
 
     // MARK: - Public API
@@ -190,11 +196,16 @@ final class TripRecordingService: NSObject, ObservableObject {
         finishRecording(autoEnded: false)
     }
 
-    func discardPending() {
-        pendingSave = nil
-        liveRoute = []
-        phase = autoTrackingEnabled ? .watching : .idle
-        if autoTrackingEnabled { startWatchingIfNeeded() }
+    func discardPending(id: UUID? = nil) {
+        let resolvedID = id ?? pendingSaves.first?.id
+        guard let resolvedID else { return }
+        pendingSaves.removeAll { $0.id == resolvedID }
+        persistPendingSaves()
+    }
+
+    func markPendingSaved(id: UUID) {
+        pendingSaves.removeAll { $0.id == id }
+        persistPendingSaves()
     }
 
     func clearError() {
@@ -294,6 +305,7 @@ final class TripRecordingService: NSObject, ObservableObject {
         }
 
         let pending = PendingTripSave(
+            id: UUID(),
             vehicleId: vehicleId ?? "",
             vehicleName: vehicleName,
             startedAt: started,
@@ -308,20 +320,39 @@ final class TripRecordingService: NSObject, ObservableObject {
             source: source,
             suggestedOdometer: baseOdometer + distanceKm
         )
-        pendingSave = pending
-        phase = .confirming
+        pendingSaves.insert(pending, at: 0)
+        persistPendingSaves()
+        phase = autoTrackingEnabled ? .watching : .idle
         snapshot = nil
+        liveRoute = []
         resetSession()
 
+        if autoTrackingEnabled { startWatchingIfNeeded() }
+
         scheduleDriveNotification(
-            title: personalized("your drive is ready to review"),
-            body: String(format: "%@ tracked %.1f km in %@. Open Veloseete to confirm and save it.", vehicleName, distanceKm, durationText(duration))
+            title: personalized("your drive was added for review"),
+            body: String(format: "%@ tracked %.1f km in %@. Review it anytime in My Drives; tracking remains ready for your next trip.", vehicleName, distanceKm, durationText(duration))
         )
 
         UINotificationFeedbackGenerator().notificationOccurred(.success)
 
-        if autoTrackingEnabled {
-            // Resume watching after confirm/dismiss
+    }
+
+    private func restorePendingSaves() {
+        guard let data = UserDefaults.standard.data(forKey: Keys.pendingSaves) else { return }
+        do {
+            pendingSaves = try JSONDecoder().decode([PendingTripSave].self, from: data)
+                .sorted { $0.endedAt > $1.endedAt }
+        } catch {
+            print("[TripQueue] Could not restore pending trips: \(error.localizedDescription)")
+        }
+    }
+
+    private func persistPendingSaves() {
+        do {
+            UserDefaults.standard.set(try JSONEncoder().encode(pendingSaves), forKey: Keys.pendingSaves)
+        } catch {
+            print("[TripQueue] Could not persist pending trips: \(error.localizedDescription)")
         }
     }
 

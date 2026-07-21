@@ -31,7 +31,7 @@ struct TripsView: View {
     @State private var selectedTripId: String? = nil
     @State private var mapPosition: MapCameraPosition = .automatic
     @State private var showTripPermissions = false
-    @State private var showConfirm = false
+    @State private var reviewPendingTrip: PendingTripSave?
     @State private var detailTrip: Trip?
     @State private var mode: TripsMode = .tracking
     @State private var driveDrawerExpanded = false
@@ -56,6 +56,12 @@ struct TripsView: View {
             return match
         }
         return nil
+    }
+
+    private var filteredPendingTrips: [PendingTripSave] {
+        recorder.pendingSaves
+            .filter { selectedVehicleId == nil || $0.vehicleId == selectedVehicleId }
+            .sorted { $0.endedAt > $1.endedAt }
     }
 
     private var driveMapCoordinates: [TripCoordinate] {
@@ -160,9 +166,6 @@ struct TripsView: View {
             } else {
                 focusMap()
             }
-            if recorder.pendingSave != nil {
-                showConfirm = true
-            }
         }
         .sheet(isPresented: $showTripPermissions) {
             TripPermissionsOnboardingView {
@@ -170,10 +173,8 @@ struct TripsView: View {
             }
             .veloseeteSheet()
         }
-        .sheet(isPresented: $showConfirm) {
-            if let pending = recorder.pendingSave {
-                TripConfirmSheet(pending: pending)
-            }
+        .sheet(item: $reviewPendingTrip) { pending in
+            TripConfirmSheet(pending: pending)
         }
         .sheet(item: $detailTrip) { trip in
             TripDetailView(trip: trip, unit: store.defaultDistanceUnit)
@@ -187,9 +188,6 @@ struct TripsView: View {
         .onChange(of: sort) { _, _ in
             selectedTripId = nil
             focusMap()
-        }
-        .onChange(of: recorder.pendingSave) { _, pending in
-            showConfirm = pending != nil
         }
         .onChange(of: recorder.followTick) { _, _ in
             guard mode == .tracking else { return }
@@ -260,6 +258,13 @@ struct TripsView: View {
                         )
                         Text(item.rawValue)
                             .font(VS.Typography.heading(13))
+                        if item == .drives, !recorder.pendingSaves.isEmpty {
+                            Text("\(recorder.pendingSaves.count)")
+                                .font(VS.Typography.body(10, weight: .bold))
+                                .foregroundStyle(VS.Color.navPill)
+                                .frame(minWidth: 19, minHeight: 19)
+                                .background(VS.Color.warning, in: Circle())
+                        }
                     }
                     .foregroundStyle(mode == item ? VS.Color.navPill : VS.Color.textSecondary)
                     .frame(maxWidth: .infinity, alignment: .center)
@@ -314,12 +319,14 @@ struct TripsView: View {
                         Text("My Drives")
                             .font(VS.Typography.heading(25, weight: .bold))
                             .foregroundStyle(VS.Color.textPrimary)
-                        Text("Tap a drive to explore its route")
+                        Text(filteredPendingTrips.isEmpty
+                             ? "Tap a drive to explore its route"
+                             : "\(filteredPendingTrips.count) awaiting your review")
                             .font(VS.Typography.body(11))
                             .foregroundStyle(VS.Color.textTertiary)
                     }
                     Spacer()
-                    Text("\(filteredTrips.count)")
+                    Text("\(filteredTrips.count + filteredPendingTrips.count)")
                         .font(VS.Typography.body(12, weight: .bold))
                         .foregroundStyle(VS.Color.navPill)
                         .frame(minWidth: 28, minHeight: 28)
@@ -339,7 +346,7 @@ struct TripsView: View {
 
             filterBar.padding(.horizontal, 16)
 
-            if filteredTrips.isEmpty {
+            if filteredTrips.isEmpty && filteredPendingTrips.isEmpty {
                 emptyState
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .contentShape(Rectangle())
@@ -347,6 +354,43 @@ struct TripsView: View {
             } else {
                 ScrollView {
                     LazyVStack(spacing: 0) {
+                        if !filteredPendingTrips.isEmpty {
+                            HStack {
+                                Text("REVIEW REQUIRED")
+                                    .font(VS.Typography.body(11, weight: .bold))
+                                    .foregroundStyle(VS.Color.warning)
+                                Spacer()
+                                Text("\(filteredPendingTrips.count)")
+                                    .font(VS.Typography.body(11, weight: .bold))
+                                    .foregroundStyle(VS.Color.warning)
+                            }
+                            .padding(.top, 5)
+                            .padding(.bottom, 4)
+
+                            ForEach(filteredPendingTrips) { pending in
+                                Button {
+                                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                                    reviewPendingTrip = pending
+                                } label: {
+                                    PendingDriveRowView(
+                                        pending: pending,
+                                        unit: store.defaultDistanceUnit
+                                    )
+                                }
+                                .buttonStyle(.plain)
+                                Divider().overlay(VS.Color.divider)
+                            }
+
+                            if !filteredTrips.isEmpty {
+                                Text("CONFIRMED DRIVES")
+                                    .font(VS.Typography.body(11, weight: .bold))
+                                    .foregroundStyle(VS.Color.textTertiary)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .padding(.top, 18)
+                                    .padding(.bottom, 4)
+                            }
+                        }
+
                         ForEach(filteredTrips) { trip in
                             Button {
                                 UIImpactFeedbackGenerator(style: .light).impactOccurred()
@@ -386,7 +430,7 @@ struct TripsView: View {
     }
 
     private var driveDrawerExpandedHeight: CGFloat {
-        UIScreen.main.bounds.height * (filteredTrips.isEmpty ? 0.62 : 0.72)
+        UIScreen.main.bounds.height * (filteredTrips.isEmpty && filteredPendingTrips.isEmpty ? 0.62 : 0.72)
     }
 
     private var driveDrawerTravel: CGFloat {
@@ -979,6 +1023,64 @@ private struct VeloseeteMapCharacter: View {
             }
         }
         .accessibilityLabel(isLive ? "Your live location" : "Your location")
+    }
+}
+
+struct PendingDriveRowView: View {
+    let pending: PendingTripSave
+    let unit: String
+
+    private var dayTitle: String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "MMM d"
+        return formatter.string(from: pending.startedAt)
+    }
+
+    private var durationFormatted: String {
+        let total = Int(pending.durationSec)
+        let hours = total / 3600
+        let minutes = (total % 3600) / 60
+        return hours > 0 ? "\(hours)h \(minutes)m" : "\(max(minutes, 1))m"
+    }
+
+    var body: some View {
+        HStack(spacing: 14) {
+            MiniRoutePreview(route: pending.route)
+                .frame(width: 52, height: 52)
+
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 7) {
+                    Text(dayTitle)
+                        .font(VS.Typography.heading(16))
+                        .foregroundStyle(VS.Color.textPrimary)
+                    Text("REVIEW REQUIRED")
+                        .font(VS.Typography.body(8, weight: .bold))
+                        .foregroundStyle(Color.black)
+                        .padding(.horizontal, 7)
+                        .padding(.vertical, 3)
+                        .background(VS.Color.warning, in: Capsule())
+                }
+
+                Text("\(pending.startedAt.formatted(date: .omitted, time: .shortened)) – \(pending.endedAt.formatted(date: .omitted, time: .shortened))")
+                    .font(VS.Typography.body(12))
+                    .foregroundStyle(VS.Color.textTertiary)
+
+                Text("\(DistanceFormat.formatDistance(pending.distanceKm, unit: unit)) · \(durationFormatted)")
+                    .font(VS.Typography.body(12, weight: .medium))
+                    .foregroundStyle(VS.Color.textSecondary)
+            }
+
+            Spacer(minLength: 6)
+
+            VSIcon(icon: .caretLeft, size: 15, weight: .bold, tint: VS.Color.warning)
+                .rotationEffect(.degrees(180))
+        }
+        .padding(.vertical, 14)
+        .padding(.horizontal, 4)
+        .contentShape(Rectangle())
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Review required. \(dayTitle), \(DistanceFormat.formatDistance(pending.distanceKm, unit: unit)), \(durationFormatted)")
+        .accessibilityHint("Opens this drive for confirmation")
     }
 }
 

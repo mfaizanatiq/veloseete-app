@@ -51,7 +51,7 @@ struct ServiceLog: Identifiable, Equatable {
     var nextServiceDate: Date?
 }
 
-struct TripCoordinate: Equatable, Hashable {
+struct TripCoordinate: Codable, Equatable, Hashable {
     var latitude: Double
     var longitude: Double
 }

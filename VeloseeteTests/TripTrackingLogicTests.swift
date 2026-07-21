@@ -43,6 +43,33 @@ final class TripTrackingLogicTests: XCTestCase {
         XCTAssertLessThan(reduced.count, route.count)
     }
 
+    func testPendingTripQueueItemSurvivesPersistenceRoundTrip() throws {
+        let pending = PendingTripSave(
+            id: UUID(),
+            vehicleId: "car",
+            vehicleName: "Daily Driver",
+            startedAt: Date(timeIntervalSince1970: 1_000),
+            endedAt: Date(timeIntervalSince1970: 1_900),
+            distanceKm: 12.4,
+            durationSec: 900,
+            avgSpeedKmh: 49.6,
+            maxSpeedKmh: 82,
+            startCoordinate: TripCoordinate(latitude: 25.28, longitude: 51.53),
+            endCoordinate: TripCoordinate(latitude: 25.36, longitude: 51.48),
+            route: [
+                TripCoordinate(latitude: 25.28, longitude: 51.53),
+                TripCoordinate(latitude: 25.36, longitude: 51.48)
+            ],
+            source: "auto",
+            suggestedOdometer: 52_012.4
+        )
+
+        let encoded = try JSONEncoder().encode([pending])
+        let restored = try JSONDecoder().decode([PendingTripSave].self, from: encoded)
+
+        XCTAssertEqual(restored, [pending])
+    }
+
     func testOdometerEstimateAndVariance() {
         XCTAssertEqual(OdometerReconciliation.estimated(verifiedKm: 52_000, trackedKm: 184), 52_184)
         XCTAssertEqual(OdometerReconciliation.variance(enteredKm: 52_191, verifiedKm: 52_000, trackedKm: 184), 7)
