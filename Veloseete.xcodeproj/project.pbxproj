@@ -40,6 +40,12 @@
 		CD5113461FD49DA09C3067BF /* MainTabShell.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1AC2C5E99E0603B3725F36D /* MainTabShell.swift */; };
 		E56B5D4761318FAF61ED9EF5 /* TripPermissionsStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6D1A3E4EE9B0BEB713B1D5B0 /* TripPermissionsStore.swift */; };
 		EA183E66756DDCA3890ECD67 /* FirebaseAuth in Frameworks */ = {isa = PBXBuildFile; productRef = EF991BE6BE4E513059B9947D /* FirebaseAuth */; };
+		A7B101000000000000000001 /* GoogleSignIn in Frameworks */ = {isa = PBXBuildFile; productRef = A7B101000000000000000002 /* GoogleSignIn */; };
+		A7B101000000000000000003 /* GoogleService-Info.plist in Resources */ = {isa = PBXBuildFile; fileRef = A7B101000000000000000004 /* GoogleService-Info.plist */; };
+		CA2A11000000000000000001 /* CarPlaySceneDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA2A11000000000000000002 /* CarPlaySceneDelegate.swift */; };
+		CA2A12000000000000000001 /* CarPlayWidgetState.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA2A12000000000000000005 /* CarPlayWidgetState.swift */; };
+		CA2A12000000000000000002 /* CarPlayWidgetState.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA2A12000000000000000005 /* CarPlayWidgetState.swift */; };
+		CA2A12000000000000000004 /* CarPlayStatusWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA2A12000000000000000006 /* CarPlayStatusWidget.swift */; };
 		EC841A9AA4068093C17C015F /* Fonts in Resources */ = {isa = PBXBuildFile; fileRef = 03E2E1E23C22D331E66874CF /* Fonts */; };
 		F983209FA5BCEA0169A62034 /* TripLiveActivityWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2DC6CBCD403057F0E42E9DE2 /* TripLiveActivityWidget.swift */; };
 		F9F060079AC13AC8A73A9539 /* GarageView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1594DF57756A4459A585537A /* GarageView.swift */; };
@@ -114,6 +120,10 @@
 		F694C2983FF8F289315A17B5 /* TripPermissionsManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TripPermissionsManager.swift; sourceTree = "<group>"; };
 		FA8C64FAF2E09B5C9D1B38E7 /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
 		FF78BFABE392DBE393254431 /* Metrics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Metrics.swift; sourceTree = "<group>"; };
+		A7B101000000000000000004 /* GoogleService-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = "GoogleService-Info.plist"; sourceTree = "<group>"; };
+		CA2A11000000000000000002 /* CarPlaySceneDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CarPlaySceneDelegate.swift; sourceTree = "<group>"; };
+		CA2A12000000000000000005 /* CarPlayWidgetState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CarPlayWidgetState.swift; sourceTree = "<group>"; };
+		CA2A12000000000000000006 /* CarPlayStatusWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CarPlayStatusWidget.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -130,6 +140,7 @@
 			files = (
 				EA183E66756DDCA3890ECD67 /* FirebaseAuth in Frameworks */,
 				0ADF9E69E2BBC958D25B91B4 /* FirebaseFirestore in Frameworks */,
+				A7B101000000000000000001 /* GoogleSignIn in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -155,6 +166,7 @@
 		16E6328311838B74CEC44956 /* VeloseeteTripWidget */ = {
 			isa = PBXGroup;
 			children = (
+				CA2A12000000000000000006 /* CarPlayStatusWidget.swift */,
 				2DC6CBCD403057F0E42E9DE2 /* TripLiveActivityWidget.swift */,
 			);
 			path = VeloseeteTripWidget;
@@ -215,6 +227,7 @@
 		752596DA54D7B366A89B6B31 /* Shared */ = {
 			isa = PBXGroup;
 			children = (
+				CA2A12000000000000000005 /* CarPlayWidgetState.swift */,
 				F45D0247EE51C0E3F476BACF /* TripActivityAttributes.swift */,
 			);
 			path = Shared;
@@ -284,6 +297,7 @@
 		C627DC7AE48FFC25E80952C0 /* App */ = {
 			isa = PBXGroup;
 			children = (
+				CA2A11000000000000000002 /* CarPlaySceneDelegate.swift */,
 				E08E5E2146EA750B5BEBC0DE /* VeloseeteApp.swift */,
 			);
 			path = App;
@@ -300,6 +314,7 @@
 		D849952ECB48B00234E9C3F5 /* Veloseete */ = {
 			isa = PBXGroup;
 			children = (
+				A7B101000000000000000004 /* GoogleService-Info.plist */,
 				C627DC7AE48FFC25E80952C0 /* App */,
 				D94E1ED4A9F3A641520DA7D7 /* Design */,
 				52F0396AED3A20C3A424FB63 /* Features */,
@@ -410,6 +425,7 @@
 			packageProductDependencies = (
 				EF991BE6BE4E513059B9947D /* FirebaseAuth */,
 				32C989AA668D64C69595D10D /* FirebaseFirestore */,
+				A7B101000000000000000002 /* GoogleSignIn */,
 			);
 			productName = Veloseete;
 			productReference = 256658471BD7508658CD944C /* Veloseete.app */;
@@ -466,6 +482,7 @@
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
 				0D11698FA6967308CC7B3461 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */,
+				A7B101000000000000000005 /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 4D645CBCFF81FC9AE4D81899 /* Products */;
@@ -495,6 +512,7 @@
 				11791EB2D027F01AE3A0ED81 /* FluentEmoji in Resources */,
 				EC841A9AA4068093C17C015F /* Fonts in Resources */,
 				CC1B3A24417C167CCF243AA4 /* Media in Resources */,
+				A7B101000000000000000003 /* GoogleService-Info.plist in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -535,6 +553,8 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				CA2A11000000000000000001 /* CarPlaySceneDelegate.swift in Sources */,
+				CA2A12000000000000000001 /* CarPlayWidgetState.swift in Sources */,
 				3F60DBC1AFD8915F677AB407 /* AuthService.swift in Sources */,
 				0AAA22F6732EBCAE28AA5BAD /* AuthView.swift in Sources */,
 				BC566CBB50ED4FC839E3301F /* BottomNavChrome.swift in Sources */,
@@ -569,6 +589,8 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				CA2A12000000000000000002 /* CarPlayWidgetState.swift in Sources */,
+				CA2A12000000000000000004 /* CarPlayStatusWidget.swift in Sources */,
 				553179B906447ACE5654AA56 /* TripActivityAttributes.swift in Sources */,
 				F983209FA5BCEA0169A62034 /* TripLiveActivityWidget.swift in Sources */,
 			);
@@ -625,6 +647,7 @@
 		297F0CFD9FC914F3FE87AF2C /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = VeloseeteTripWidget/VeloseeteTripWidget.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
@@ -710,7 +733,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
-				CODE_SIGN_ENTITLEMENTS = Veloseete/Veloseete.entitlements;
+				CODE_SIGN_ENTITLEMENTS = Veloseete/VeloseeteDebug.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
@@ -755,6 +778,7 @@
 		D93A32000561145DD2E455E6 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = VeloseeteTripWidget/VeloseeteTripWidget.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
@@ -879,6 +903,14 @@
 				minimumVersion = 11.0.0;
 			};
 		};
+		A7B101000000000000000005 /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/google/GoogleSignIn-iOS";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 8.0.0;
+			};
+		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
@@ -891,6 +923,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 0D11698FA6967308CC7B3461 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
 			productName = FirebaseAuth;
+		};
+		A7B101000000000000000002 /* GoogleSignIn */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = A7B101000000000000000005 /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */;
+			productName = GoogleSignIn;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

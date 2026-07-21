@@ -1,4 +1,5 @@
 import SwiftUI
+import AuthenticationServices
 
 struct AuthView: View {
     @EnvironmentObject private var auth: AuthService
@@ -12,6 +13,7 @@ struct AuthView: View {
     @State private var resetEmail = ""
     @State private var resetSuccess = false
     @State private var localError = ""
+    @State private var appleNonceHash = ""
     @FocusState private var focusedField: Field?
 
     private enum Field { case name, email, password, reset }
@@ -29,6 +31,20 @@ struct AuthView: View {
                         .foregroundStyle(VS.Color.textSecondary)
                 }
                 .padding(.top, 48)
+
+                socialButtons
+
+                HStack(spacing: 12) {
+                    Rectangle().fill(VS.Color.divider).frame(height: 1)
+                    Text("or email")
+                        .font(VS.Typography.body(12, weight: .medium))
+                        .foregroundStyle(VS.Color.textTertiary)
+                    Rectangle().fill(VS.Color.divider).frame(height: 1)
+                }
+
+                if auth.pendingLinkEmail != nil || auth.errorMessage?.contains("link") == true {
+                    pendingLinkBanner
+                }
 
                 VStack(spacing: 14) {
                     if isSignUp {
@@ -85,6 +101,14 @@ struct AuthView: View {
                     Text(localError.isEmpty ? (auth.errorMessage ?? "") : localError)
                         .font(VS.Typography.body(13))
                         .foregroundStyle(VS.Color.error)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                if let info = auth.infoMessage {
+                    Text(info)
+                        .font(VS.Typography.body(13))
+                        .foregroundStyle(VS.Color.success)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
 
                 Button {
@@ -94,7 +118,7 @@ struct AuthView: View {
                         if auth.isLoading {
                             ProgressView().tint(VS.Color.navPill)
                         }
-                        Text(isSignUp ? "Sign Up" : "Sign In")
+                        Text(emailPrimaryTitle)
                             .font(VS.Typography.heading(17, weight: .semibold))
                     }
                     .frame(maxWidth: .infinity)
@@ -140,6 +164,76 @@ struct AuthView: View {
         .sheet(isPresented: $showForgot) {
             forgotSheet
         }
+        .onAppear {
+            if let pending = auth.pendingLinkEmail, email.isEmpty {
+                email = pending
+            }
+        }
+    }
+
+    private var emailPrimaryTitle: String {
+        if auth.pendingLinkEmail != nil {
+            return isSignUp ? "Sign up & link" : "Sign in & link"
+        }
+        return isSignUp ? "Sign Up" : "Sign In"
+    }
+
+    private var socialButtons: some View {
+        VStack(spacing: 12) {
+            SignInWithAppleButton(.signIn) { request in
+                appleNonceHash = auth.startAppleSignIn()
+                request.requestedScopes = [.fullName, .email]
+                request.nonce = appleNonceHash
+            } onCompletion: { result in
+                Task { await handleApple(result) }
+            }
+            .signInWithAppleButtonStyle(.white)
+            .frame(height: 52)
+            .clipShape(RoundedRectangle(cornerRadius: VS.Radius.card, style: .continuous))
+            .disabled(auth.isLoading)
+
+            Button {
+                Task { await handleGoogle() }
+            } label: {
+                HStack(spacing: 10) {
+                    Image(systemName: "g.circle.fill")
+                        .font(.system(size: 22, weight: .semibold))
+                    Text("Continue with Google")
+                        .font(VS.Typography.heading(16, weight: .semibold))
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 15)
+                .foregroundStyle(VS.Color.textPrimary)
+                .background(
+                    RoundedRectangle(cornerRadius: VS.Radius.card, style: .continuous)
+                        .fill(Color.white.opacity(0.08))
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: VS.Radius.card, style: .continuous)
+                        .strokeBorder(VS.Color.divider, lineWidth: 1)
+                )
+            }
+            .buttonStyle(ScaleButtonStyle())
+            .disabled(auth.isLoading)
+        }
+    }
+
+    private var pendingLinkBanner: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Link your existing account")
+                .font(VS.Typography.heading(14))
+                .foregroundStyle(VS.Color.textPrimary)
+            Text(
+                auth.pendingLinkEmail.map {
+                    "Sign in with \($0) below — Apple/Google will attach to this account."
+                } ?? "Sign in with your email below — Apple/Google will attach to this account."
+            )
+            .font(VS.Typography.body(12))
+            .foregroundStyle(VS.Color.textSecondary)
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(VS.Color.accent.opacity(0.12), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
     }
 
     private var forgotSheet: some View {
@@ -212,6 +306,37 @@ struct AuthView: View {
                 .font(VS.Typography.body(16))
                 .foregroundStyle(VS.Color.textPrimary)
                 .vsInputField()
+        }
+    }
+
+    private func handleApple(_ result: Result<ASAuthorization, Error>) async {
+        localError = ""
+        switch result {
+        case .success(let authorization):
+            do {
+                try await auth.completeAppleSignIn(authorization: authorization)
+            } catch {
+                if case AuthServiceError.needsLinkWithExistingAccount(let pending) = error,
+                   let pending, email.isEmpty {
+                    email = pending
+                }
+            }
+        case .failure(let error):
+            let ns = error as NSError
+            if ns.code == ASAuthorizationError.canceled.rawValue { return }
+            localError = error.localizedDescription
+        }
+    }
+
+    private func handleGoogle() async {
+        localError = ""
+        do {
+            try await auth.signInWithGoogle()
+        } catch {
+            if case AuthServiceError.needsLinkWithExistingAccount(let pending) = error,
+               let pending, email.isEmpty {
+                email = pending
+            }
         }
     }
 

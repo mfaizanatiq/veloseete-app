@@ -91,7 +91,7 @@ struct DashboardView: View {
 
     private var topBar: some View {
         MainTabHeader(
-            "Fuel",
+            "Fuels",
             subtitle: vehicle.map { "\($0.nickname) · Fuel tracking" } ?? "Fuel tracking",
             onProfile: onProfile
         )

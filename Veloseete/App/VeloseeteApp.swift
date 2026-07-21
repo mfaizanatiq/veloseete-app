@@ -1,5 +1,6 @@
 import SwiftUI
 import FirebaseCore
+import GoogleSignIn
 import UIKit
 import UserNotifications
 
@@ -10,6 +11,14 @@ final class VeloseeteAppDelegate: NSObject, UIApplicationDelegate, UNUserNotific
     ) -> Bool {
         UNUserNotificationCenter.current().delegate = self
         return true
+    }
+
+    func application(
+        _ app: UIApplication,
+        open url: URL,
+        options: [UIApplication.OpenURLOptionsKey: Any] = [:]
+    ) -> Bool {
+        GIDSignIn.sharedInstance.handle(url)
     }
 
     func userNotificationCenter(
@@ -24,16 +33,19 @@ final class VeloseeteAppDelegate: NSObject, UIApplicationDelegate, UNUserNotific
 @main
 struct VeloseeteApp: App {
     @UIApplicationDelegateAdaptor(VeloseeteAppDelegate.self) private var appDelegate
-    @StateObject private var authService = AuthService.shared
+    @Environment(\.scenePhase) private var scenePhase
+    @StateObject private var authService: AuthService
     @StateObject private var dataStore = DataStore.shared
     @StateObject private var tripPermissions = TripPermissionsManager()
     @StateObject private var tripPermissionsStore = TripPermissionsStore.shared
     @StateObject private var profileAvatarStore = ProfileAvatarStore.shared
+    @StateObject private var vehiclePhotoStore = VehiclePhotoStore.shared
     private let tripRecorder = TripRecordingService.shared
     @State private var isShowingSplash = true
 
     init() {
         FirebaseBootstrap.configure()
+        _authService = StateObject(wrappedValue: AuthService.shared)
         Self.configureChrome()
     }
 
@@ -58,11 +70,32 @@ struct VeloseeteApp: App {
             .environmentObject(tripPermissions)
             .environmentObject(tripPermissionsStore)
             .environmentObject(profileAvatarStore)
+            .environmentObject(vehiclePhotoStore)
             .environmentObject(tripRecorder)
             .preferredColorScheme(.dark)
             .tint(VS.Color.accent)
+            .onOpenURL { url in
+                GIDSignIn.sharedInstance.handle(url)
+            }
             .task(id: authService.userId) {
                 profileAvatarStore.load(userId: authService.userId)
+            }
+            .onAppear {
+                tripRecorder.resumeBackgroundWatchingIfNeeded()
+            }
+            .onChange(of: scenePhase) { _, phase in
+                guard phase == .active else { return }
+                tripRecorder.resumeBackgroundWatchingIfNeeded()
+            }
+            .onChange(of: dataStore.currentVehicle?.id) { _, _ in
+                guard let vehicle = dataStore.currentVehicle else { return }
+                tripRecorder.configure(
+                    vehicleId: vehicle.id,
+                    vehicleName: vehicle.nickname,
+                    currentOdometer: vehicle.currentOdometer,
+                    driverName: dataStore.userName
+                )
+                tripRecorder.resumeBackgroundWatchingIfNeeded()
             }
         }
     }

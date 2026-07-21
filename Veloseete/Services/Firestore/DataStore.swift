@@ -135,6 +135,7 @@ final class DataStore: ObservableObject {
         if let vehicle = currentVehicle {
             await refreshManufacturerStandard(for: vehicle)
         }
+        publishCarPlayWidgetState()
     }
 
     func refreshManufacturerStandard(for vehicle: Vehicle) async {
@@ -237,6 +238,7 @@ final class DataStore: ObservableObject {
         }
 
         await refreshManufacturerStandard(for: vehicle)
+        publishCarPlayWidgetState()
     }
 
     func selectVehicle(_ vehicleId: String) async throws {
@@ -254,6 +256,7 @@ final class DataStore: ObservableObject {
             userDocument = document
         }
         await refreshManufacturerStandard(for: vehicle)
+        publishCarPlayWidgetState()
     }
 
     func updateVehicle(_ vehicle: Vehicle) async throws {
@@ -262,6 +265,7 @@ final class DataStore: ObservableObject {
         if currentVehicle?.id == vehicle.id {
             await refreshManufacturerStandard(for: vehicle)
         }
+        publishCarPlayWidgetState()
     }
 
     func addFuelLog(
@@ -310,6 +314,7 @@ final class DataStore: ObservableObject {
             updated.currentOdometer = odometerReading
             return updated
         }
+        publishCarPlayWidgetState()
     }
 
     func saveServiceLog(id: String?, input: FirestoreRepository.ServiceLogInput) async throws {
@@ -381,6 +386,7 @@ final class DataStore: ObservableObject {
                 updated.currentOdometer = odometer
                 return updated
             }
+            publishCarPlayWidgetState()
         }
 
         let trip = Trip(
@@ -398,6 +404,7 @@ final class DataStore: ObservableObject {
             source: pending.source
         )
         trips.insert(trip, at: 0)
+        publishCarPlayWidgetState()
         return trip
     }
 
@@ -411,5 +418,41 @@ final class DataStore: ObservableObject {
         isLoaded = false
         loadError = nil
         loadWarnings = []
+        CarPlayWidgetStateStore.clearUserData()
+    }
+
+    private func publishCarPlayWidgetState() {
+        guard let vehicle = currentVehicle else { return }
+        let lastFuel = fuelLogs
+            .filter { $0.vehicleId == vehicle.id }
+            .max { $0.timestamp < $1.timestamp }
+        let metrics = MetricsCalculator.compute(vehicle: vehicle, logs: fuelLogs)
+        let totalDistance = InsightGenerator.totalKilometersDriven(
+            trips: trips,
+            logs: fuelLogs,
+            vehicleId: vehicle.id
+        )
+        let recentRoute = trips
+            .filter { $0.vehicleId == vehicle.id && !$0.route.isEmpty }
+            .max { $0.endedAt < $1.endedAt }
+            .map { TripTrackingLogic.downsample($0.route, maximum: 40) }
+            ?? []
+        CarPlayWidgetStateStore.updateVehicle(
+            id: vehicle.id,
+            name: vehicle.nickname,
+            odometerKm: vehicle.currentOdometer,
+            autoTrackingEnabled: TripRecordingService.shared.autoTrackingEnabled,
+            lastFuelVolume: lastFuel?.fuelVolume,
+            lastFuelTotalCost: lastFuel?.totalCost,
+            lastFuelCurrency: lastFuel?.currency,
+            lastFuelDate: lastFuel?.timestamp,
+            totalDistanceKm: totalDistance,
+            efficiencyLPer100Km: metrics.current,
+            monthlySpend: metrics.monthlySpend,
+            currency: vehicle.currency,
+            recentRoute: recentRoute.map {
+                CarPlayWidgetRoutePoint(latitude: $0.latitude, longitude: $0.longitude)
+            }
+        )
     }
 }

@@ -171,3 +171,622 @@ enum DashboardCopy {
         return change < 0 ? "↓ \(absVal)% vs last month" : "↑ \(absVal)% vs last month"
     }
 }
+
+struct PersonalHighlight: Identifiable {
+    let id: String
+    let emoji: String
+    let label: String
+    let value: String
+}
+
+struct DriverAchievement: Identifiable {
+    enum Category: String, CaseIterable {
+        case road, fuel, efficiency, habit
+
+        var label: String {
+            switch self {
+            case .road: return "Road"
+            case .fuel: return "Fuel"
+            case .efficiency: return "Efficiency"
+            case .habit: return "Habits"
+            }
+        }
+    }
+
+    let id: String
+    let emoji: String
+    let title: String
+    let detail: String
+    let unlocked: Bool
+    let category: Category
+    /// 0...1 toward unlock (1 when earned).
+    let progress: Double
+    /// e.g. "7 / 10 fills"
+    let progressLabel: String
+}
+
+struct FunInsight: Identifiable {
+    enum Kind { case celebrate, tip, watch }
+    var id: String { title }
+    let kind: Kind
+    let emoji: String
+    let title: String
+    let message: String
+}
+
+enum InsightGenerator {
+    /// Lifetime GPS trip distance, falling back to odometer span from fuel logs.
+    static func totalKilometersDriven(trips: [Trip], logs: [FuelLog], vehicleId: String?) -> Double {
+        let tripKm = trips
+            .filter { vehicleId == nil || $0.vehicleId == vehicleId }
+            .reduce(0) { $0 + max(0, $1.distanceKm) }
+
+        let vehicleLogs = logs
+            .filter { vehicleId == nil || $0.vehicleId == vehicleId }
+            .sorted { $0.timestamp < $1.timestamp }
+        let odoSpan: Double = {
+            guard let first = vehicleLogs.first, let last = vehicleLogs.last else { return 0 }
+            return max(0, last.odometerReading - first.odometerReading)
+        }()
+
+        return max(tripKm, odoSpan)
+    }
+
+    static func achievements(
+        trips: [Trip],
+        logs: [FuelLog],
+        serviceLogs: [ServiceLog] = [],
+        vehicleCount: Int = 1,
+        vehicleId: String?,
+        unit: String,
+        manufacturerStandard: Double?
+    ) -> [DriverAchievement] {
+        let scopedTrips = trips.filter { vehicleId == nil || $0.vehicleId == vehicleId }
+        let vehicleLogs = logs
+            .filter { vehicleId == nil || $0.vehicleId == vehicleId }
+            .sorted { $0.timestamp < $1.timestamp }
+        let scopedServices = serviceLogs.filter { vehicleId == nil || $0.vehicleId == vehicleId }
+
+        let totalKm = totalKilometersDriven(trips: trips, logs: logs, vehicleId: vehicleId)
+        let driveCount = scopedTrips.count
+        let longestTrip = scopedTrips.map(\.distanceKm).max() ?? 0
+        let topSpeed = scopedTrips.map(\.maxSpeedKmh).max() ?? 0
+        let fillCount = vehicleLogs.count
+        let fullTankCount = vehicleLogs.filter(\.isFullTank).count
+        let currencyCount = Set(vehicleLogs.map(\.currency)).count
+        let gulfCurrencies = Set(vehicleLogs.map(\.currency)).intersection(["AED", "SAR", "QAR"])
+
+        var bestEfficiency: Double?
+        var longestFillStretch = 0.0
+        var efficiencyIntervals: [Double] = []
+        for index in 1..<vehicleLogs.count {
+            let previous = vehicleLogs[index - 1]
+            let current = vehicleLogs[index]
+            let stretch = current.odometerReading - previous.odometerReading
+            if stretch > longestFillStretch { longestFillStretch = stretch }
+            guard current.isFullTank, previous.isFullTank else { continue }
+            guard stretch > 0, current.fuelVolume > 0 else { continue }
+            let efficiency = (current.fuelVolume / stretch) * 100
+            efficiencyIntervals.append(efficiency)
+            if bestEfficiency == nil || efficiency < bestEfficiency! {
+                bestEfficiency = efficiency
+            }
+        }
+
+        let activeMonths = Set(vehicleLogs.map {
+            let comps = Calendar.current.dateComponents([.year, .month], from: $0.timestamp)
+            return "\(comps.year ?? 0)-\(comps.month ?? 0)"
+        }).count
+
+        let beatsSpec = bestEfficiency.map { efficiency in
+            manufacturerStandard.map { efficiency <= $0 } ?? false
+        } ?? false
+
+        let avgEfficiency: Double? = {
+            guard !efficiencyIntervals.isEmpty else { return nil }
+            return efficiencyIntervals.reduce(0, +) / Double(efficiencyIntervals.count)
+        }()
+
+        let efficientKing: Bool = {
+            if let manufacturerStandard, let avgEfficiency {
+                return avgEfficiency <= manufacturerStandard * 0.95
+            }
+            return bestEfficiency.map { $0 <= 7.5 } ?? false
+        }()
+
+        let calendar = Calendar.current
+        let earlyBirdDrives = scopedTrips.filter { calendar.component(.hour, from: $0.startedAt) < 7 }.count
+        let nightOwlDrives = scopedTrips.filter { calendar.component(.hour, from: $0.startedAt) >= 22 }.count
+        let weekendDrives = scopedTrips.filter { calendar.isDateInWeekend($0.startedAt) }.count
+        // Meal-window “destination runs” until we store real places/restaurants.
+        let mealRuns = scopedTrips.filter { trip in
+            let hour = calendar.component(.hour, from: trip.startedAt)
+            let mealWindow = (hour >= 11 && hour <= 14) || (hour >= 18 && hour <= 21)
+            return mealWindow && trip.distanceKm >= 15
+        }.count
+
+        let roadHours = scopedTrips.reduce(0) { $0 + max(0, $1.durationSec) } / 3600
+
+        func quest(
+            id: String,
+            emoji: String,
+            title: String,
+            category: DriverAchievement.Category,
+            current: Double,
+            target: Double,
+            unitLabel: String,
+            earnedDetail: String,
+            lockedDetail: String
+        ) -> DriverAchievement {
+            let safeTarget = max(target, 0.0001)
+            let progress = min(max(current / safeTarget, 0), 1)
+            let unlocked = current >= target
+            let progressLabel: String = {
+                if target >= 10, target == floor(target), current == floor(current) {
+                    return "\(Int(min(current, target))) / \(Int(target)) \(unitLabel)"
+                }
+                if unitLabel == "km" {
+                    return "\(DistanceFormat.formatDistance(min(current, target), unit: unit)) / \(DistanceFormat.formatDistance(target, unit: unit))"
+                }
+                return String(format: "%.0f / %.0f %@", min(current, target), target, unitLabel)
+            }()
+            return DriverAchievement(
+                id: id,
+                emoji: emoji,
+                title: title,
+                detail: unlocked ? earnedDetail : lockedDetail,
+                unlocked: unlocked,
+                category: category,
+                progress: progress,
+                progressLabel: progressLabel
+            )
+        }
+
+        return [
+            // MARK: Road quests
+            quest(
+                id: "first-drive", emoji: "👋", title: "First drive", category: .road,
+                current: Double(driveCount), target: 1, unitLabel: "drives",
+                earnedDetail: "You’re on the board",
+                lockedDetail: "Complete your first tracked drive"
+            ),
+            quest(
+                id: "ten-trips", emoji: "🚗", title: "Trip taker", category: .road,
+                current: Double(driveCount), target: 10, unitLabel: "drives",
+                earnedDetail: "\(driveCount) drives logged",
+                lockedDetail: "Log 10 tracked drives"
+            ),
+            quest(
+                id: "twenty-five-trips", emoji: "🛣", title: "Road regular", category: .road,
+                current: Double(driveCount), target: 25, unitLabel: "drives",
+                earnedDetail: "\(driveCount) drives in the book",
+                lockedDetail: "Hit 25 tracked drives"
+            ),
+            quest(
+                id: "hundred-club", emoji: "🛣", title: "100 km club", category: .road,
+                current: totalKm, target: 100, unitLabel: "km",
+                earnedDetail: DistanceFormat.formatDistance(totalKm, unit: unit) + " lifetime",
+                lockedDetail: "Reach 100 km of tracked driving"
+            ),
+            quest(
+                id: "five-hundred-roads", emoji: "🎯", title: "500 km explorer", category: .road,
+                current: totalKm, target: 500, unitLabel: "km",
+                earnedDetail: DistanceFormat.formatDistance(totalKm, unit: unit) + " explored",
+                lockedDetail: "Push lifetime distance to 500 km"
+            ),
+            quest(
+                id: "thousand-roads", emoji: "🏆", title: "1,000 km roads", category: .road,
+                current: totalKm, target: 1_000, unitLabel: "km",
+                earnedDetail: DistanceFormat.formatDistance(totalKm, unit: unit) + " lifetime",
+                lockedDetail: "Keep rolling toward 1,000 km"
+            ),
+            quest(
+                id: "five-thousand-roads", emoji: "✨", title: "5,000 km legend", category: .road,
+                current: totalKm, target: 5_000, unitLabel: "km",
+                earnedDetail: "Highway royalty",
+                lockedDetail: "Accumulate 5,000 km tracked"
+            ),
+            quest(
+                id: "long-haul", emoji: "🎯", title: "Long haul", category: .road,
+                current: longestTrip, target: 80, unitLabel: "km",
+                earnedDetail: "Longest \(DistanceFormat.formatDistance(longestTrip, unit: unit))",
+                lockedDetail: "Track a single 80+ km drive"
+            ),
+            quest(
+                id: "marathon-drive", emoji: "⚡", title: "Marathon drive", category: .road,
+                current: longestTrip, target: 200, unitLabel: "km",
+                earnedDetail: "Longest \(DistanceFormat.formatDistance(longestTrip, unit: unit))",
+                lockedDetail: "One drive of 200+ km"
+            ),
+            quest(
+                id: "seat-time", emoji: "🚗", title: "Seat time", category: .road,
+                current: roadHours, target: 10, unitLabel: "hours",
+                earnedDetail: String(format: "%.0f hours behind the wheel", roadHours),
+                lockedDetail: "Log 10 hours of tracked driving"
+            ),
+            quest(
+                id: "early-bird", emoji: "✨", title: "Early bird", category: .road,
+                current: Double(earlyBirdDrives), target: 3, unitLabel: "drives",
+                earnedDetail: "\(earlyBirdDrives) pre-7am starts",
+                lockedDetail: "Start 3 drives before 7am"
+            ),
+            quest(
+                id: "night-owl", emoji: "⚡", title: "Night owl", category: .road,
+                current: Double(nightOwlDrives), target: 3, unitLabel: "drives",
+                earnedDetail: "\(nightOwlDrives) late-night runs",
+                lockedDetail: "Start 3 drives after 10pm"
+            ),
+            quest(
+                id: "weekend-warrior", emoji: "🛣", title: "Weekend warrior", category: .road,
+                current: Double(weekendDrives), target: 5, unitLabel: "drives",
+                earnedDetail: "\(weekendDrives) weekend drives",
+                lockedDetail: "Track 5 weekend drives"
+            ),
+            quest(
+                id: "meal-runs", emoji: "🎯", title: "Meal-run circuit", category: .road,
+                current: Double(mealRuns), target: 5, unitLabel: "runs",
+                earnedDetail: "\(mealRuns) lunch/dinner hauls",
+                lockedDetail: "5 drives of 15+ km in meal hours (restaurant runs)"
+            ),
+            quest(
+                id: "pace-noted", emoji: "⚡", title: "Pace noted", category: .road,
+                current: topSpeed, target: 120, unitLabel: "km/h",
+                earnedDetail: String(format: "Top GPS %.0f km/h", topSpeed),
+                lockedDetail: "Hit 120 km/h on a tracked drive"
+            ),
+
+            // MARK: Fuel quests
+            quest(
+                id: "first-fill", emoji: "⛽", title: "First fill", category: .fuel,
+                current: Double(fillCount), target: 1, unitLabel: "fills",
+                earnedDetail: "Pump logged",
+                lockedDetail: "Log your first refuel"
+            ),
+            quest(
+                id: "five-fills", emoji: "⛽", title: "Pump starter", category: .fuel,
+                current: Double(fillCount), target: 5, unitLabel: "fills",
+                earnedDetail: "\(fillCount) refuels logged",
+                lockedDetail: "Log 5 refuels"
+            ),
+            quest(
+                id: "ten-fills", emoji: "⛽", title: "Fill ledger", category: .fuel,
+                current: Double(fillCount), target: 10, unitLabel: "fills",
+                earnedDetail: "\(fillCount) refuels in the book",
+                lockedDetail: "Reach 10 refuel entries"
+            ),
+            quest(
+                id: "twenty-five-fills", emoji: "🏆", title: "Pump regular", category: .fuel,
+                current: Double(fillCount), target: 25, unitLabel: "fills",
+                earnedDetail: "\(fillCount) fills strong",
+                lockedDetail: "Log 25 refuels"
+            ),
+            quest(
+                id: "fifty-fills", emoji: "✨", title: "Fuel historian", category: .fuel,
+                current: Double(fillCount), target: 50, unitLabel: "fills",
+                earnedDetail: "Half-century of fills",
+                lockedDetail: "Hit 50 refuel logs"
+            ),
+            quest(
+                id: "full-tank-discipline", emoji: "🎯", title: "Full-tank discipline", category: .fuel,
+                current: Double(fullTankCount), target: 10, unitLabel: "full tanks",
+                earnedDetail: "\(fullTankCount) full tanks",
+                lockedDetail: "Mark 10 fills as full tank"
+            ),
+            quest(
+                id: "fill-stretch", emoji: "🛣", title: "Stretch fill", category: .fuel,
+                current: longestFillStretch, target: 400, unitLabel: "km",
+                earnedDetail: "\(DistanceFormat.formatDistance(longestFillStretch, unit: unit)) between fills",
+                lockedDetail: "Go 400+ km between consecutive fills"
+            ),
+            quest(
+                id: "currency-hopper", emoji: "✨", title: "Currency hopper", category: .fuel,
+                current: Double(currencyCount), target: 2, unitLabel: "currencies",
+                earnedDetail: "Filled in \(currencyCount) currencies",
+                lockedDetail: "Log fills in 2 different currencies (e.g. QAR + SAR)"
+            ),
+            quest(
+                id: "gulf-hopper", emoji: "🚗", title: "Gulf hopper", category: .fuel,
+                current: Double(gulfCurrencies.count), target: 2, unitLabel: "GCC currencies",
+                earnedDetail: "Cross-border fuel trail",
+                lockedDetail: "Fill up using 2 GCC currencies (QAR / AED / SAR)"
+            ),
+
+            // MARK: Efficiency quests
+            quest(
+                id: "best-tank", emoji: "🏆", title: "Best tank", category: .efficiency,
+                current: bestEfficiency == nil ? 0 : 1, target: 1, unitLabel: "PB",
+                earnedDetail: bestEfficiency.map { String(format: "%.1f L/100km personal best", $0) } ?? "Earned",
+                lockedDetail: "Log two full tanks to set a personal best"
+            ),
+            quest(
+                id: "spec-beater", emoji: "✨", title: "Spec beater", category: .efficiency,
+                current: beatsSpec ? 1 : 0, target: 1, unitLabel: "win",
+                earnedDetail: "Under the factory brochure number",
+                lockedDetail: "Beat manufacturer L/100km on a tank"
+            ),
+            {
+                let kingProgress: Double = {
+                    if efficientKing { return 1 }
+                    guard let avgEfficiency else { return 0 }
+                    if let manufacturerStandard, manufacturerStandard > 0 {
+                        let goal = manufacturerStandard * 0.95
+                        // Lower avg is better; 0% at 1.3× goal, 100% at goal.
+                        let ceiling = goal * 1.3
+                        return min(max((ceiling - avgEfficiency) / (ceiling - goal), 0), 0.99)
+                    }
+                    let goal = 7.5
+                    let ceiling = 12.0
+                    return min(max((ceiling - avgEfficiency) / (ceiling - goal), 0), 0.99)
+                }()
+                return DriverAchievement(
+                    id: "efficient-king",
+                    emoji: "👑",
+                    title: "Efficient king",
+                    detail: efficientKing
+                        ? (avgEfficiency.map { String(format: "Avg %.1f L/100 — throne secured", $0) } ?? "Crowned")
+                        : (manufacturerStandard != nil
+                            ? "Average ≤ 95% of brochure spec"
+                            : "Post a personal best at or under 7.5 L/100"),
+                    unlocked: efficientKing,
+                    category: .efficiency,
+                    progress: kingProgress,
+                    progressLabel: avgEfficiency.map { String(format: "Avg %.1f L/100", $0) } ?? "Need full-tank pairs"
+                )
+            }(),
+            {
+                let leanUnlocked = bestEfficiency.map { $0 <= 7.0 } ?? false
+                let leanProgress: Double = {
+                    guard let bestEfficiency else { return 0 }
+                    if leanUnlocked { return 1 }
+                    let goal = 7.0
+                    let ceiling = 12.0
+                    return min(max((ceiling - bestEfficiency) / (ceiling - goal), 0), 0.99)
+                }()
+                return DriverAchievement(
+                    id: "lean-machine",
+                    emoji: "💧",
+                    title: "Lean machine",
+                    detail: leanUnlocked
+                        ? (bestEfficiency.map { String(format: "Best %.1f L/100km", $0) } ?? "Lean")
+                        : "Land a tank at or under 7.0 L/100km",
+                    unlocked: leanUnlocked,
+                    category: .efficiency,
+                    progress: leanProgress,
+                    progressLabel: bestEfficiency.map { String(format: "Best %.1f · goal 7.0", $0) } ?? "Need full-tank pairs"
+                )
+            }(),
+
+            // MARK: Habit quests
+            quest(
+                id: "consistent", emoji: "🔧", title: "Consistent logger", category: .habit,
+                current: Double(activeMonths), target: 3, unitLabel: "months",
+                earnedDetail: "\(activeMonths) active months",
+                lockedDetail: "Log fuel across 3 different months"
+            ),
+            quest(
+                id: "half-year", emoji: "🏆", title: "Half-year habit", category: .habit,
+                current: Double(activeMonths), target: 6, unitLabel: "months",
+                earnedDetail: "\(activeMonths) months strong",
+                lockedDetail: "Stay active across 6 months"
+            ),
+            quest(
+                id: "service-kept", emoji: "🩺", title: "Service kept", category: .habit,
+                current: Double(scopedServices.count), target: 1, unitLabel: "services",
+                earnedDetail: "Maintenance is on record",
+                lockedDetail: "Log your first service entry"
+            ),
+            quest(
+                id: "service-pro", emoji: "🔧", title: "Service pro", category: .habit,
+                current: Double(scopedServices.count), target: 5, unitLabel: "services",
+                earnedDetail: "\(scopedServices.count) service logs",
+                lockedDetail: "Build a 5-entry service history"
+            ),
+            quest(
+                id: "multi-car", emoji: "🚗", title: "Multi-car garage", category: .habit,
+                current: Double(vehicleCount), target: 2, unitLabel: "cars",
+                earnedDetail: "\(vehicleCount) vehicles in the garage",
+                lockedDetail: "Add a second vehicle"
+            )
+        ]
+    }
+
+    static func personalHighlights(logs: [FuelLog], vehicleId: String, unit: String) -> [PersonalHighlight] {
+        let vehicleLogs = logs
+            .filter { $0.vehicleId == vehicleId }
+            .sorted { $0.timestamp < $1.timestamp }
+
+        var highlights: [PersonalHighlight] = []
+
+        var bestEfficiency: Double?
+        for index in 1..<vehicleLogs.count {
+            let previous = vehicleLogs[index - 1]
+            let current = vehicleLogs[index]
+            guard current.isFullTank, previous.isFullTank else { continue }
+            let distance = current.odometerReading - previous.odometerReading
+            guard distance > 0, current.fuelVolume > 0 else { continue }
+            let efficiency = (current.fuelVolume / distance) * 100
+            if bestEfficiency == nil || efficiency < bestEfficiency! {
+                bestEfficiency = efficiency
+            }
+        }
+        if let bestEfficiency {
+            highlights.append(
+                PersonalHighlight(
+                    id: "best-tank",
+                    emoji: "🏆",
+                    label: "Best tank",
+                    value: String(format: "%.1f L/100km", bestEfficiency)
+                )
+            )
+        }
+
+        var longestKm = 0.0
+        for index in 1..<vehicleLogs.count {
+            let distance = vehicleLogs[index].odometerReading - vehicleLogs[index - 1].odometerReading
+            if distance > longestKm { longestKm = distance }
+        }
+        if longestKm > 0 {
+            highlights.append(
+                PersonalHighlight(
+                    id: "longest-run",
+                    emoji: "🛣",
+                    label: "Longest run",
+                    value: DistanceFormat.formatDistance(longestKm, unit: unit)
+                )
+            )
+        }
+
+        let months = Set(vehicleLogs.map {
+            let comps = Calendar.current.dateComponents([.year, .month], from: $0.timestamp)
+            return "\(comps.year ?? 0)-\(comps.month ?? 0)"
+        })
+        if months.count >= 2 {
+            highlights.append(
+                PersonalHighlight(
+                    id: "streak",
+                    emoji: "⚡",
+                    label: "Active months",
+                    value: "\(months.count)"
+                )
+            )
+        }
+
+        return Array(highlights.prefix(3))
+    }
+
+    static func funInsights(
+        logs: [FuelLog],
+        vehicleId: String,
+        currency: String,
+        unit: String,
+        metrics: EfficiencyMetrics,
+        manufacturerStandard: Double?
+    ) -> [FunInsight] {
+        guard metrics.refuelCount > 0 || !logs.filter({ $0.vehicleId == vehicleId }).isEmpty else { return [] }
+
+        let vehicleLogs = logs
+            .filter { $0.vehicleId == vehicleId }
+            .sorted { $0.timestamp > $1.timestamp }
+
+        guard !vehicleLogs.isEmpty else { return [] }
+
+        var insights: [FunInsight] = []
+
+        if let spendChange = metrics.spendChange, abs(spendChange) >= 5 {
+            if spendChange < 0 {
+                insights.append(
+                    FunInsight(
+                        kind: .celebrate,
+                        emoji: "✨",
+                        title: "Lighter on the wallet",
+                        message: "You spent \(Int(abs(spendChange).rounded()))% less on fuel this month than last. Nice."
+                    )
+                )
+            } else {
+                insights.append(
+                    FunInsight(
+                        kind: .watch,
+                        emoji: "⛽",
+                        title: "Spend crept up",
+                        message: "Fuel spend is up \(Int(spendChange.rounded()))% vs last month — \(CurrencyFormat.format(metrics.monthlySpend, currency: currency)) so far."
+                    )
+                )
+            }
+        }
+
+        if metrics.totalDistance > 50, metrics.monthlySpend > 0 {
+            let costPerKm = metrics.monthlySpend / metrics.totalDistance
+            insights.append(
+                FunInsight(
+                    kind: .tip,
+                    emoji: "🎯",
+                    title: "Your real cost to drive",
+                    message: "About \(CurrencyFormat.format(costPerKm, currency: currency)) per km this month across \(DistanceFormat.formatDistance(metrics.totalDistance, unit: unit))."
+                )
+            )
+        }
+
+        if let current = metrics.current,
+           let manufacturerStandard,
+           current <= manufacturerStandard {
+            let saved = manufacturerStandard - current
+            insights.append(
+                FunInsight(
+                    kind: .celebrate,
+                    emoji: "✨",
+                    title: "Beating the factory number",
+                    message: String(
+                        format: "Your last tanks came in %.1f L/100km under the %.1f brochure spec.",
+                        saved,
+                        manufacturerStandard
+                    )
+                )
+            )
+        }
+
+        if vehicleLogs.count >= 2 {
+            let daysSince = Calendar.current.dateComponents([.day], from: vehicleLogs[0].timestamp, to: Date()).day ?? 0
+            var gaps: [Double] = []
+            for index in 0..<min(vehicleLogs.count - 1, 6) {
+                let gap = vehicleLogs[index].timestamp.timeIntervalSince(vehicleLogs[index + 1].timestamp) / 86_400
+                gaps.append(gap)
+            }
+            let avgGap = gaps.isEmpty ? 0 : gaps.reduce(0, +) / Double(gaps.count)
+            if avgGap >= 3 {
+                let daysLeft = max(0, Int((avgGap - Double(daysSince)).rounded()))
+                if daysLeft <= 3, daysSince > 0 {
+                    insights.append(
+                        FunInsight(
+                            kind: .tip,
+                            emoji: "⛽",
+                            title: "Fill-up radar",
+                            message: "You usually refuel every ~\(Int(avgGap.rounded())) days. Based on your pattern, you might want fuel in the next \(max(daysLeft, 1)) day\(daysLeft == 1 ? "" : "s")."
+                        )
+                    )
+                }
+            }
+        }
+
+        if vehicleLogs.count >= 3 {
+            let recent = Array(vehicleLogs.prefix(3))
+            let avgRecent = recent.reduce(0) { $0 + $1.pricePerUnit } / Double(recent.count)
+            let older = Array(vehicleLogs.dropFirst(3).prefix(3))
+            if older.count >= 2 {
+                let avgOlder = older.reduce(0) { $0 + $1.pricePerUnit } / Double(older.count)
+                if avgOlder > 0 {
+                    let priceChange = ((avgRecent - avgOlder) / avgOlder) * 100
+                    if abs(priceChange) >= 3 {
+                        insights.append(
+                            FunInsight(
+                                kind: priceChange > 0 ? .watch : .celebrate,
+                                emoji: priceChange > 0 ? "⛽" : "🏆",
+                                title: priceChange > 0 ? "Pump prices shifted" : "Cheaper fills lately",
+                                message: "Your last 3 fills averaged \(CurrencyFormat.format(avgRecent, currency: currency))/L — \(Int(abs(priceChange).rounded()))% \(priceChange > 0 ? "higher" : "lower") than before."
+                            )
+                        )
+                    }
+                }
+            }
+        }
+
+        if let current = metrics.current,
+           let avg = metrics.avgEfficiency,
+           avg > 0,
+           metrics.efficiencySampleCount >= 2 {
+            let diff = ((current - avg) / avg) * 100
+            if diff <= -5 {
+                insights.append(
+                    FunInsight(
+                        kind: .celebrate,
+                        emoji: "💧",
+                        title: "Greenest tank this month",
+                        message: "Last interval was \(Int(abs(diff).rounded()))% more efficient than your monthly average."
+                    )
+                )
+            }
+        }
+
+        let order: [FunInsight.Kind: Int] = [.celebrate: 0, .tip: 1, .watch: 2]
+        return insights.sorted { (order[$0.kind] ?? 9) < (order[$1.kind] ?? 9) }.prefix(3).map { $0 }
+    }
+}

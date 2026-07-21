@@ -155,6 +155,7 @@ struct TripsView: View {
             syncRecorderVehicle()
             tripPermissions.refreshStatuses()
             if mode == .tracking {
+                recorder.ensureMapFollowUpdates()
                 focusTrackingLocation()
             } else {
                 focusMap()
@@ -190,10 +191,18 @@ struct TripsView: View {
         .onChange(of: recorder.pendingSave) { _, pending in
             showConfirm = pending != nil
         }
-        .onChange(of: recorder.snapshot?.routePointCount) { _, count in
-            guard recorder.phase == .recording,
-                  (count ?? 0) >= 2 else { return }
-            withAnimation(.easeInOut(duration: 0.45)) {
+        .onChange(of: recorder.followTick) { _, _ in
+            guard mode == .tracking else { return }
+            withAnimation(.easeInOut(duration: 0.55)) {
+                focusTrackingLocation()
+            }
+        }
+        .onChange(of: recorder.phase) { _, phase in
+            guard mode == .tracking else { return }
+            if phase == .idle || phase == .watching {
+                recorder.ensureMapFollowUpdates()
+            }
+            withAnimation(.easeInOut(duration: 0.55)) {
                 focusTrackingLocation()
             }
         }
@@ -237,6 +246,7 @@ struct TripsView: View {
                         if item == .drives {
                             focusMap()
                         } else {
+                            recorder.ensureMapFollowUpdates()
                             focusTrackingLocation()
                         }
                     }
@@ -655,9 +665,32 @@ struct TripsView: View {
     }
 
     private func focusTrackingLocation() {
-        mapPosition = .userLocation(
-            followsHeading: recorder.phase == .recording,
-            fallback: .automatic
+        // Pitched camera is required for 3D buildings / elevation — `.userLocation`
+        // stays nearly top-down and hides extruded city models.
+        let coordinate: CLLocationCoordinate2D?
+        if let lat = recorder.followLatitude, let lng = recorder.followLongitude {
+            coordinate = CLLocationCoordinate2D(latitude: lat, longitude: lng)
+        } else if let last = recorder.liveRoute.last {
+            coordinate = CLLocationCoordinate2D(latitude: last.latitude, longitude: last.longitude)
+        } else {
+            coordinate = nil
+        }
+
+        guard let coordinate else {
+            // Wait for GPS instead of locking onto a hardcoded city fallback.
+            mapPosition = .userLocation(followsHeading: false, fallback: .automatic)
+            return
+        }
+
+        let heading = recorder.followCourseDegrees >= 0 ? recorder.followCourseDegrees : 0
+        let distance: CLLocationDistance = recorder.phase == .recording ? 680 : 1_050
+        mapPosition = .camera(
+            MapCamera(
+                centerCoordinate: coordinate,
+                distance: distance,
+                heading: heading,
+                pitch: 58
+            )
         )
     }
 
@@ -892,9 +925,18 @@ struct TripsMapCanvas: View {
                 }
             }
         }
-        .mapStyle(.standard(elevation: .realistic, pointsOfInterest: .excludingAll, showsTraffic: false))
+        .mapStyle(Self.lockedMapStyle)
+        .mapControlVisibility(.hidden)
         .preferredColorScheme(.dark)
     }
+
+    /// Street map only (never satellite/hybrid) with realistic elevation so
+    /// pitched cameras reveal 3D buildings where Apple provides city data.
+    private static let lockedMapStyle: MapStyle = .standard(
+        elevation: .realistic,
+        pointsOfInterest: .excludingAll,
+        showsTraffic: false
+    )
 }
 
 private struct VeloseeteMapCharacter: View {
@@ -1168,7 +1210,8 @@ struct TripDetailView: View {
                 }
             }
         }
-        .mapStyle(.standard(elevation: .realistic, pointsOfInterest: .excludingAll, showsTraffic: false))
+        .mapStyle(Self.lockedMapStyle)
+        .mapControlVisibility(.hidden)
         .preferredColorScheme(.dark)
         .overlay(alignment: .bottomLeading) {
             Text("RECORDED ROUTE")
@@ -1180,6 +1223,12 @@ struct TripDetailView: View {
                 .padding(16)
         }
     }
+
+    private static let lockedMapStyle: MapStyle = .standard(
+        elevation: .realistic,
+        pointsOfInterest: .excludingAll,
+        showsTraffic: false
+    )
 
     private func routeMarker(color: Color, icon: String) -> some View {
         Image(systemName: icon)

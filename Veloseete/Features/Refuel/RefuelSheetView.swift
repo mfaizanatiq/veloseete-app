@@ -5,21 +5,34 @@ struct RefuelSheetView: View {
     @Environment(\.dismiss) private var dismiss
 
     let vehicleId: String
+    let carPlayDraft: CarPlayRefuelDraft?
 
     @State private var totalCost = ""
     @State private var liters = ""
     @State private var odometer = ""
     @State private var isFullTank = true
     @State private var selectedDate = Date()
+    @State private var selectedCurrency = "QAR"
     @State private var isSubmitting = false
     @State private var errorMessage: String?
     @State private var showSuccess = false
+
+    private let entryCurrencies = ["QAR", "AED", "SAR", "USD", "EUR", "GBP", "PKR", "INR"]
+
+    init(vehicleId: String, carPlayDraft: CarPlayRefuelDraft? = nil) {
+        self.vehicleId = vehicleId
+        self.carPlayDraft = carPlayDraft
+        _selectedDate = State(initialValue: carPlayDraft?.createdAt ?? Date())
+        _odometer = State(
+            initialValue: carPlayDraft.map { String(format: "%.0f", $0.estimatedOdometer) } ?? ""
+        )
+    }
 
     private var vehicle: Vehicle? {
         store.vehicles.first { $0.id == vehicleId }
     }
 
-    private var currency: String {
+    private var defaultCurrency: String {
         vehicle?.currency ?? "QAR"
     }
 
@@ -55,16 +68,35 @@ struct RefuelSheetView: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
+                    if let carPlayDraft {
+                        HStack(alignment: .top, spacing: 10) {
+                            Image(systemName: "car.side.fill")
+                                .foregroundStyle(VS.Color.accent)
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text("Continued from CarPlay")
+                                    .font(VS.Typography.body(13, weight: .semibold))
+                                    .foregroundStyle(VS.Color.textPrimary)
+                                Text("Time and estimated odometer are ready for \(carPlayDraft.vehicleName). Add the exact receipt values below.")
+                                    .font(VS.Typography.body(12))
+                                    .foregroundStyle(VS.Color.textTertiary)
+                            }
+                        }
+                        .padding(14)
+                        .glassCard(radius: 12)
+                    }
+
                     HStack(spacing: 12) {
                         costField
                         litersField
                     }
 
                     if let price = pricePerLiter {
-                        Text(String(format: "%@ %.3f / L", CurrencyFormat.symbols[currency] ?? currency, price))
+                        Text(String(format: "%@ %.3f / L", CurrencyFormat.symbols[selectedCurrency] ?? selectedCurrency, price))
                             .font(VS.Typography.body(13, weight: .medium))
                             .foregroundStyle(VS.Color.accentSecondary)
                     }
+
+                    currencyPicker
 
                     odometerSection
 
@@ -131,6 +163,7 @@ struct RefuelSheetView: View {
                 .background(VS.Color.bgPrimary.opacity(0.96))
             }
             .onAppear {
+                selectedCurrency = defaultCurrency
                 if odometer.isEmpty, let estimate {
                     odometer = String(format: "%.0f", estimate.estimatedKm)
                 } else if odometer.isEmpty, lastOdometer > 0 {
@@ -198,12 +231,59 @@ struct RefuelSheetView: View {
                     .keyboardType(.decimalPad)
                     .font(VS.Typography.heading(20, weight: .semibold))
                     .foregroundStyle(VS.Color.textPrimary)
-                Text(currency)
+                Text(selectedCurrency)
                     .font(VS.Typography.body(13, weight: .medium))
                     .foregroundStyle(VS.Color.textTertiary)
             }
             .padding(14)
             .glassCard(radius: 12)
+        }
+    }
+
+    private var currencyPicker: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                fieldLabel("Currency for this fill")
+                Spacer()
+                if selectedCurrency == defaultCurrency {
+                    Text("Vehicle default")
+                        .font(VS.Typography.body(11, weight: .semibold))
+                        .foregroundStyle(VS.Color.accent)
+                }
+            }
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(entryCurrencies, id: \.self) { code in
+                        Button {
+                            UISelectionFeedbackGenerator().selectionChanged()
+                            selectedCurrency = code
+                        } label: {
+                            Text(code)
+                                .font(VS.Typography.body(13, weight: .semibold))
+                                .padding(.horizontal, 14)
+                                .padding(.vertical, 10)
+                                .background(
+                                    Capsule().fill(selectedCurrency == code ? VS.Color.accent : VS.Color.chip)
+                                )
+                                .foregroundStyle(selectedCurrency == code ? VS.Color.navPill : VS.Color.textSecondary)
+                                .overlay(
+                                    Capsule().stroke(
+                                        code == defaultCurrency && selectedCurrency != code
+                                            ? VS.Color.accent.opacity(0.35)
+                                            : Color.clear,
+                                        lineWidth: 1
+                                    )
+                                )
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+
+            Text("Defaults to \(defaultCurrency). Switch when you fill up in KSA, UAE, or elsewhere — only this entry changes.")
+                .font(VS.Typography.body(12))
+                .foregroundStyle(VS.Color.textTertiary)
         }
     }
 
@@ -255,7 +335,7 @@ struct RefuelSheetView: View {
                 odometerReading: odo,
                 fuelVolume: vol,
                 totalCost: cost,
-                currency: currency,
+                currency: selectedCurrency,
                 isFullTank: isFullTank,
                 timestamp: stamp
             )

@@ -2,17 +2,18 @@ import SwiftUI
 import PhotosUI
 import UIKit
 import Charts
+import AuthenticationServices
 
 enum AppTab: String, CaseIterable {
-    case trips, fuel, analytics, details, service
+    case trips, fuel, service, details, analytics
 
     var label: String {
         switch self {
         case .trips: return "Drives"
-        case .fuel: return "Fuel"
-        case .analytics: return "Insights"
-        case .details: return "Garage"
+        case .fuel: return "Fuels"
         case .service: return "Service"
+        case .details: return "Garage"
+        case .analytics: return "Driver"
         }
     }
 
@@ -21,18 +22,20 @@ enum AppTab: String, CaseIterable {
         switch self {
         case .trips: return .mapTrifold
         case .fuel: return .gasPump
-        case .analytics: return .chartLine
-        case .details: return .car
         case .service: return .wrench
+        case .details: return .car
+        case .analytics: return .chartLine
         }
     }
 }
 
 struct MainTabShell: View {
     @EnvironmentObject private var store: DataStore
+    @Environment(\.scenePhase) private var scenePhase
     @StateObject private var navChrome = BottomNavChrome()
     @State private var tab: AppTab = .trips
     @State private var showProfile = false
+    @State private var carPlayRefuelDraft: CarPlayRefuelDraft?
 
     var body: some View {
         ZStack(alignment: .bottom) {
@@ -42,12 +45,12 @@ struct MainTabShell: View {
                     TripsView(onProfile: { showProfile = true })
                 case .fuel:
                     DashboardView(onProfile: { showProfile = true })
-                case .analytics:
-                    AnalyticsView(onProfile: { showProfile = true })
-                case .details:
-                    DetailsListView(onProfile: { showProfile = true })
                 case .service:
                     ServiceListView(onProfile: { showProfile = true })
+                case .details:
+                    DetailsListView(onProfile: { showProfile = true })
+                case .analytics:
+                    DriverProfileView(onProfile: { showProfile = true })
                 }
             }
             .coordinateSpace(name: "bottomNavScroll")
@@ -58,9 +61,31 @@ struct MainTabShell: View {
         .onChange(of: tab) { _, _ in
             navChrome.reset()
         }
-        .sheet(isPresented: $showProfile) {
+        .sheet(isPresented: $showProfile, onDismiss: presentPendingCarPlayRefuel) {
             ProfileView()
         }
+        .sheet(item: $carPlayRefuelDraft) { draft in
+            RefuelSheetView(vehicleId: draft.vehicleID, carPlayDraft: draft)
+        }
+        .onAppear {
+            presentPendingCarPlayRefuel()
+        }
+        .onChange(of: scenePhase) { _, phase in
+            guard phase == .active else { return }
+            presentPendingCarPlayRefuel()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: CarPlayRefuelHandoff.draftCreated)) { _ in
+            presentPendingCarPlayRefuel()
+        }
+    }
+
+    private func presentPendingCarPlayRefuel() {
+        guard !showProfile,
+              carPlayRefuelDraft == nil,
+              let draft = CarPlayRefuelHandoff.consumePendingDraft(),
+              store.vehicles.contains(where: { $0.id == draft.vehicleID }) else { return }
+        tab = .fuel
+        carPlayRefuelDraft = draft
     }
 }
 
@@ -243,6 +268,7 @@ struct PlaceholderPane: View {
 
 struct DetailsListView: View {
     @EnvironmentObject private var store: DataStore
+    @EnvironmentObject private var vehiclePhotos: VehiclePhotoStore
     let onProfile: () -> Void
     @State private var showAddVehicle = false
     @State private var editingVehicle: Vehicle?
@@ -315,7 +341,14 @@ struct DetailsListView: View {
         }
         .sheet(item: $editingVehicle) { vehicle in
             VehicleEditorView(vehicle: vehicle)
+                .environmentObject(vehiclePhotos)
                 .veloseeteSheet()
+        }
+        .onAppear {
+            vehiclePhotos.load(vehicleIds: store.vehicles.map(\.id))
+        }
+        .onChange(of: store.vehicles.map(\.id)) { _, ids in
+            vehiclePhotos.load(vehicleIds: ids)
         }
     }
 
@@ -327,9 +360,11 @@ struct DetailsListView: View {
 
         return VStack(alignment: .leading, spacing: 16) {
             HStack(spacing: 13) {
-                FluentEmojiView(emoji: vehicle.icon ?? "🚗", size: 38)
-                    .frame(width: 54, height: 54)
-                    .background(VS.Color.chip, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                vehicleAppearancePreview(
+                    image: vehiclePhotos.image(for: vehicle.id),
+                    emoji: vehicle.icon ?? "🚗",
+                    size: 54
+                )
                 VStack(alignment: .leading, spacing: 3) {
                     HStack(spacing: 8) {
                         Text(vehicle.nickname)
@@ -428,6 +463,7 @@ struct DetailsListView: View {
 
 private struct VehicleEditorView: View {
     @EnvironmentObject private var store: DataStore
+    @EnvironmentObject private var vehiclePhotos: VehiclePhotoStore
     @Environment(\.dismiss) private var dismiss
     let vehicle: Vehicle
 
@@ -438,8 +474,17 @@ private struct VehicleEditorView: View {
     @State private var odometer: String
     @State private var tankCapacity: String
     @State private var currency: String
+    @State private var icon: String
+    @State private var usePhoto: Bool
+    @State private var draftPhoto: UIImage?
+    @State private var removeExistingPhoto = false
+    @State private var selectedPhoto: PhotosPickerItem?
+    @State private var cropDraft: AvatarCropDraft?
+    @State private var isPreparingCrop = false
     @State private var isSaving = false
     @State private var errorMessage: String?
+
+    private let icons = ["🚗", "🚙", "🚕", "🚌", "🚐", "🏎️", "🚓", "🚑", "🚒", "🚚", "🚛", "🛻", "🏍️", "🛵", "🚜", "🚎"]
 
     init(vehicle: Vehicle) {
         self.vehicle = vehicle
@@ -450,11 +495,28 @@ private struct VehicleEditorView: View {
         _odometer = State(initialValue: String(format: "%.0f", vehicle.currentOdometer))
         _tankCapacity = State(initialValue: vehicle.fuelTankCapacity.map { String(format: "%.1f", $0) } ?? "")
         _currency = State(initialValue: vehicle.currency)
+        _icon = State(initialValue: vehicle.icon ?? "🚗")
+        let hasPhoto = VehiclePhotoStore.shared.image(for: vehicle.id) != nil
+        _usePhoto = State(initialValue: hasPhoto)
+        _draftPhoto = State(initialValue: VehiclePhotoStore.shared.image(for: vehicle.id))
+    }
+
+    private var previewImage: UIImage? {
+        if removeExistingPhoto { return draftPhoto }
+        return draftPhoto ?? vehiclePhotos.image(for: vehicle.id)
     }
 
     var body: some View {
         NavigationStack {
             Form {
+                Section {
+                    appearanceEditor
+                } header: {
+                    Text("Appearance")
+                } footer: {
+                    Text("Use a photo of your car, or pick a Fluent emoji. Photo wins when both are set.")
+                }
+
                 Section("Vehicle") {
                     TextField("Vehicle name", text: $nickname)
                     TextField("Make", text: $make)
@@ -485,14 +547,124 @@ private struct VehicleEditorView: View {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
                     Button(isSaving ? "Saving…" : "Save") { Task { await save() } }
-                        .disabled(!canSave || isSaving)
+                        .disabled(!canSave || isSaving || isPreparingCrop)
                 }
+            }
+            .onAppear {
+                vehiclePhotos.load(vehicleId: vehicle.id)
+                if draftPhoto == nil, let existing = vehiclePhotos.image(for: vehicle.id) {
+                    draftPhoto = existing
+                    usePhoto = true
+                }
+            }
+            .onChange(of: selectedPhoto) { _, item in
+                guard let item else { return }
+                Task { await loadPhotoForCrop(item) }
+            }
+            .fullScreenCover(item: $cropDraft) { draft in
+                ProfilePhotoCropView(
+                    image: draft.image,
+                    title: "Reframe your car",
+                    subtitle: "Move and zoom until it feels right",
+                    footer: "Only the circular area will show in Garage",
+                    onUse: { cropped in
+                        draftPhoto = cropped
+                        usePhoto = true
+                        removeExistingPhoto = false
+                        cropDraft = nil
+                        selectedPhoto = nil
+                    },
+                    onCancel: {
+                        cropDraft = nil
+                        selectedPhoto = nil
+                    }
+                )
             }
         }
     }
 
+    private var appearanceEditor: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack(spacing: 14) {
+                vehicleAppearancePreview(image: usePhoto ? previewImage : nil, emoji: icon, size: 72)
+
+                VStack(alignment: .leading, spacing: 8) {
+                    PhotosPicker(selection: $selectedPhoto, matching: .images) {
+                        Text(previewImage == nil ? "Add car photo" : "Change photo")
+                            .font(VS.Typography.body(14, weight: .semibold))
+                            .foregroundStyle(VS.Color.accent)
+                    }
+                    .disabled(isPreparingCrop)
+
+                    if usePhoto, previewImage != nil {
+                        Button("Use emoji instead") {
+                            usePhoto = false
+                            removeExistingPhoto = true
+                            draftPhoto = nil
+                        }
+                        .font(VS.Typography.body(13, weight: .medium))
+                        .foregroundStyle(VS.Color.textSecondary)
+                    }
+
+                    if isPreparingCrop {
+                        ProgressView("Opening photo…")
+                            .font(VS.Typography.body(12))
+                            .tint(VS.Color.accent)
+                    }
+                }
+                Spacer(minLength: 0)
+            }
+
+            if !usePhoto || previewImage == nil {
+                Text("Emoji")
+                    .font(VS.Typography.body(12, weight: .medium))
+                    .foregroundStyle(VS.Color.textTertiary)
+                LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 8), spacing: 8) {
+                    ForEach(icons, id: \.self) { item in
+                        Button {
+                            icon = item
+                            usePhoto = false
+                            removeExistingPhoto = true
+                            draftPhoto = nil
+                        } label: {
+                            FluentEmojiView(emoji: item, size: 26)
+                                .frame(width: 36, height: 36)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 10)
+                                        .fill(icon == item && !usePhoto ? VS.Color.accent.opacity(0.2) : VS.Color.controlDisabled)
+                                )
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 10)
+                                        .stroke(icon == item && !usePhoto ? VS.Color.accent : Color.clear, lineWidth: 1.5)
+                                )
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+        }
+        .padding(.vertical, 4)
+    }
+
     private var canSave: Bool {
         !nickname.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && Double(odometer) != nil
+    }
+
+    private func loadPhotoForCrop(_ item: PhotosPickerItem) async {
+        isPreparingCrop = true
+        defer { isPreparingCrop = false }
+        do {
+            guard let data = try await item.loadTransferable(type: Data.self),
+                  let image = UIImage(data: data) else {
+                errorMessage = "That photo could not be opened."
+                selectedPhoto = nil
+                return
+            }
+            cropDraft = AvatarCropDraft(image: image)
+        } catch {
+            errorMessage = error.localizedDescription
+            selectedPhoto = nil
+        }
     }
 
     private func save() async {
@@ -507,7 +679,13 @@ private struct VehicleEditorView: View {
         updated.currentOdometer = odometerValue
         updated.fuelTankCapacity = Double(tankCapacity)
         updated.currency = currency
+        updated.icon = icon
         do {
+            if usePhoto, let draftPhoto {
+                try vehiclePhotos.save(image: draftPhoto, vehicleId: vehicle.id)
+            } else if removeExistingPhoto || !usePhoto {
+                try vehiclePhotos.remove(vehicleId: vehicle.id)
+            }
             try await store.updateVehicle(updated)
             UINotificationFeedbackGenerator().notificationOccurred(.success)
             dismiss()
@@ -515,6 +693,26 @@ private struct VehicleEditorView: View {
             errorMessage = error.localizedDescription
         }
     }
+}
+
+private func vehicleAppearancePreview(image: UIImage?, emoji: String, size: CGFloat) -> some View {
+    Group {
+        if let image {
+            Image(uiImage: image)
+                .resizable()
+                .scaledToFill()
+                .frame(width: size, height: size)
+                .clipShape(RoundedRectangle(cornerRadius: size * 0.28, style: .continuous))
+        } else {
+            FluentEmojiView(emoji: emoji, size: size * 0.55)
+                .frame(width: size, height: size)
+                .background(VS.Color.chip, in: RoundedRectangle(cornerRadius: size * 0.28, style: .continuous))
+        }
+    }
+    .overlay(
+        RoundedRectangle(cornerRadius: size * 0.28, style: .continuous)
+            .stroke(Color.white.opacity(0.12), lineWidth: 1)
+    )
 }
 
 private enum AnalyticsPeriod: String, CaseIterable {
@@ -529,37 +727,127 @@ private struct AnalyticsPoint: Identifiable {
     let value: Double
 }
 
-struct AnalyticsView: View {
+private struct DriverHubStory: Identifiable {
+    let id: String
+    let emoji: String
+    let eyebrow: String
+    let value: String
+    let title: String
+    let detail: String
+}
+
+private struct DriverHubPurpose: Identifiable {
+    let id: String
+    let emoji: String
+    let title: String
+    let value: String
+    let subtitle: String
+}
+
+struct DriverProfileView: View {
     @EnvironmentObject private var store: DataStore
+    @EnvironmentObject private var avatarStore: ProfileAvatarStore
     let onProfile: () -> Void
     @State private var period: AnalyticsPeriod = .month
+    @State private var showBadges = false
+
+    private var unit: String { store.defaultDistanceUnit }
+    private var currency: String { store.currentVehicle?.currency ?? "QAR" }
+    private var displayName: String {
+        let name = store.userName.trimmingCharacters(in: .whitespacesAndNewlines)
+        return name.isEmpty ? "Driver" : name
+    }
+
+    private var totalKm: Double {
+        InsightGenerator.totalKilometersDriven(
+            trips: store.trips,
+            logs: store.fuelLogs,
+            vehicleId: nil
+        )
+    }
+
+    private var vehicleTrips: [Trip] {
+        guard let id = store.currentVehicle?.id else { return store.trips }
+        return store.trips.filter { $0.vehicleId == id }
+    }
+
+    private var lifetimeFuelLogs: [FuelLog] {
+        guard let vehicleId = store.currentVehicle?.id else { return store.fuelLogs }
+        return store.fuelLogs.filter { $0.vehicleId == vehicleId }.sorted { $0.timestamp < $1.timestamp }
+    }
 
     private var logs: [FuelLog] {
-        guard let vehicleId = store.currentVehicle?.id else { return [] }
-        let all = store.fuelLogs.filter { $0.vehicleId == vehicleId }.sorted { $0.timestamp < $1.timestamp }
-        guard let days = period.days, let cutoff = Calendar.current.date(byAdding: .day, value: -days, to: Date()) else { return all }
+        let all = lifetimeFuelLogs
+        guard let days = period.days,
+              let cutoff = Calendar.current.date(byAdding: .day, value: -days, to: Date()) else { return all }
         return all.filter { $0.timestamp >= cutoff }
     }
 
-    private var distance: Double {
+    private var periodDistance: Double {
         guard let first = logs.first, let last = logs.last else { return 0 }
         return max(0, last.odometerReading - first.odometerReading)
     }
+
     private var spent: Double { logs.reduce(0) { $0 + $1.totalCost } }
     private var liters: Double { logs.reduce(0) { $0 + $1.fuelVolume } }
-    private var efficiency: Double? { distance > 0 ? liters / distance * 100 : nil }
-    private var currency: String { store.currentVehicle?.currency ?? "QAR" }
+    private var efficiency: Double? { periodDistance > 0 ? liters / periodDistance * 100 : nil }
+
+    private var vehicleMetrics: EfficiencyMetrics? {
+        guard let vehicle = store.currentVehicle else { return nil }
+        return MetricsCalculator.compute(vehicle: vehicle, logs: store.fuelLogs)
+    }
+
+    private var achievements: [DriverAchievement] {
+        InsightGenerator.achievements(
+            trips: store.trips,
+            logs: store.fuelLogs,
+            serviceLogs: store.serviceLogs,
+            vehicleCount: store.vehicles.count,
+            vehicleId: nil,
+            unit: unit,
+            manufacturerStandard: store.manufacturerStandard
+        )
+    }
+
+    private var unlockedCount: Int { achievements.filter(\.unlocked).count }
+
+    /// Closest-to-done first so “what to chase next” is obvious.
+    private var questBadges: [DriverAchievement] {
+        achievements
+            .filter { !$0.unlocked }
+            .sorted { lhs, rhs in
+                if lhs.progress != rhs.progress { return lhs.progress > rhs.progress }
+                return lhs.title < rhs.title
+            }
+    }
+
+    private var funInsights: [FunInsight] {
+        guard let vehicle = store.currentVehicle, let metrics = vehicleMetrics else { return [] }
+        return InsightGenerator.funInsights(
+            logs: store.fuelLogs,
+            vehicleId: vehicle.id,
+            currency: vehicle.currency,
+            unit: unit,
+            metrics: metrics,
+            manufacturerStandard: store.manufacturerStandard
+        )
+    }
 
     private var monthlySpend: [AnalyticsPoint] {
         let calendar = Calendar.current
-        let grouped = Dictionary(grouping: logs) { calendar.date(from: calendar.dateComponents([.year, .month], from: $0.timestamp)) ?? $0.timestamp }
-        return grouped.map { AnalyticsPoint(date: $0.key, value: $0.value.reduce(0) { $0 + $1.totalCost }) }.sorted { $0.date < $1.date }
+        let grouped = Dictionary(grouping: logs) {
+            calendar.date(from: calendar.dateComponents([.year, .month], from: $0.timestamp)) ?? $0.timestamp
+        }
+        return grouped
+            .map { AnalyticsPoint(date: $0.key, value: $0.value.reduce(0) { $0 + $1.totalCost }) }
+            .sorted { $0.date < $1.date }
     }
 
     private var efficiencyTrend: [AnalyticsPoint] {
         guard logs.count > 1 else { return [] }
         return (1..<logs.count).compactMap { index in
-            let previous = logs[index - 1], current = logs[index]
+            let previous = logs[index - 1]
+            let current = logs[index]
             let interval = current.odometerReading - previous.odometerReading
             guard interval > 0, current.isFullTank, previous.isFullTank else { return nil }
             return AnalyticsPoint(date: current.timestamp, value: current.fuelVolume / interval * 100)
@@ -567,100 +855,904 @@ struct AnalyticsView: View {
     }
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 22) {
-                MainTabHeader(
-                    "Insights",
-                    subtitle: store.currentVehicle.map { "\($0.nickname) · \($0.make) \($0.model)" } ?? "Your vehicle",
-                    onProfile: onProfile
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 22) {
+                    MainTabHeader(
+                        "Driver profile",
+                        subtitle: store.currentVehicle.map { "\($0.nickname) · your hub" } ?? "Your driving hub",
+                        onProfile: onProfile
+                    )
+
+                    driverHeroCard
+                    driverHubGrid
+                    badgesHubPreview
+                    insightsSection
+                    analyticsSection
+                }
+                .padding(.horizontal, 16)
+                .padding(.bottom, 110)
+                .tracksBottomNavScroll()
+            }
+            .veloseetePage()
+            .toolbar(.hidden, for: .navigationBar)
+            .navigationDestination(isPresented: $showBadges) {
+                DriverBadgesView(achievements: achievements)
+            }
+        }
+    }
+
+    private var driverHeroCard: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack(spacing: 14) {
+                ProfileAvatarView(image: avatarStore.image, size: 72)
+                    .overlay(Circle().stroke(VS.Color.accent.opacity(0.35), lineWidth: 2))
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(displayName)
+                        .font(VS.Typography.heading(24, weight: .bold))
+                        .foregroundStyle(VS.Color.textPrimary)
+                    Text(store.currentVehicle.map { "\($0.make) \($0.model)" } ?? "Add a vehicle to personalize")
+                        .font(VS.Typography.body(13))
+                        .foregroundStyle(VS.Color.textTertiary)
+                    Button {
+                        showBadges = true
+                    } label: {
+                        Text("\(unlockedCount)/\(achievements.count) badges unlocked")
+                            .font(VS.Typography.body(12, weight: .semibold))
+                            .foregroundStyle(VS.Color.accent)
+                    }
+                    .buttonStyle(.plain)
+                }
+                Spacer(minLength: 0)
+            }
+
+            VStack(alignment: .leading, spacing: 6) {
+                Text("TOTAL KILOMETERS DRIVEN")
+                    .font(VS.Typography.body(10, weight: .bold))
+                    .tracking(0.8)
+                    .foregroundStyle(VS.Color.textTertiary)
+                Text(DistanceFormat.formatDistance(totalKm, unit: unit))
+                    .font(VS.Typography.heading(36, weight: .bold))
+                    .foregroundStyle(VS.Color.textPrimary)
+                Text("From GPS drives and odometer history")
+                    .font(VS.Typography.body(12))
+                    .foregroundStyle(VS.Color.textTertiary)
+            }
+        }
+        .padding(18)
+        .glassCard(elevated: true)
+    }
+
+    /// Mobbin-inspired (Grab/Uber driver score + Strava monthly recap):
+    /// featured status, story carousel, then purposeful rows — not raw counters.
+    private var driverHubGrid: some View {
+        let metrics = vehicleMetrics
+        let monthTrips = tripsThisMonth
+        let roadHours = monthTrips.reduce(0) { $0 + $1.durationSec } / 3600
+        let monthKm = monthTrips.reduce(0) { $0 + max(0, $1.distanceKm) }
+        let avgCruise = {
+            let speeds = monthTrips.map(\.avgSpeedKmh).filter { $0 > 0 }
+            guard !speeds.isEmpty else { return 0.0 }
+            return speeds.reduce(0, +) / Double(speeds.count)
+        }()
+        let longestMonth = monthTrips.map(\.distanceKm).max() ?? 0
+        let costPerKm: Double? = {
+            guard let metrics, metrics.totalDistance > 1, metrics.monthlySpend > 0 else { return nil }
+            return metrics.monthlySpend / metrics.totalDistance
+        }()
+        let fillGapDays = averageFillGapDays
+        let vibe = DashboardCopy.vibe(
+            efficiency: metrics?.current ?? metrics?.avgEfficiency,
+            standard: store.manufacturerStandard,
+            refuelCount: metrics?.efficiencySampleCount ?? 0
+        )
+        let status = DashboardCopy.status(
+            efficiency: metrics?.current ?? metrics?.avgEfficiency,
+            standard: store.manufacturerStandard,
+            sampleCount: metrics?.efficiencySampleCount ?? 0
+        )
+        let stories = hubStories(
+            monthKm: monthKm,
+            roadHours: roadHours,
+            tripCount: monthTrips.count,
+            costPerKm: costPerKm,
+            monthlySpend: metrics?.monthlySpend ?? 0,
+            spendTrend: DashboardCopy.spendTrend(metrics?.spendChange),
+            fillGapDays: fillGapDays,
+            vibe: vibe
+        )
+        let purposeRows = hubPurposeRows(
+            avgCruise: avgCruise,
+            longestMonth: longestMonth,
+            fillGapDays: fillGapDays,
+            metrics: metrics
+        )
+
+        return VStack(alignment: .leading, spacing: 14) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Driver hub")
+                    .font(VS.Typography.heading(18))
+                    .foregroundStyle(VS.Color.textPrimary)
+                Text("How you move, spend, and improve — this month’s pulse")
+                    .font(VS.Typography.body(12))
+                    .foregroundStyle(VS.Color.textTertiary)
+            }
+
+            hubStatusBanner(vibe: vibe, status: status, metrics: metrics)
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 12) {
+                    ForEach(stories) { story in
+                        hubStoryCard(story)
+                    }
+                }
+                .padding(.vertical, 2)
+            }
+
+            VStack(spacing: 0) {
+                ForEach(Array(purposeRows.enumerated()), id: \.element.id) { index, row in
+                    hubPurposeRow(row)
+                    if index < purposeRows.count - 1 {
+                        Divider().overlay(VS.Color.divider)
+                    }
+                }
+            }
+            .padding(.horizontal, 4)
+            .glassCard()
+        }
+    }
+
+    private var tripsThisMonth: [Trip] {
+        let start = Calendar.current.date(from: Calendar.current.dateComponents([.year, .month], from: Date())) ?? Date()
+        return store.trips.filter { $0.startedAt >= start }
+    }
+
+    private var averageFillGapDays: Double? {
+        let fills = lifetimeFuelLogs
+        guard fills.count >= 2 else { return nil }
+        var gaps: [Double] = []
+        for index in 1..<min(fills.count, 8) {
+            let newer = fills[fills.count - index]
+            let older = fills[fills.count - index - 1]
+            let days = newer.timestamp.timeIntervalSince(older.timestamp) / 86_400
+            if days > 0.5 { gaps.append(days) }
+        }
+        guard !gaps.isEmpty else { return nil }
+        return gaps.reduce(0, +) / Double(gaps.count)
+    }
+
+    private func hubStories(
+        monthKm: Double,
+        roadHours: Double,
+        tripCount: Int,
+        costPerKm: Double?,
+        monthlySpend: Double,
+        spendTrend: String,
+        fillGapDays: Double?,
+        vibe: EfficiencyVibe
+    ) -> [DriverHubStory] {
+        [
+            DriverHubStory(
+                id: "road",
+                emoji: "🛣",
+                eyebrow: "ON THE ROAD",
+                value: monthKm > 0 ? DistanceFormat.formatDistance(monthKm, unit: unit) : "—",
+                title: "Miles that matter",
+                detail: tripCount == 0
+                    ? "No tracked drives yet this month"
+                    : "\(tripCount) drive\(tripCount == 1 ? "" : "s") · \(roadHours < 1 ? "<1h" : String(format: "%.0fh", roadHours)) behind the wheel"
+            ),
+            DriverHubStory(
+                id: "cost",
+                emoji: "⛽",
+                eyebrow: "COST TO MOVE",
+                value: costPerKm.map { CurrencyFormat.format($0, currency: currency) + "/\(unit)" } ?? "—",
+                title: "What every \(unit) costs",
+                detail: monthlySpend > 0
+                    ? "\(CurrencyFormat.format(monthlySpend, currency: currency)) this month · \(spendTrend)"
+                    : "Log a refill to price your driving"
+            ),
+            DriverHubStory(
+                id: "rhythm",
+                emoji: vibe.emoji,
+                eyebrow: "FUEL RHYTHM",
+                value: fillGapDays.map { String(format: "%.0f days", $0) } ?? "—",
+                title: "Your fill-up cadence",
+                detail: fillGapDays == nil
+                    ? "Needs a few refuels to learn your pattern"
+                    : "Average gap between tanks · \(vibe.label.lowercased())"
+            )
+        ]
+    }
+
+    private func hubPurposeRows(
+        avgCruise: Double,
+        longestMonth: Double,
+        fillGapDays: Double?,
+        metrics: EfficiencyMetrics?
+    ) -> [DriverHubPurpose] {
+        let lastService = store.serviceLogs
+            .filter { log in
+                guard let vehicleId = store.currentVehicle?.id else { return true }
+                return log.vehicleId == vehicleId
+            }
+            .sorted { $0.timestamp > $1.timestamp }
+            .first
+        let daysSinceService = lastService.map {
+            Calendar.current.dateComponents([.day], from: $0.timestamp, to: Date()).day ?? 0
+        }
+        let odo = store.currentVehicle.flatMap { store.odometerEstimate(vehicleId: $0.id) }
+
+        return [
+            DriverHubPurpose(
+                id: "efficiency",
+                emoji: "🎯",
+                title: "Efficiency pulse",
+                value: metrics?.avgEfficiency.map { String(format: "%.1f L/100", $0) } ?? "Learning",
+                subtitle: metrics?.avgEfficiency == nil
+                    ? "Two full tanks unlock your real number"
+                    : "Rolling average across recent full tanks"
+            ),
+            DriverHubPurpose(
+                id: "cruise",
+                emoji: "🚗",
+                title: "Typical cruise",
+                value: avgCruise > 0 ? String(format: "%.0f km/h", avgCruise) : "—",
+                subtitle: avgCruise > 0
+                    ? "Average pace on tracked drives this month"
+                    : "Start a drive to learn your rhythm"
+            ),
+            DriverHubPurpose(
+                id: "longest",
+                emoji: "🏆",
+                title: "Longest run",
+                value: longestMonth > 0 ? DistanceFormat.formatDistance(longestMonth, unit: unit) : "—",
+                subtitle: longestMonth > 0
+                    ? "Your biggest single drive this month"
+                    : "Your next long haul will land here"
+            ),
+            DriverHubPurpose(
+                id: "garage",
+                emoji: "🔧",
+                title: "Garage readiness",
+                value: {
+                    if let odo {
+                        return DistanceFormat.formatOdometer(odo.estimatedKm, unit: unit)
+                    }
+                    if let daysSinceService {
+                        return daysSinceService == 0 ? "Serviced today" : "\(daysSinceService)d since service"
+                    }
+                    return "—"
+                }(),
+                subtitle: {
+                    if let odo {
+                        return "Estimated odometer · \(odo.verifiedSource.lowercased())"
+                    }
+                    if lastService != nil {
+                        return "Keep service logs current for smarter alerts"
+                    }
+                    return "Log service to track what’s due next"
+                }()
+            ),
+            DriverHubPurpose(
+                id: "next-fill",
+                emoji: "⚡",
+                title: "Next fill window",
+                value: {
+                    guard let fillGapDays, let last = lifetimeFuelLogs.last else { return "—" }
+                    let daysSince = Calendar.current.dateComponents([.day], from: last.timestamp, to: Date()).day ?? 0
+                    let left = max(0, Int((fillGapDays - Double(daysSince)).rounded()))
+                    return left == 0 ? "Soon" : "~\(left)d"
+                }(),
+                subtitle: fillGapDays == nil
+                    ? "Built from your personal refill pattern"
+                    : "Based on your usual \(String(format: "%.0f", fillGapDays!))-day cycle"
+            )
+        ]
+    }
+
+    private func hubStatusBanner(
+        vibe: EfficiencyVibe,
+        status: (text: String, tone: EfficiencyVibe.Tone),
+        metrics: EfficiencyMetrics?
+    ) -> some View {
+        HStack(spacing: 14) {
+            FluentEmojiView(emoji: vibe.emoji, size: 36)
+                .frame(width: 56, height: 56)
+                .background(toneColor(status.tone).opacity(0.14), in: Circle())
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text("DRIVER STATUS")
+                    .font(VS.Typography.body(10, weight: .bold))
+                    .tracking(0.8)
+                    .foregroundStyle(VS.Color.textTertiary)
+                Text(vibe.label)
+                    .font(VS.Typography.heading(18, weight: .bold))
+                    .foregroundStyle(VS.Color.textPrimary)
+                Text(status.text)
+                    .font(VS.Typography.body(13))
+                    .foregroundStyle(toneColor(status.tone))
+                if let current = metrics?.current {
+                    Text(String(format: "Latest tank %.1f L/100km", current))
+                        .font(VS.Typography.body(11))
+                        .foregroundStyle(VS.Color.textTertiary)
+                }
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(16)
+        .background(
+            RoundedRectangle(cornerRadius: VS.Radius.card, style: .continuous)
+                .fill(toneColor(status.tone).opacity(0.08))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: VS.Radius.card, style: .continuous)
+                .strokeBorder(toneColor(status.tone).opacity(0.28), lineWidth: 1)
+        )
+    }
+
+    private func hubStoryCard(_ story: DriverHubStory) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                FluentEmojiView(emoji: story.emoji, size: 22)
+                Spacer(minLength: 0)
+                Text(story.eyebrow)
+                    .font(VS.Typography.body(9, weight: .bold))
+                    .tracking(0.7)
+                    .foregroundStyle(VS.Color.textTertiary)
+            }
+            Text(story.value)
+                .font(VS.Typography.heading(26, weight: .bold))
+                .foregroundStyle(VS.Color.textPrimary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+            Text(story.title)
+                .font(VS.Typography.heading(14))
+                .foregroundStyle(VS.Color.textPrimary)
+            Text(story.detail)
+                .font(VS.Typography.body(12))
+                .foregroundStyle(VS.Color.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 0)
+        }
+        .padding(16)
+        .frame(width: 220, height: 176, alignment: .topLeading)
+        .glassCard(elevated: true)
+    }
+
+    private func hubPurposeRow(_ row: DriverHubPurpose) -> some View {
+        HStack(spacing: 12) {
+            FluentEmojiView(emoji: row.emoji, size: 26)
+                .frame(width: 44, height: 44)
+                .background(Color.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(row.title)
+                    .font(VS.Typography.body(12, weight: .semibold))
+                    .foregroundStyle(VS.Color.textTertiary)
+                Text(row.value)
+                    .font(VS.Typography.heading(17, weight: .bold))
+                    .foregroundStyle(VS.Color.textPrimary)
+                Text(row.subtitle)
+                    .font(VS.Typography.body(12))
+                    .foregroundStyle(VS.Color.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 14)
+    }
+
+    private func toneColor(_ tone: EfficiencyVibe.Tone) -> Color {
+        switch tone {
+        case .excellent: return VS.Color.accent
+        case .good: return VS.Color.accentSecondary
+        case .neutral: return VS.Color.textSecondary
+        case .watch: return VS.Color.warning
+        case .learning: return VS.Color.textTertiary
+        }
+    }
+
+    /// Mobbin-style hub teaser (Duolingo / ClassPass): few in-progress quests + “View all”.
+    private var badgesHubPreview: some View {
+        let previewQuests = Array(questBadges.prefix(3))
+        let moreCount = max(0, achievements.count - previewQuests.count)
+
+        return VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .firstTextBaseline) {
+                Text("Badges")
+                    .font(VS.Typography.heading(18))
+                    .foregroundStyle(VS.Color.textPrimary)
+                Spacer()
+                Text("\(unlockedCount)/\(achievements.count)")
+                    .font(VS.Typography.body(12, weight: .semibold))
+                    .foregroundStyle(VS.Color.accent)
+            }
+
+            VStack(spacing: 0) {
+                if previewQuests.isEmpty {
+                    HStack(spacing: 12) {
+                        FluentEmojiView(emoji: "🏆", size: 28)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Board cleared")
+                                .font(VS.Typography.heading(15))
+                                .foregroundStyle(VS.Color.textPrimary)
+                            Text("Browse every badge you’ve earned")
+                                .font(VS.Typography.body(12))
+                                .foregroundStyle(VS.Color.textSecondary)
+                        }
+                        Spacer(minLength: 0)
+                    }
+                    .padding(14)
+                } else {
+                    ForEach(Array(previewQuests.enumerated()), id: \.element.id) { index, badge in
+                        compactQuestRow(badge)
+                        if index < previewQuests.count - 1 {
+                            Divider().overlay(VS.Color.divider)
+                        }
+                    }
+                }
+
+                Button {
+                    showBadges = true
+                } label: {
+                    HStack {
+                        Text(moreCount > 0 ? "View \(moreCount) more" : "See all badges")
+                            .font(VS.Typography.body(14, weight: .semibold))
+                            .foregroundStyle(VS.Color.accent)
+                        Spacer()
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(VS.Color.accent)
+                    }
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 14)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .overlay(alignment: .top) {
+                    Divider().overlay(VS.Color.divider)
+                }
+            }
+            .glassCard()
+        }
+    }
+
+    private func compactQuestRow(_ badge: DriverAchievement) -> some View {
+        HStack(alignment: .center, spacing: 12) {
+            FluentEmojiView(emoji: badge.emoji, size: 26)
+                .opacity(0.7)
+                .saturation(0.45)
+                .frame(width: 44, height: 44)
+                .background(
+                    Color.white.opacity(0.04),
+                    in: RoundedRectangle(cornerRadius: 12, style: .continuous)
                 )
 
-                HStack(spacing: 7) {
-                    ForEach(AnalyticsPeriod.allCases, id: \.self) { option in
-                        Button(option.title) { period = option }
-                            .font(VS.Typography.body(12, weight: .semibold))
-                            .foregroundStyle(period == option ? VS.Color.navPill : VS.Color.textSecondary)
-                            .frame(maxWidth: .infinity).padding(.vertical, 9)
-                            .background(period == option ? VS.Color.accent : VS.Color.chip, in: Capsule())
-                    }
-                }
+            VStack(alignment: .leading, spacing: 6) {
+                Text(badge.title)
+                    .font(VS.Typography.heading(15))
+                    .foregroundStyle(VS.Color.textPrimary)
+                Text(badge.detail)
+                    .font(VS.Typography.body(12))
+                    .foregroundStyle(VS.Color.textSecondary)
+                    .lineLimit(1)
 
-                HStack(spacing: 12) {
-                    analyticsMetric(CurrencyFormat.format(spent, currency: currency), "TOTAL SPENT")
-                    analyticsMetric(DistanceFormat.formatDistance(distance, unit: store.defaultDistanceUnit), "DRIVEN")
-                }
-
-                HStack {
-                    summaryRow("Cost per \(store.defaultDistanceUnit)", distance > 0 ? CurrencyFormat.format(spent / distance, currency: currency) : "—")
-                    Divider().overlay(VS.Color.divider)
-                    summaryRow("Avg efficiency", efficiency.map { String(format: "%.1f L/100", $0) } ?? "—")
-                }
-                .padding(16).glassCard()
-
-                if monthlySpend.isEmpty {
-                    analyticsEmptyState
-                } else {
-                    chartCard(title: "Monthly cost trend") {
-                        Chart(monthlySpend) { point in
-                            AreaMark(x: .value("Month", point.date), y: .value("Cost", point.value))
-                                .foregroundStyle(LinearGradient(colors: [VS.Color.accent.opacity(0.55), .clear], startPoint: .top, endPoint: .bottom))
-                            LineMark(x: .value("Month", point.date), y: .value("Cost", point.value))
-                                .foregroundStyle(VS.Color.accent).lineStyle(.init(lineWidth: 2.5))
-                            PointMark(x: .value("Month", point.date), y: .value("Cost", point.value)).foregroundStyle(VS.Color.accent)
+                HStack(spacing: 8) {
+                    GeometryReader { geo in
+                        ZStack(alignment: .leading) {
+                            Capsule().fill(VS.Color.chip)
+                            Capsule()
+                                .fill(VS.Color.accent.opacity(0.85))
+                                .frame(width: max(4, geo.size.width * badge.progress))
                         }
                     }
-
-                    if !efficiencyTrend.isEmpty {
-                        chartCard(title: "Efficiency trend") {
-                            Chart(efficiencyTrend) { point in
-                                LineMark(x: .value("Date", point.date), y: .value("L/100 km", point.value))
-                                    .foregroundStyle(VS.Color.success).lineStyle(.init(lineWidth: 2.5))
-                                PointMark(x: .value("Date", point.date), y: .value("L/100 km", point.value)).foregroundStyle(VS.Color.success)
-                            }
-                        }
-                    }
+                    .frame(height: 5)
+                    Text(badge.progressLabel)
+                        .font(VS.Typography.body(10, weight: .semibold))
+                        .foregroundStyle(VS.Color.textTertiary)
+                        .lineLimit(1)
+                        .frame(minWidth: 56, alignment: .trailing)
                 }
-
-                Text("Recent refuels").font(VS.Typography.heading(18)).foregroundStyle(VS.Color.textPrimary)
-                VStack(spacing: 0) {
-                    ForEach(logs.suffix(5).reversed()) { log in
-                        RefuelRowView(log: log, unit: store.defaultDistanceUnit)
-                        if log.id != logs.suffix(5).last?.id { Divider().overlay(VS.Color.divider) }
-                    }
-                }.padding(14).glassCard()
             }
-            .padding(.horizontal, 16).padding(.bottom, 110).tracksBottomNavScroll()
         }
-        .veloseetePage()
+        .padding(14)
+    }
+
+    private var insightsSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Insights")
+                .font(VS.Typography.heading(18))
+                .foregroundStyle(VS.Color.textPrimary)
+            Text("What your recent driving and spending say")
+                .font(VS.Typography.body(12))
+                .foregroundStyle(VS.Color.textTertiary)
+
+            if funInsights.isEmpty {
+                VStack(spacing: 10) {
+                    FluentEmojiView(emoji: "✨", size: 36)
+                    Text("Insights unlock as you drive and refuel")
+                        .font(VS.Typography.heading(15))
+                        .foregroundStyle(VS.Color.textPrimary)
+                    Text("Log a few tanks and tracked drives to see your pulse here.")
+                        .font(VS.Typography.body(12))
+                        .foregroundStyle(VS.Color.textSecondary)
+                        .multilineTextAlignment(.center)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(28)
+                .glassCard()
+            } else {
+                ForEach(funInsights) { insight in
+                    funInsightCard(insight)
+                }
+            }
+        }
+    }
+
+    private var analyticsSection: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("Trends")
+                .font(VS.Typography.heading(18))
+                .foregroundStyle(VS.Color.textPrimary)
+
+            HStack(spacing: 7) {
+                ForEach(AnalyticsPeriod.allCases, id: \.self) { option in
+                    Button(option.title) { period = option }
+                        .font(VS.Typography.body(12, weight: .semibold))
+                        .foregroundStyle(period == option ? VS.Color.navPill : VS.Color.textSecondary)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 9)
+                        .background(period == option ? VS.Color.accent : VS.Color.chip, in: Capsule())
+                }
+            }
+
+            HStack(spacing: 12) {
+                analyticsMetric(CurrencyFormat.format(spent, currency: currency), "TOTAL SPENT")
+                analyticsMetric(DistanceFormat.formatDistance(periodDistance, unit: unit), "DRIVEN")
+            }
+
+            HStack {
+                summaryRow(
+                    "Cost per \(unit)",
+                    periodDistance > 0 ? CurrencyFormat.format(spent / periodDistance, currency: currency) : "—"
+                )
+                Divider().overlay(VS.Color.divider)
+                summaryRow("Avg efficiency", efficiency.map { String(format: "%.1f L/100", $0) } ?? "—")
+            }
+            .padding(16)
+            .glassCard()
+
+            if monthlySpend.isEmpty {
+                analyticsEmptyState
+            } else {
+                chartCard(title: "Monthly cost trend") {
+                    Chart(monthlySpend) { point in
+                        AreaMark(x: .value("Month", point.date), y: .value("Cost", point.value))
+                            .foregroundStyle(
+                                LinearGradient(
+                                    colors: [VS.Color.accent.opacity(0.55), .clear],
+                                    startPoint: .top,
+                                    endPoint: .bottom
+                                )
+                            )
+                        LineMark(x: .value("Month", point.date), y: .value("Cost", point.value))
+                            .foregroundStyle(VS.Color.accent)
+                            .lineStyle(.init(lineWidth: 2.5))
+                        PointMark(x: .value("Month", point.date), y: .value("Cost", point.value))
+                            .foregroundStyle(VS.Color.accent)
+                    }
+                }
+
+                if !efficiencyTrend.isEmpty {
+                    chartCard(title: "Efficiency trend") {
+                        Chart(efficiencyTrend) { point in
+                            LineMark(x: .value("Date", point.date), y: .value("L/100 km", point.value))
+                                .foregroundStyle(VS.Color.success)
+                                .lineStyle(.init(lineWidth: 2.5))
+                            PointMark(x: .value("Date", point.date), y: .value("L/100 km", point.value))
+                                .foregroundStyle(VS.Color.success)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private func funInsightCard(_ insight: FunInsight) -> some View {
+        HStack(alignment: .top, spacing: 12) {
+            FluentEmojiView(emoji: insight.emoji, size: 28)
+                .frame(width: 40, height: 40)
+                .background(
+                    insightTint(insight.kind).opacity(0.14),
+                    in: RoundedRectangle(cornerRadius: 12, style: .continuous)
+                )
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(insight.title)
+                    .font(VS.Typography.heading(15))
+                    .foregroundStyle(VS.Color.textPrimary)
+                Text(insight.message)
+                    .font(VS.Typography.body(13))
+                    .foregroundStyle(VS.Color.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(14)
+        .glassCard()
+        .overlay(
+            RoundedRectangle(cornerRadius: VS.Radius.card, style: .continuous)
+                .strokeBorder(insightTint(insight.kind).opacity(0.22), lineWidth: 1)
+        )
+    }
+
+    private func insightTint(_ kind: FunInsight.Kind) -> Color {
+        switch kind {
+        case .celebrate: return VS.Color.accent
+        case .tip: return VS.Color.accentSecondary
+        case .watch: return VS.Color.warning
+        }
     }
 
     private func analyticsMetric(_ value: String, _ label: String) -> some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text(value).font(VS.Typography.heading(24, weight: .bold)).foregroundStyle(VS.Color.textPrimary).minimumScaleFactor(0.7)
-            Text(label).font(VS.Typography.body(9, weight: .bold)).tracking(0.8).foregroundStyle(VS.Color.textTertiary)
-        }.frame(maxWidth: .infinity, minHeight: 86, alignment: .leading).padding(15).glassCard(elevated: true)
+            Text(value)
+                .font(VS.Typography.heading(24, weight: .bold))
+                .foregroundStyle(VS.Color.textPrimary)
+                .minimumScaleFactor(0.7)
+            Text(label)
+                .font(VS.Typography.body(9, weight: .bold))
+                .tracking(0.8)
+                .foregroundStyle(VS.Color.textTertiary)
+        }
+        .frame(maxWidth: .infinity, minHeight: 86, alignment: .leading)
+        .padding(15)
+        .glassCard(elevated: true)
     }
 
     private func summaryRow(_ label: String, _ value: String) -> some View {
         VStack(alignment: .leading, spacing: 5) {
             Text(label).font(VS.Typography.body(11)).foregroundStyle(VS.Color.textTertiary)
             Text(value).font(VS.Typography.heading(15)).foregroundStyle(VS.Color.textPrimary)
-        }.frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private func chartCard<Content: View>(title: String, @ViewBuilder chart: () -> Content) -> some View {
         VStack(alignment: .leading, spacing: 14) {
             Text(title).font(VS.Typography.heading(17)).foregroundStyle(VS.Color.textSecondary)
-            chart().frame(height: 210).chartXAxis { AxisMarks(values: .automatic(desiredCount: 4)) }.chartYAxis { AxisMarks(position: .leading) }
-        }.padding(16).glassCard(elevated: true)
+            chart()
+                .frame(height: 210)
+                .chartXAxis { AxisMarks(values: .automatic(desiredCount: 4)) }
+                .chartYAxis { AxisMarks(position: .leading) }
+        }
+        .padding(16)
+        .glassCard(elevated: true)
     }
 
     private var analyticsEmptyState: some View {
         VStack(spacing: 10) {
-            VSIcon(icon: .chartLine, size: 34, weight: .regular, tint: VS.Color.accent)
-            Text("Add a couple of refuels to unlock trends").font(VS.Typography.heading(15)).foregroundStyle(VS.Color.textPrimary)
-            Text("Your cost and efficiency charts will appear here.").font(VS.Typography.body(12)).foregroundStyle(VS.Color.textSecondary)
-        }.frame(maxWidth: .infinity).padding(30).glassCard()
+            FluentEmojiView(emoji: "⛽", size: 40)
+            Text("Add a couple of refuels to unlock trends")
+                .font(VS.Typography.heading(15))
+                .foregroundStyle(VS.Color.textPrimary)
+            Text("Your cost and efficiency charts will appear here.")
+                .font(VS.Typography.body(12))
+                .foregroundStyle(VS.Color.textSecondary)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(30)
+        .glassCard()
+    }
+}
+
+/// Full badge collection — Mobbin refs: Withings category chips, Lyft/OLIO 3-col grid,
+/// Tripadvisor category progress, Duolingo locked vs earned contrast.
+struct DriverBadgesView: View {
+    @Environment(\.dismiss) private var dismiss
+    let achievements: [DriverAchievement]
+    @State private var filter: BadgeFilter = .all
+
+    private enum BadgeFilter: Hashable {
+        case all
+        case category(DriverAchievement.Category)
+
+        var title: String {
+            switch self {
+            case .all: return "All"
+            case .category(let category): return category.label
+            }
+        }
+    }
+
+    private var unlockedCount: Int { achievements.filter(\.unlocked).count }
+
+    private var filters: [BadgeFilter] {
+        [.all] + DriverAchievement.Category.allCases.map { .category($0) }
+    }
+
+    private var filtered: [DriverAchievement] {
+        let base: [DriverAchievement]
+        switch filter {
+        case .all:
+            base = achievements
+        case .category(let category):
+            base = achievements.filter { $0.category == category }
+        }
+        return base.sorted { lhs, rhs in
+            if lhs.unlocked != rhs.unlocked { return lhs.unlocked && !rhs.unlocked }
+            if lhs.progress != rhs.progress { return lhs.progress > rhs.progress }
+            return lhs.title < rhs.title
+        }
+    }
+
+    private var sectioned: [(DriverAchievement.Category, [DriverAchievement])] {
+        DriverAchievement.Category.allCases.compactMap { category in
+            let items = filtered.filter { $0.category == category }
+            return items.isEmpty ? nil : (category, items)
+        }
+    }
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 18) {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Badges")
+                        .font(VS.Typography.heading(28, weight: .bold))
+                        .foregroundStyle(VS.Color.textPrimary)
+                    Text("\(unlockedCount) of \(achievements.count) unlocked · quests across road, fuel, efficiency & habits")
+                        .font(VS.Typography.body(13))
+                        .foregroundStyle(VS.Color.textSecondary)
+                }
+
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        ForEach(filters, id: \.self) { option in
+                            Button {
+                                filter = option
+                            } label: {
+                                Text(option.title)
+                                    .font(VS.Typography.body(13, weight: .semibold))
+                                    .foregroundStyle(filter == option ? VS.Color.navPill : VS.Color.textSecondary)
+                                    .padding(.horizontal, 14)
+                                    .padding(.vertical, 9)
+                                    .background(
+                                        filter == option ? VS.Color.accent : VS.Color.chip,
+                                        in: Capsule()
+                                    )
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
+
+                if case .all = filter {
+                    ForEach(sectioned, id: \.0) { category, items in
+                        categoryBlock(category: category, items: items)
+                    }
+                } else if case .category(let category) = filter {
+                    categoryBlock(category: category, items: filtered)
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.top, 8)
+            .padding(.bottom, 40)
+        }
+        .veloseetePage()
+        .navigationBarBackButtonHidden(true)
+        .toolbar {
+            ToolbarItem(placement: .topBarLeading) {
+                Button {
+                    dismiss()
+                } label: {
+                    HStack(spacing: 4) {
+                        VSIcon(icon: .caretLeft, size: 18, weight: .bold, tint: VS.Color.textSecondary)
+                        Text("Driver")
+                            .font(VS.Typography.body(15, weight: .semibold))
+                            .foregroundStyle(VS.Color.textSecondary)
+                    }
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .toolbarBackground(.hidden, for: .navigationBar)
+    }
+
+    private func categoryBlock(category: DriverAchievement.Category, items: [DriverAchievement]) -> some View {
+        let earned = items.filter(\.unlocked).count
+        return VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Text(category.label)
+                    .font(VS.Typography.heading(17))
+                    .foregroundStyle(VS.Color.textPrimary)
+                Spacer()
+                Text("Unlocked \(earned)/\(items.count)")
+                    .font(VS.Typography.body(12, weight: .semibold))
+                    .foregroundStyle(VS.Color.textTertiary)
+            }
+
+            GeometryReader { geo in
+                let progress = items.isEmpty ? 0 : Double(earned) / Double(items.count)
+                ZStack(alignment: .leading) {
+                    Capsule().fill(VS.Color.chip)
+                    Capsule()
+                        .fill(VS.Color.accent.opacity(0.75))
+                        .frame(width: max(earned > 0 ? 8 : 0, geo.size.width * progress))
+                }
+            }
+            .frame(height: 4)
+
+            LazyVGrid(
+                columns: [GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible())],
+                spacing: 12
+            ) {
+                ForEach(items) { badge in
+                    badgeCell(badge)
+                }
+            }
+        }
+    }
+
+    private func badgeCell(_ badge: DriverAchievement) -> some View {
+        VStack(spacing: 8) {
+            ZStack {
+                Circle()
+                    .fill(badge.unlocked ? VS.Color.accent.opacity(0.14) : Color.white.opacity(0.04))
+                    .frame(width: 72, height: 72)
+                FluentEmojiView(emoji: badge.emoji, size: 34)
+                    .opacity(badge.unlocked ? 1 : 0.35)
+                    .saturation(badge.unlocked ? 1 : 0.15)
+            }
+            .overlay(alignment: .bottom) {
+                if !badge.unlocked {
+                    Text(shortProgress(badge))
+                        .font(VS.Typography.body(9, weight: .bold))
+                        .foregroundStyle(VS.Color.navPill)
+                        .padding(.horizontal, 7)
+                        .padding(.vertical, 3)
+                        .background(VS.Color.accent, in: Capsule())
+                        .offset(y: 6)
+                }
+            }
+
+            Text(badge.title)
+                .font(VS.Typography.heading(12))
+                .foregroundStyle(badge.unlocked ? VS.Color.textPrimary : VS.Color.textTertiary)
+                .multilineTextAlignment(.center)
+                .lineLimit(2)
+                .minimumScaleFactor(0.85)
+                .padding(.top, 4)
+
+            Text(badge.unlocked ? badge.detail : badge.progressLabel)
+                .font(VS.Typography.body(10))
+                .foregroundStyle(VS.Color.textTertiary)
+                .multilineTextAlignment(.center)
+                .lineLimit(2)
+                .minimumScaleFactor(0.85)
+        }
+        .frame(maxWidth: .infinity, minHeight: 148, alignment: .top)
+        .padding(.horizontal, 6)
+        .padding(.vertical, 10)
+        .background(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(badge.unlocked ? VS.Color.accent.opacity(0.07) : Color.white.opacity(0.03))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .strokeBorder(
+                    badge.unlocked ? VS.Color.accent.opacity(0.25) : VS.Color.divider,
+                    lineWidth: 1
+                )
+        )
+    }
+
+    private func shortProgress(_ badge: DriverAchievement) -> String {
+        let pct = Int((badge.progress * 100).rounded())
+        if pct > 0 { return "\(pct)%" }
+        return "0%"
     }
 }
 
@@ -896,6 +1988,13 @@ struct ProfileView: View {
     @State private var profileError: String?
     @State private var showReplayOnboarding = false
     @State private var showPermissionManager = false
+    @State private var showLinkEmail = false
+    @State private var showLinkApple = false
+    @State private var linkEmail = ""
+    @State private var linkPassword = ""
+    @State private var linkError: String?
+    @State private var isLinking = false
+    @State private var appleLinkNonce = ""
 
     /// What the profile header shows: locked display during replace, else store.
     private var headerAvatar: UIImage? {
@@ -990,8 +2089,8 @@ struct ProfileView: View {
                     }
 
                     VStack(alignment: .leading, spacing: 4) {
-                        LabeledContent("Email", value: auth.user?.email ?? "—")
-                        Text("Your email is your sign-in ID and can’t be edited here.")
+                        LabeledContent("Email", value: auth.user?.email ?? "Hidden / not shared")
+                        Text("Managed by your linked sign-in methods (Apple may hide email).")
                             .font(VS.Typography.body(10))
                             .foregroundStyle(VS.Color.textTertiary)
                     }
@@ -1035,6 +2134,68 @@ struct ProfileView: View {
                         .buttonStyle(.plain)
                         .disabled(draftName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isSavingDetails)
                     }
+                }
+                .listRowBackground(VS.Color.bgSecondary)
+
+                Section {
+                    ForEach(AuthProviderKind.allCases) { provider in
+                        HStack(spacing: 12) {
+                            Image(systemName: providerIcon(provider))
+                                .font(.system(size: 18, weight: .semibold))
+                                .foregroundStyle(VS.Color.accent)
+                                .frame(width: 28)
+
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(provider.title)
+                                    .foregroundStyle(VS.Color.textPrimary)
+                                Text(auth.isLinked(provider) ? "Connected" : "Not linked")
+                                    .font(VS.Typography.body(11))
+                                    .foregroundStyle(VS.Color.textTertiary)
+                            }
+
+                            Spacer()
+
+                            if auth.isLinked(provider) {
+                                if auth.linkedProviders.count > 1 {
+                                    Button("Unlink") {
+                                        Task {
+                                            do { try await auth.unlink(provider) }
+                                            catch { linkError = auth.errorMessage ?? error.localizedDescription }
+                                        }
+                                    }
+                                    .font(VS.Typography.body(13, weight: .semibold))
+                                    .foregroundStyle(VS.Color.error)
+                                } else {
+                                    Text("Primary")
+                                        .font(VS.Typography.body(12, weight: .semibold))
+                                        .foregroundStyle(VS.Color.textTertiary)
+                                }
+                            } else {
+                                Button("Link") {
+                                    Task { await linkProvider(provider) }
+                                }
+                                .font(VS.Typography.body(13, weight: .semibold))
+                                .foregroundStyle(VS.Color.accent)
+                                .disabled(isLinking)
+                            }
+                        }
+                    }
+
+                    if let linkError {
+                        Text(linkError)
+                            .font(VS.Typography.body(11))
+                            .foregroundStyle(VS.Color.error)
+                    }
+                    if let info = auth.infoMessage {
+                        Text(info)
+                            .font(VS.Typography.body(11))
+                            .foregroundStyle(VS.Color.success)
+                    }
+                } header: {
+                    Text("Sign-in methods")
+                } footer: {
+                    Text("Link Apple, Google, or email so you can open the same Veloseete account with any of them.")
+                        .font(VS.Typography.body(11))
                 }
                 .listRowBackground(VS.Color.bgSecondary)
 
@@ -1104,6 +2265,130 @@ struct ProfileView: View {
                 TripPermissionsOnboardingView(startAtPermissions: true) {
                     showPermissionManager = false
                 }
+            }
+            .sheet(isPresented: $showLinkEmail) {
+                NavigationStack {
+                    VStack(alignment: .leading, spacing: 16) {
+                        Text("Link email & password")
+                            .font(VS.Typography.heading(22))
+                        Text("Add email sign-in to this account so you can open Veloseete without Apple or Google.")
+                            .font(VS.Typography.body(14))
+                            .foregroundStyle(VS.Color.textSecondary)
+
+                        TextField("Email", text: $linkEmail)
+                            .textInputAutocapitalization(.never)
+                            .keyboardType(.emailAddress)
+                            .autocorrectionDisabled()
+                            .vsInputField()
+
+                        SecureField("Password (min 6 characters)", text: $linkPassword)
+                            .vsInputField()
+
+                        if let linkError {
+                            Text(linkError)
+                                .font(VS.Typography.body(12))
+                                .foregroundStyle(VS.Color.error)
+                        }
+
+                        Button {
+                            Task {
+                                isLinking = true
+                                linkError = nil
+                                defer { isLinking = false }
+                                do {
+                                    try await auth.linkEmailPassword(
+                                        email: linkEmail.trimmingCharacters(in: .whitespacesAndNewlines),
+                                        password: linkPassword
+                                    )
+                                    showLinkEmail = false
+                                    linkPassword = ""
+                                } catch {
+                                    linkError = auth.errorMessage ?? error.localizedDescription
+                                }
+                            }
+                        } label: {
+                            HStack {
+                                if isLinking { ProgressView().tint(VS.Color.navPill) }
+                                Text("Link email")
+                                    .font(VS.Typography.heading(16))
+                            }
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 14)
+                            .background(VS.Color.accent)
+                            .foregroundStyle(VS.Color.navPill)
+                            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                        }
+                        .disabled(isLinking)
+
+                        Spacer()
+                    }
+                    .padding(20)
+                    .veloseetePage()
+                    .toolbar {
+                        ToolbarItem(placement: .topBarTrailing) {
+                            ModalCloseButton { showLinkEmail = false }
+                        }
+                    }
+                }
+                .presentationDetents([.medium])
+                .veloseeteSheet()
+            }
+            .sheet(isPresented: $showLinkApple) {
+                NavigationStack {
+                    VStack(alignment: .leading, spacing: 18) {
+                        Text("Link Apple")
+                            .font(VS.Typography.heading(22))
+                        Text("Connect Sign in with Apple to this Veloseete account.")
+                            .font(VS.Typography.body(14))
+                            .foregroundStyle(VS.Color.textSecondary)
+
+                        SignInWithAppleButton(.continue) { request in
+                            appleLinkNonce = auth.startAppleSignIn()
+                            request.requestedScopes = [.fullName, .email]
+                            request.nonce = appleLinkNonce
+                        } onCompletion: { result in
+                            Task {
+                                isLinking = true
+                                linkError = nil
+                                defer { isLinking = false }
+                                switch result {
+                                case .success(let authorization):
+                                    do {
+                                        try await auth.completeAppleSignIn(authorization: authorization, linking: true)
+                                        showLinkApple = false
+                                    } catch {
+                                        linkError = auth.errorMessage ?? error.localizedDescription
+                                    }
+                                case .failure(let error):
+                                    let ns = error as NSError
+                                    if ns.code != ASAuthorizationError.canceled.rawValue {
+                                        linkError = error.localizedDescription
+                                    }
+                                }
+                            }
+                        }
+                        .signInWithAppleButtonStyle(.white)
+                        .frame(height: 52)
+                        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+
+                        if let linkError {
+                            Text(linkError)
+                                .font(VS.Typography.body(12))
+                                .foregroundStyle(VS.Color.error)
+                        }
+
+                        Spacer()
+                    }
+                    .padding(20)
+                    .veloseetePage()
+                    .toolbar {
+                        ToolbarItem(placement: .topBarTrailing) {
+                            ModalCloseButton { showLinkApple = false }
+                        }
+                    }
+                }
+                .presentationDetents([.medium])
+                .veloseeteSheet()
             }
             .onAppear {
                 // Seed the frozen header from whatever is already committed.
@@ -1199,12 +2484,112 @@ struct ProfileView: View {
             profileError = error.localizedDescription
         }
     }
+
+    private func providerIcon(_ provider: AuthProviderKind) -> String {
+        switch provider {
+        case .apple: return "apple.logo"
+        case .google: return "g.circle.fill"
+        case .password: return "envelope.fill"
+        }
+    }
+
+    private func linkProvider(_ provider: AuthProviderKind) async {
+        linkError = nil
+        switch provider {
+        case .apple:
+            showLinkApple = true
+        case .google:
+            isLinking = true
+            defer { isLinking = false }
+            do {
+                try await auth.signInWithGoogle(linking: true)
+            } catch {
+                linkError = auth.errorMessage ?? error.localizedDescription
+            }
+        case .password:
+            linkEmail = auth.user?.email ?? ""
+            linkPassword = ""
+            showLinkEmail = true
+        }
+    }
 }
 
 /// Holds a library photo while the cropper is open (does not replace the committed avatar).
 struct AvatarCropDraft: Identifiable {
     let id = UUID()
     let image: UIImage
+}
+
+/// Local car photos (same crop pipeline as profile avatars). Keyed by vehicle id.
+@MainActor
+final class VehiclePhotoStore: ObservableObject {
+    static let shared = VehiclePhotoStore()
+
+    @Published private(set) var images: [String: UIImage] = [:]
+
+    private let fileManager = FileManager.default
+    private let maxDimension: CGFloat = 800
+
+    private init() {}
+
+    func image(for vehicleId: String) -> UIImage? {
+        images[vehicleId]
+    }
+
+    func load(vehicleId: String) {
+        guard images[vehicleId] == nil else { return }
+        let url = fileURL(for: vehicleId)
+        guard let data = try? Data(contentsOf: url),
+              let loaded = UIImage(data: data)?.stableCopy() else { return }
+        images[vehicleId] = loaded
+    }
+
+    func load(vehicleIds: [String]) {
+        for id in vehicleIds { load(vehicleId: id) }
+    }
+
+    func save(image source: UIImage, vehicleId: String) throws {
+        let normalized = resizedImage(source).stableCopy()
+        guard let jpeg = normalized.jpegData(compressionQuality: 0.82) else {
+            throw ProfileAvatarError.processingFailed
+        }
+        try fileManager.createDirectory(at: photoDirectory, withIntermediateDirectories: true)
+        try jpeg.write(to: fileURL(for: vehicleId), options: .atomic)
+        images[vehicleId] = normalized
+    }
+
+    func remove(vehicleId: String) throws {
+        let url = fileURL(for: vehicleId)
+        if fileManager.fileExists(atPath: url.path) {
+            try fileManager.removeItem(at: url)
+        }
+        images[vehicleId] = nil
+    }
+
+    private var photoDirectory: URL {
+        let base = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+        return base.appendingPathComponent("Veloseete/VehiclePhotos", isDirectory: true)
+    }
+
+    private func fileURL(for vehicleId: String) -> URL {
+        let safeId = vehicleId.replacingOccurrences(of: "/", with: "_")
+        return photoDirectory.appendingPathComponent("\(safeId).jpg")
+    }
+
+    private func resizedImage(_ source: UIImage) -> UIImage {
+        let sourceSize = source.size
+        let longestSide = max(sourceSize.width, sourceSize.height)
+        guard longestSide > maxDimension else { return source.stableCopy() }
+
+        let scale = maxDimension / longestSide
+        let targetSize = CGSize(width: sourceSize.width * scale, height: sourceSize.height * scale)
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        format.opaque = true
+        return UIGraphicsImageRenderer(size: targetSize, format: format).image { _ in
+            source.draw(in: CGRect(origin: .zero, size: targetSize))
+        }
+    }
 }
 
 @MainActor
@@ -1374,6 +2759,9 @@ struct ProfileAvatarView: View {
 
 struct ProfilePhotoCropView: View {
     let image: UIImage
+    var title: String = "Reframe your photo"
+    var subtitle: String = "Move and zoom until it feels right"
+    var footer: String = "Only the circular area will appear in your profile"
     let onUse: (UIImage) -> Void
     let onCancel: () -> Void
 
@@ -1388,10 +2776,10 @@ struct ProfilePhotoCropView: View {
         NavigationStack {
             VStack(spacing: 24) {
                 VStack(spacing: 7) {
-                    Text("Reframe your photo")
+                    Text(title)
                         .font(VS.Typography.heading(26, weight: .bold))
                         .foregroundStyle(VS.Color.textPrimary)
-                    Text("Move and zoom until it feels right")
+                    Text(subtitle)
                         .font(VS.Typography.body(14))
                         .foregroundStyle(VS.Color.textSecondary)
                 }
@@ -1411,7 +2799,7 @@ struct ProfilePhotoCropView: View {
                 }
                 .padding(.horizontal, 26)
 
-                Text("Only the circular area will appear in your profile")
+                Text(footer)
                     .font(VS.Typography.body(11))
                     .foregroundStyle(VS.Color.textTertiary)
 

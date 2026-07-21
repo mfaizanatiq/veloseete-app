@@ -5,6 +5,7 @@ import WidgetKit
 @main
 struct VeloseeteTripWidgetBundle: WidgetBundle {
     var body: some Widget {
+        CarPlayStatusWidget()
         TripLiveActivityWidget()
     }
 }
@@ -19,7 +20,7 @@ private enum TripActivityStyle {
 struct TripLiveActivityWidget: Widget {
     var body: some WidgetConfiguration {
         ActivityConfiguration(for: TripActivityAttributes.self) { context in
-            TripLockScreenView(context: context)
+            TripActivityContent(context: context)
                 .activityBackgroundTint(TripActivityStyle.background)
                 .activitySystemActionForegroundColor(TripActivityStyle.accent)
         } dynamicIsland: { context in
@@ -100,6 +101,76 @@ struct TripLiveActivityWidget: Widget {
             }
             .keylineTint(context.state.isPaused ? TripActivityStyle.paused : TripActivityStyle.accent)
         }
+    }
+}
+
+private struct TripActivityContent: View {
+    let context: ActivityViewContext<TripActivityAttributes>
+
+    var body: some View {
+        if #available(iOS 18.0, *) {
+            AdaptiveTripActivityView(context: context)
+        } else {
+            TripLockScreenView(context: context)
+        }
+    }
+}
+
+@available(iOS 18.0, *)
+private struct AdaptiveTripActivityView: View {
+    @Environment(\.activityFamily) private var activityFamily
+    let context: ActivityViewContext<TripActivityAttributes>
+
+    var body: some View {
+        if activityFamily == .small {
+            CarPlayTripActivityView(context: context)
+        } else {
+            TripLockScreenView(context: context)
+        }
+    }
+}
+
+@available(iOS 18.0, *)
+private struct CarPlayTripActivityView: View {
+    let context: ActivityViewContext<TripActivityAttributes>
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 9) {
+            HStack(spacing: 7) {
+                Image(systemName: context.state.isPaused ? "pause.fill" : "car.fill")
+                    .foregroundStyle(context.state.isPaused ? TripActivityStyle.paused : TripActivityStyle.accent)
+                Text(context.attributes.vehicleName)
+                    .font(.caption.weight(.semibold))
+                    .lineLimit(1)
+                Spacer(minLength: 2)
+                Text(context.state.isPaused ? "PAUSED" : "LIVE")
+                    .font(.system(size: 9, weight: .bold))
+                    .foregroundStyle(context.state.isPaused ? TripActivityStyle.paused : TripActivityStyle.accent)
+            }
+
+            HStack(alignment: .lastTextBaseline, spacing: 4) {
+                Text(context.state.distanceKm, format: .number.precision(.fractionLength(1)))
+                    .font(.system(size: 30, weight: .bold, design: .rounded).monospacedDigit())
+                Text("km")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(TripActivityStyle.secondary)
+                Spacer(minLength: 0)
+            }
+
+            HStack {
+                Label(formatDuration(context.state.durationSec), systemImage: "clock.fill")
+                Spacer()
+                Text("\(Int(context.state.currentSpeedKmh.rounded())) km/h")
+            }
+            .font(.caption2.weight(.semibold))
+            .foregroundStyle(TripActivityStyle.secondary)
+        }
+        .padding(14)
+        .foregroundStyle(.white)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(
+            "\(context.state.statusLabel), \(context.state.distanceKm, format: .number.precision(.fractionLength(1))) kilometers"
+        )
     }
 }
 

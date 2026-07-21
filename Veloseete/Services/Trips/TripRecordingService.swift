@@ -52,6 +52,13 @@ final class TripRecordingService: NSObject, ObservableObject {
     @Published private(set) var snapshot: ActiveTripSnapshot?
     @Published private(set) var liveRoute: [TripCoordinate] = []
     @Published private(set) var lastLocationAccuracy: Double?
+    /// Latest usable fix for the tracking map camera (watching or recording).
+    @Published private(set) var followLatitude: Double?
+    @Published private(set) var followLongitude: Double?
+    /// Course in degrees clockwise from true north; negative when unknown.
+    @Published private(set) var followCourseDegrees: Double = -1
+    /// Bumps whenever follow pose changes so the map can re-pitch/follow.
+    @Published private(set) var followTick: UInt = 0
     @Published var pendingSave: PendingTripSave?
     @Published var lastError: String?
 
@@ -78,7 +85,7 @@ final class TripRecordingService: NSObject, ObservableObject {
     private var lastLiveActivityUpdate = Date.distantPast
 
     /// Auto-start once automotive / speed holds for this long.
-    private let autoStartHold: TimeInterval = 25
+    private let autoStartHold: TimeInterval = 18
     /// Auto-end after this long of near-stationary movement.
     private let autoEndHold: TimeInterval = 180
     private let minSaveDistanceKm = 0.25
@@ -98,6 +105,30 @@ final class TripRecordingService: NSObject, ObservableObject {
         // Recording sessions are not restored after a terminated app, so any
         // surviving system activity would be stale while this service is idle.
         TripLiveActivityController.shared.cancel()
+    }
+
+    /// Call on launch / foreground so auto-detect survives app termination.
+    func resumeBackgroundWatchingIfNeeded() {
+        guard autoTrackingEnabled else { return }
+        startWatchingIfNeeded()
+    }
+
+    /// Centers the Tracking map even when idle / waiting for the first fix.
+    /// Seeds from Core Location's last known position, then requests a fresh update.
+    func ensureMapFollowUpdates() {
+        seedFollowFromLastKnownIfPossible()
+
+        switch phase {
+        case .watching, .recording:
+            locationManager.requestLocation()
+        case .idle, .confirming:
+            locationManager.desiredAccuracy = kCLLocationAccuracyNearestTenMeters
+            locationManager.distanceFilter = 25
+            locationManager.pausesLocationUpdatesAutomatically = true
+            locationManager.allowsBackgroundLocationUpdates = false
+            locationManager.startUpdatingLocation()
+            locationManager.requestLocation()
+        }
     }
 
     private enum Keys {
@@ -191,6 +222,10 @@ final class TripRecordingService: NSObject, ObservableObject {
     }
 
     private func beginRecording(source: String) {
+        guard vehicleId != nil else {
+            lastError = "Pick a vehicle so auto-detected drives can be saved."
+            return
+        }
         self.source = source
         startedAt = Date()
         pausedAccumulated = 0
@@ -304,15 +339,18 @@ final class TripRecordingService: NSObject, ObservableObject {
     }
 
     private func beginLocationUpdates(background: Bool) {
+        // Never let the system pause GPS while auto-detect is armed — paused
+        // updates were a common reason long highway drives were never started
+        // when the app had been killed or sitting in the background.
+        locationManager.pausesLocationUpdatesAutomatically = false
         if phase == .recording {
             locationManager.desiredAccuracy = kCLLocationAccuracyBestForNavigation
             locationManager.distanceFilter = 8
-            locationManager.pausesLocationUpdatesAutomatically = false
         } else {
-            // Background auto-detection does not need turn-by-turn precision.
-            locationManager.desiredAccuracy = kCLLocationAccuracyHundredMeters
-            locationManager.distanceFilter = 100
-            locationManager.pausesLocationUpdatesAutomatically = true
+            // Dense enough to catch highway merge / border runs without
+            // turn-by-turn drain; significant-change monitoring covers cold starts.
+            locationManager.desiredAccuracy = kCLLocationAccuracyNearestTenMeters
+            locationManager.distanceFilter = 40
         }
         locationManager.allowsBackgroundLocationUpdates = background
             && (locationManager.authorizationStatus == .authorizedAlways
@@ -377,6 +415,7 @@ final class TripRecordingService: NSObject, ObservableObject {
     private func ingest(_ location: CLLocation) {
         guard TripTrackingLogic.accepts(horizontalAccuracy: location.horizontalAccuracy) else { return }
         lastLocationAccuracy = location.horizontalAccuracy
+        publishFollow(from: location)
 
         if phase == .watching {
             let speedKmh = max(0, location.speed) * 3.6
@@ -430,6 +469,22 @@ final class TripRecordingService: NSObject, ObservableObject {
         }
         publishSnapshot()
         updateLiveActivity(force: false)
+    }
+
+    private func seedFollowFromLastKnownIfPossible() {
+        guard let location = locationManager.location else { return }
+        // Looser than trip acceptance — map center can use a coarser last-known fix.
+        guard location.horizontalAccuracy >= 0, location.horizontalAccuracy <= 250 else { return }
+        publishFollow(from: location)
+    }
+
+    private func publishFollow(from location: CLLocation) {
+        followLatitude = location.coordinate.latitude
+        followLongitude = location.coordinate.longitude
+        if location.course >= 0 {
+            followCourseDegrees = location.course
+        }
+        followTick &+= 1
     }
 
     private func publishSnapshot() {
@@ -541,5 +596,9 @@ extension TripRecordingService: CLLocationManagerDelegate {
                 self.beginLocationUpdates(background: true)
             }
         }
+    }
+
+    nonisolated func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
+        print("[TripLocation] update failed: \(error.localizedDescription)")
     }
 }
