@@ -21,6 +21,20 @@ private enum TripsMode: String, CaseIterable, Identifiable {
     var id: String { rawValue }
 }
 
+private enum DriveDrawerGestureOwner {
+    case handle
+    case content
+    case scrolling
+}
+
+private struct DriveListTopPreferenceKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = nextValue()
+    }
+}
+
 struct TripsView: View {
     @EnvironmentObject private var avatarStore: ProfileAvatarStore
     @EnvironmentObject private var store: DataStore
@@ -35,7 +49,9 @@ struct TripsView: View {
     @State private var detailTrip: Trip?
     @State private var mode: TripsMode = .tracking
     @State private var driveDrawerExpanded = false
-    @GestureState private var driveDrawerDrag: CGFloat = 0
+    @State private var driveDrawerDragOffset: CGFloat = 0
+    @State private var driveDrawerGestureOwner: DriveDrawerGestureOwner?
+    @State private var driveListIsAtTop = true
     let onProfile: () -> Void
 
     private var filteredTrips: [Trip] {
@@ -210,9 +226,7 @@ struct TripsView: View {
         }
         .onChange(of: driveDrawerExpanded) { _, _ in
             guard mode == .drives else { return }
-            Task { @MainActor in
-                try? await Task.sleep(nanoseconds: 360_000_000)
-                guard mode == .drives else { return }
+            withAnimation(.easeInOut(duration: 0.32)) {
                 focusMap()
             }
         }
@@ -335,14 +349,7 @@ struct TripsView: View {
                 .padding(.horizontal, 16)
             }
             .contentShape(Rectangle())
-            .gesture(driveDrawerGesture)
-            .onTapGesture {
-                guard driveDrawerTravel > 0 else { return }
-                UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                withAnimation(.interactiveSpring(response: 0.32, dampingFraction: 0.86)) {
-                    driveDrawerExpanded.toggle()
-                }
-            }
+            .highPriorityGesture(driveDrawerGesture(from: .handle))
 
             filterBar.padding(.horizontal, 16)
 
@@ -350,7 +357,7 @@ struct TripsView: View {
                 emptyState
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .contentShape(Rectangle())
-                    .gesture(driveDrawerGesture)
+                    .highPriorityGesture(driveDrawerGesture(from: .content))
             } else {
                 ScrollView {
                     LazyVStack(spacing: 0) {
@@ -414,9 +421,22 @@ struct TripsView: View {
                     }
                     .padding(.horizontal, 16)
                     .padding(.bottom, 110)
-                    .tracksBottomNavScroll()
+                    .background {
+                        GeometryReader { proxy in
+                            Color.clear.preference(
+                                key: DriveListTopPreferenceKey.self,
+                                value: proxy.frame(in: .named("driveListScroll")).minY
+                            )
+                        }
+                    }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .coordinateSpace(name: "driveListScroll")
+                .scrollDisabled(!driveDrawerExpanded)
+                .simultaneousGesture(driveDrawerGesture(from: .content))
+                .onPreferenceChange(DriveListTopPreferenceKey.self) { top in
+                    driveListIsAtTop = top >= -1
+                }
             }
         }
         .frame(height: driveDrawerExpandedHeight)
@@ -439,15 +459,31 @@ struct TripsView: View {
 
     private var driveDrawerOffset: CGFloat {
         let restingOffset = driveDrawerExpanded ? 0 : driveDrawerTravel
-        return min(driveDrawerTravel, max(0, restingOffset + driveDrawerDrag))
+        return min(driveDrawerTravel, max(0, restingOffset + driveDrawerDragOffset))
     }
 
-    private var driveDrawerGesture: some Gesture {
-        DragGesture(minimumDistance: 1)
-            .updating($driveDrawerDrag) { value, state, _ in
-                state = value.translation.height
+    private func driveDrawerGesture(from source: DriveDrawerGestureOwner) -> some Gesture {
+        DragGesture(minimumDistance: 8, coordinateSpace: .global)
+            .onChanged { value in
+                if driveDrawerGestureOwner == nil {
+                    driveDrawerGestureOwner = drawerGestureOwner(
+                        requestedBy: source,
+                        initialTranslation: value.translation.height
+                    )
+                }
+
+                guard driveDrawerGestureOwner != .scrolling else { return }
+                driveDrawerDragOffset = value.translation.height
             }
             .onEnded { value in
+                defer {
+                    driveDrawerGestureOwner = nil
+                }
+
+                guard driveDrawerGestureOwner != .scrolling else {
+                    driveDrawerDragOffset = 0
+                    return
+                }
                 guard driveDrawerTravel > 0 else { return }
                 let restingOffset = driveDrawerExpanded ? 0 : driveDrawerTravel
                 let projectedOffset = min(
@@ -456,12 +492,24 @@ struct TripsView: View {
                 )
                 let shouldExpand = projectedOffset < driveDrawerTravel / 2
 
-                guard shouldExpand != driveDrawerExpanded else { return }
-                UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                withAnimation(.interactiveSpring(response: 0.32, dampingFraction: 0.86)) {
+                if shouldExpand != driveDrawerExpanded {
+                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                }
+                withAnimation(.spring(response: 0.42, dampingFraction: 0.9, blendDuration: 0.08)) {
                     driveDrawerExpanded = shouldExpand
+                    driveDrawerDragOffset = 0
                 }
             }
+    }
+
+    private func drawerGestureOwner(
+        requestedBy source: DriveDrawerGestureOwner,
+        initialTranslation: CGFloat
+    ) -> DriveDrawerGestureOwner {
+        if source == .handle { return .handle }
+        if !driveDrawerExpanded { return .content }
+        if driveListIsAtTop, initialTranslation > 0 { return .content }
+        return .scrolling
     }
 
     private var panelBackground: some View {
