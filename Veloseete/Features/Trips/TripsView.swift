@@ -440,8 +440,8 @@ struct TripsView: View {
             }
         }
         .frame(height: driveDrawerExpandedHeight)
-        .background(panelBackground.ignoresSafeArea(edges: .bottom))
         .clipped()
+        .background(panelBackground.ignoresSafeArea(edges: .bottom))
         .offset(y: driveDrawerOffset)
     }
 
