@@ -27,6 +27,11 @@ struct SplashView: View {
         .background(Self.plate.ignoresSafeArea())
         .ignoresSafeArea()
         .accessibilityHidden(true)
+        // Hard ceiling so a stalled AVPlayer never leaves a black screen.
+        .task {
+            try? await Task.sleep(nanoseconds: 4_500_000_000)
+            onFinished()
+        }
     }
 }
 
@@ -46,7 +51,7 @@ private struct SplashVideoPlayer: UIViewRepresentable {
 
         guard let url = Bundle.main.url(forResource: resourceName, withExtension: "mp4", subdirectory: "Media")
             ?? Bundle.main.url(forResource: resourceName, withExtension: "mp4") else {
-            DispatchQueue.main.async { onFinished() }
+            DispatchQueue.main.async { context.coordinator.finish() }
             return view
         }
 
@@ -70,19 +75,46 @@ private struct SplashVideoPlayer: UIViewRepresentable {
     final class Coordinator {
         private let onFinished: () -> Void
         private var playbackObserver: NSObjectProtocol?
+        private var failObserver: NSObjectProtocol?
+        private var statusObservation: NSKeyValueObservation?
+        private var didFinish = false
 
         init(onFinished: @escaping () -> Void) {
             self.onFinished = onFinished
         }
 
+        func finish() {
+            guard !didFinish else { return }
+            didFinish = true
+            onFinished()
+        }
+
         func observe(player: AVPlayer) {
-            guard let item = player.currentItem else { return }
+            guard let item = player.currentItem else {
+                finish()
+                return
+            }
+
             playbackObserver = NotificationCenter.default.addObserver(
                 forName: .AVPlayerItemDidPlayToEndTime,
                 object: item,
                 queue: .main
             ) { [weak self] _ in
-                self?.onFinished()
+                self?.finish()
+            }
+
+            failObserver = NotificationCenter.default.addObserver(
+                forName: .AVPlayerItemFailedToPlayToEndTime,
+                object: item,
+                queue: .main
+            ) { [weak self] _ in
+                self?.finish()
+            }
+
+            statusObservation = item.observe(\.status, options: [.new]) { [weak self] item, _ in
+                if item.status == .failed {
+                    DispatchQueue.main.async { self?.finish() }
+                }
             }
         }
 
@@ -91,6 +123,12 @@ private struct SplashVideoPlayer: UIViewRepresentable {
                 NotificationCenter.default.removeObserver(playbackObserver)
                 self.playbackObserver = nil
             }
+            if let failObserver {
+                NotificationCenter.default.removeObserver(failObserver)
+                self.failObserver = nil
+            }
+            statusObservation?.invalidate()
+            statusObservation = nil
         }
 
         deinit {

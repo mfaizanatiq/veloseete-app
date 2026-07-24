@@ -3,6 +3,7 @@ import UIKit
 
 enum VSIconName: String {
     case arrowLeft = "arrow-left"
+    case baseballHelmet = "baseball-helmet"
     case bell
     case bellRinging = "bell-ringing"
     case car

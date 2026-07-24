@@ -108,15 +108,20 @@ final class DataStore: ObservableObject {
         print("[DataStore] Loading for user \(userId)")
 
         // Load independently so one failed collection doesn't wipe everything.
+        // Hard timeouts keep VPN / dead routes from freezing launch on a black loader.
         do {
-            userDocument = try await FirestoreRepository.shared.fetchUser(userId: userId)
+            userDocument = try await fetchWithTimeout {
+                try await FirestoreRepository.shared.fetchUser(userId: userId)
+            }
         } catch {
             loadWarnings.append("Profile: \(error.localizedDescription)")
             print("[DataStore] user fetch failed: \(error)")
         }
 
         do {
-            let allVehicles = try await FirestoreRepository.shared.fetchVehicles(userId: userId)
+            let allVehicles = try await fetchWithTimeout {
+                try await FirestoreRepository.shared.fetchVehicles(userId: userId)
+            }
             applyVehicleLists(allVehicles)
             print("[DataStore] vehicles: \(vehicles.count) active, \(archivedVehicles.count) archived")
         } catch {
@@ -125,7 +130,9 @@ final class DataStore: ObservableObject {
         }
 
         do {
-            fuelLogs = try await FirestoreRepository.shared.fetchFuelLogs(userId: userId)
+            fuelLogs = try await fetchWithTimeout {
+                try await FirestoreRepository.shared.fetchFuelLogs(userId: userId)
+            }
             print("[DataStore] fuelLogs: \(fuelLogs.count)")
         } catch {
             loadWarnings.append("Fuel logs: \(error.localizedDescription)")
@@ -133,7 +140,9 @@ final class DataStore: ObservableObject {
         }
 
         do {
-            serviceLogs = try await FirestoreRepository.shared.fetchServiceLogs(userId: userId)
+            serviceLogs = try await fetchWithTimeout {
+                try await FirestoreRepository.shared.fetchServiceLogs(userId: userId)
+            }
             print("[DataStore] serviceLogs: \(serviceLogs.count)")
         } catch {
             // Soft — don't surface as red banner; fuel is primary
@@ -142,7 +151,9 @@ final class DataStore: ObservableObject {
         }
 
         do {
-            trips = try await FirestoreRepository.shared.fetchTrips(userId: userId)
+            trips = try await fetchWithTimeout {
+                try await FirestoreRepository.shared.fetchTrips(userId: userId)
+            }
             print("[DataStore] trips: \(trips.count)")
         } catch {
             print("[DataStore] trips fetch failed: \(error)")
@@ -160,6 +171,13 @@ final class DataStore: ObservableObject {
             await refreshManufacturerStandard(for: vehicle)
         }
         publishCarPlayWidgetState()
+    }
+
+    private func fetchWithTimeout<T: Sendable>(
+        seconds: TimeInterval = 12,
+        operation: @escaping @Sendable () async throws -> T
+    ) async throws -> T {
+        try await AsyncTimeout.run(seconds: seconds, operation: operation)
     }
 
     private func applyVehicleLists(_ all: [Vehicle]) {

@@ -33,6 +33,7 @@
 		AC24231325EF9C9C5C9934B4 /* TripConfirmSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 95622FAF7EEA68AF70574E03 /* TripConfirmSheet.swift */; };
 		B3763817EE58A8BABBD8B09F /* DataStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 032D9685E63E087090A2889A /* DataStore.swift */; };
 		B54A52B0BE07BAC01A98668D /* Metrics.swift in Sources */ = {isa = PBXBuildFile; fileRef = FF78BFABE392DBE393254431 /* Metrics.swift */; };
+		B54A52B0BE07BAC01A98668E /* AsyncTimeout.swift in Sources */ = {isa = PBXBuildFile; fileRef = FF78BFABE392DBE393254432 /* AsyncTimeout.swift */; };
 		BC566CBB50ED4FC839E3301F /* BottomNavChrome.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1455C6E27E977E53DE7B98E6 /* BottomNavChrome.swift */; };
 		C717BA273A6E967FDB7EE6D4 /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5C8ECCF8B347101E05AE05BF /* Theme.swift */; };
 		C993CEE9E96A91831F35B9A2 /* TripPermissionsOnboardingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE380E91E0F721685A913B2D /* TripPermissionsOnboardingView.swift */; };
@@ -120,6 +121,7 @@
 		F694C2983FF8F289315A17B5 /* TripPermissionsManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TripPermissionsManager.swift; sourceTree = "<group>"; };
 		FA8C64FAF2E09B5C9D1B38E7 /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
 		FF78BFABE392DBE393254431 /* Metrics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Metrics.swift; sourceTree = "<group>"; };
+		FF78BFABE392DBE393254432 /* AsyncTimeout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AsyncTimeout.swift; sourceTree = "<group>"; };
 		A7B101000000000000000004 /* GoogleService-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = "GoogleService-Info.plist"; sourceTree = "<group>"; };
 		CA2A11000000000000000002 /* CarPlaySceneDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CarPlaySceneDelegate.swift; sourceTree = "<group>"; };
 		CA2A12000000000000000005 /* CarPlayWidgetState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CarPlayWidgetState.swift; sourceTree = "<group>"; };
@@ -271,6 +273,7 @@
 		ABB1FEF1A5418800BB795175 /* Utilities */ = {
 			isa = PBXGroup;
 			children = (
+				FF78BFABE392DBE393254432 /* AsyncTimeout.swift */,
 				FF78BFABE392DBE393254431 /* Metrics.swift */,
 			);
 			path = Utilities;
@@ -566,6 +569,7 @@
 				F9F060079AC13AC8A73A9539 /* GarageView.swift in Sources */,
 				CD5113461FD49DA09C3067BF /* MainTabShell.swift in Sources */,
 				B54A52B0BE07BAC01A98668D /* Metrics.swift in Sources */,
+				B54A52B0BE07BAC01A98668E /* AsyncTimeout.swift in Sources */,
 				77BDCB559F4E40817A499C77 /* Models.swift in Sources */,
 				7501512F21A76B272AE85F51 /* RefuelSheetView.swift in Sources */,
 				57A042468492884909112FF7 /* RootView.swift in Sources */,

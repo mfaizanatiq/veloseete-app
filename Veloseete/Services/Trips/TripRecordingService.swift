@@ -132,6 +132,7 @@ final class TripRecordingService: NSObject, ObservableObject {
             locationManager.pausesLocationUpdatesAutomatically = true
             locationManager.allowsBackgroundLocationUpdates = false
             locationManager.startUpdatingLocation()
+            startHeadingUpdatesIfAvailable()
             locationManager.requestLocation()
         }
     }
@@ -258,8 +259,8 @@ final class TripRecordingService: NSObject, ObservableObject {
         let start = startedAt ?? Date()
         TripLiveActivityController.shared.start(vehicleName: vehicleName, startedAt: start)
         scheduleDriveNotification(
-            title: personalized("your drive is now being tracked"),
-            body: "\(vehicleName) started \(source == "auto" ? "automatically" : "manually"). Keep Veloseete running in the background—your route, distance and time are recording."
+            title: personalized("we're rolling"),
+            body: "Tracking \(vehicleName) quietly in the background."
         )
         publishSnapshot()
         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
@@ -295,8 +296,8 @@ final class TripRecordingService: NSObject, ObservableObject {
                 ? "Short movement ignored (< \(String(format: "%.1f", minSaveDistanceKm)) km)."
                 : "Drive too short to save. Need at least \(String(format: "%.1f", minSaveDistanceKm)) km."
             scheduleDriveNotification(
-                title: personalized("this drive wasn’t saved"),
-                body: String(format: "%@ recorded %.1f km, below the %.1f km minimum. Your odometer was not changed.", vehicleName, distanceKm, minSaveDistanceKm)
+                title: personalized("that one was too short"),
+                body: String(format: "%.1f km — needs %.1f to count. Odometer unchanged.", distanceKm, minSaveDistanceKm)
             )
             resetSession()
             phase = autoTrackingEnabled ? .watching : .idle
@@ -330,8 +331,8 @@ final class TripRecordingService: NSObject, ObservableObject {
         if autoTrackingEnabled { startWatchingIfNeeded() }
 
         scheduleDriveNotification(
-            title: personalized("your drive was added for review"),
-            body: String(format: "%@ tracked %.1f km in %@. Review it anytime in My Drives; tracking remains ready for your next trip.", vehicleName, distanceKm, durationText(duration))
+            title: personalized("drive’s ready"),
+            body: String(format: "%.1f km in %@. Waiting in My Drives.", distanceKm, durationText(duration))
         )
 
         UINotificationFeedbackGenerator().notificationOccurred(.success)
@@ -387,6 +388,7 @@ final class TripRecordingService: NSObject, ObservableObject {
             && (locationManager.authorizationStatus == .authorizedAlways
                 || locationManager.authorizationStatus == .authorizedWhenInUse)
         locationManager.startUpdatingLocation()
+        startHeadingUpdatesIfAvailable()
         if locationManager.authorizationStatus == .authorizedAlways {
             locationManager.startMonitoringSignificantLocationChanges()
         }
@@ -394,8 +396,15 @@ final class TripRecordingService: NSObject, ObservableObject {
 
     private func stopLocationUpdates() {
         locationManager.stopUpdatingLocation()
+        locationManager.stopUpdatingHeading()
         locationManager.stopMonitoringSignificantLocationChanges()
         locationManager.allowsBackgroundLocationUpdates = false
+    }
+
+    private func startHeadingUpdatesIfAvailable() {
+        guard CLLocationManager.headingAvailable() else { return }
+        locationManager.headingFilter = 6
+        locationManager.startUpdatingHeading()
     }
 
     private func beginMotionUpdates() {
@@ -518,6 +527,26 @@ final class TripRecordingService: NSObject, ObservableObject {
         followTick &+= 1
     }
 
+    private func publishHeading(_ heading: CLHeading) {
+        guard heading.headingAccuracy >= 0, heading.headingAccuracy <= 40 else { return }
+        let degrees = heading.trueHeading >= 0 ? heading.trueHeading : heading.magneticHeading
+        guard degrees >= 0 else { return }
+
+        // Prefer GPS course while moving — more stable than compass in a car.
+        let reference = lastLocation ?? locationManager.location
+        if let location = reference, location.course >= 0, location.speed >= 1.2 {
+            return
+        }
+
+        let previous = followCourseDegrees
+        followCourseDegrees = degrees
+        // Don't bump followTick on every compass tick — only unlock the first heading
+        // so the FOV cone can appear without yanking the camera.
+        if previous < 0 {
+            followTick &+= 1
+        }
+    }
+
     private func publishSnapshot() {
         guard phase == .recording, let startedAt else {
             snapshot = nil
@@ -627,6 +656,16 @@ extension TripRecordingService: CLLocationManagerDelegate {
                 self.beginLocationUpdates(background: true)
             }
         }
+    }
+
+    nonisolated func locationManager(_ manager: CLLocationManager, didUpdateHeading newHeading: CLHeading) {
+        Task { @MainActor in
+            self.publishHeading(newHeading)
+        }
+    }
+
+    nonisolated func locationManagerShouldDisplayHeadingCalibration(_ manager: CLLocationManager) -> Bool {
+        false
     }
 
     nonisolated func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {

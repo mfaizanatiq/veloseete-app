@@ -47,11 +47,21 @@ final class AuthService: ObservableObject {
 
     private init() {
         configureGoogleSignIn()
+        // Keychain restore is synchronous — don't wait on the network for first paint.
+        applyUser(Auth.auth().currentUser)
         handle = Auth.auth().addStateDidChangeListener { [weak self] _, user in
             Task { @MainActor in
                 self?.applyUser(user)
                 self?.isCheckingAuth = false
             }
+        }
+        // VPN / blocked Firebase can delay or stall the auth listener.
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: 5_000_000_000)
+            guard let self, self.isCheckingAuth else { return }
+            self.applyUser(Auth.auth().currentUser)
+            self.isCheckingAuth = false
+            print("[Auth] Timed out waiting for auth listener — proceeding with cached session")
         }
     }
 

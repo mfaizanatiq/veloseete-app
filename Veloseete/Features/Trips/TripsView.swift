@@ -100,6 +100,7 @@ struct TripsView: View {
                     activeRoute: recorder.liveRoute,
                     isActivelyRecording: recorder.phase == .recording,
                     showsUserCharacter: usesLocationFocalMap,
+                    courseDegrees: recorder.followCourseDegrees,
                     position: $mapPosition
                 )
                 .frame(
@@ -530,6 +531,7 @@ struct TripsView: View {
                 activeRoute: recorder.liveRoute,
                 isActivelyRecording: recorder.phase == .recording,
                 showsUserCharacter: mode == .tracking,
+                courseDegrees: recorder.followCourseDegrees,
                 position: $mapPosition
             )
             .frame(height: height)
@@ -941,13 +943,20 @@ struct TripsMapCanvas: View {
     let activeRoute: [TripCoordinate]
     let isActivelyRecording: Bool
     let showsUserCharacter: Bool
+    /// Degrees clockwise from true north; negative when unknown.
+    let courseDegrees: Double
     @Binding var position: MapCameraPosition
+    @State private var mapHeading: Double = 0
 
     var body: some View {
         Map(position: $position) {
             if showsUserCharacter {
                 UserAnnotation {
-                    VeloseeteMapCharacter(isLive: isActivelyRecording)
+                    VeloseeteMapCharacter(
+                        isLive: isActivelyRecording,
+                        courseDegrees: courseDegrees,
+                        mapHeading: mapHeading
+                    )
                 }
             }
 
@@ -1020,6 +1029,9 @@ struct TripsMapCanvas: View {
         .mapStyle(Self.lockedMapStyle)
         .mapControlVisibility(.hidden)
         .preferredColorScheme(.dark)
+        .onMapCameraChange(frequency: .continuous) { context in
+            mapHeading = context.camera.heading
+        }
     }
 
     /// Street map only (never satellite/hybrid) with realistic elevation so
@@ -1031,12 +1043,59 @@ struct TripsMapCanvas: View {
     )
 }
 
+/// Soft wedge showing look / travel direction behind the map character.
+private struct FieldOfViewCone: Shape {
+    /// Full opening angle of the cone, in degrees.
+    var span: Double = 78
+
+    func path(in rect: CGRect) -> Path {
+        let center = CGPoint(x: rect.midX, y: rect.midY)
+        let radius = min(rect.width, rect.height) / 2
+        let half = span / 2
+        // 0° screen-up is “forward”; Map annotations stay screen-aligned.
+        let start = Angle.degrees(-90 - half)
+        let end = Angle.degrees(-90 + half)
+        var path = Path()
+        path.move(to: center)
+        path.addArc(center: center, radius: radius, startAngle: start, endAngle: end, clockwise: false)
+        path.closeSubpath()
+        return path
+    }
+}
+
 private struct VeloseeteMapCharacter: View {
     let isLive: Bool
+    var courseDegrees: Double = -1
+    var mapHeading: Double = 0
     @State private var pulse = false
+
+    private var showsCone: Bool { courseDegrees >= 0 }
+
+    /// Rotate absolute course into screen space (annotations stay upright).
+    private var coneRotation: Double { courseDegrees - mapHeading }
 
     var body: some View {
         ZStack {
+            if showsCone {
+                FieldOfViewCone()
+                    .fill(
+                        RadialGradient(
+                            colors: [
+                                VS.Color.accent.opacity(isLive ? 0.55 : 0.38),
+                                VS.Color.accent.opacity(isLive ? 0.22 : 0.14),
+                                VS.Color.accent.opacity(0.0)
+                            ],
+                            center: .center,
+                            startRadius: 6,
+                            endRadius: 78
+                        )
+                    )
+                    .frame(width: 156, height: 156)
+                    .rotationEffect(.degrees(coneRotation))
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
+            }
+
             if isLive {
                 Circle()
                     .fill(VS.Color.accent.opacity(0.24))

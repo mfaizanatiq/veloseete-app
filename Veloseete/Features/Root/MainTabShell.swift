@@ -5,7 +5,7 @@ import Charts
 import AuthenticationServices
 
 enum AppTab: String, CaseIterable {
-    case trips, fuel, service, details, analytics
+    case trips, fuel, service, details, driver
 
     var label: String {
         switch self {
@@ -13,7 +13,7 @@ enum AppTab: String, CaseIterable {
         case .fuel: return "Fuels"
         case .service: return "Service"
         case .details: return "Garage"
-        case .analytics: return "Driver"
+        case .driver: return "Driver"
         }
     }
 
@@ -24,7 +24,7 @@ enum AppTab: String, CaseIterable {
         case .fuel: return .gasPump
         case .service: return .wrench
         case .details: return .car
-        case .analytics: return .chartLine
+        case .driver: return .baseballHelmet
         }
     }
 }
@@ -49,7 +49,7 @@ struct MainTabShell: View {
                     ServiceListView(onProfile: { showProfile = true })
                 case .details:
                     DetailsListView(onProfile: { showProfile = true })
-                case .analytics:
+                case .driver:
                     DriverProfileView(onProfile: { showProfile = true })
                 }
             }
@@ -195,7 +195,8 @@ struct BottomNavBar: View {
                 .shadow(color: .black.opacity(0.4), radius: isCompact ? 12 : 16, y: 4)
         )
         .padding(.horizontal, horizontalInset)
-        .padding(.bottom, isCompact ? 10 : 20)
+        // Sit just above the home indicator — extra lift made it float higher than a system tab bar.
+        .padding(.bottom, isCompact ? 4 : 8)
     }
 }
 
