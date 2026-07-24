@@ -24,6 +24,9 @@ struct Vehicle: Identifiable, Equatable {
     var currency: String
     var icon: String?
     var createdAt: Date
+    /// Soft-removed from the garage. History stays on this vehicleId; other cars are untouched.
+    var isArchived: Bool
+    var archivedAt: Date?
 }
 
 struct FuelLog: Identifiable, Equatable {
@@ -160,7 +163,8 @@ enum FirestoreDecode {
 
 extension Vehicle {
     static func from(document id: String, data: [String: Any]) -> Vehicle {
-        Vehicle(
+        let archived = FirestoreDecode.bool(data["isArchived"], fallback: false)
+        return Vehicle(
             id: id,
             nickname: FirestoreDecode.string(data["nickname"], fallback: "Vehicle"),
             make: FirestoreDecode.string(data["make"], fallback: "Unknown"),
@@ -170,7 +174,11 @@ extension Vehicle {
             fuelTankCapacity: data["fuelTankCapacity"] == nil ? nil : FirestoreDecode.optionalDouble(data["fuelTankCapacity"]),
             currency: FirestoreDecode.string(data["currency"], fallback: "QAR"),
             icon: data["icon"] as? String,
-            createdAt: FirestoreDecode.date(data["createdAt"])
+            createdAt: FirestoreDecode.date(data["createdAt"]),
+            isArchived: archived,
+            archivedAt: data["archivedAt"] == nil || data["archivedAt"] is NSNull
+                ? nil
+                : FirestoreDecode.date(data["archivedAt"])
         )
     }
 }

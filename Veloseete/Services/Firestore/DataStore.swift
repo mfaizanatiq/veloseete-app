@@ -15,7 +15,10 @@ final class DataStore: ObservableObject {
     static let shared = DataStore()
 
     @Published private(set) var userDocument: UserDocument?
+    /// Active garage vehicles only (not archived).
     @Published private(set) var vehicles: [Vehicle] = []
+    /// Soft-removed cars — history stays attached to these IDs.
+    @Published private(set) var archivedVehicles: [Vehicle] = []
     @Published private(set) var fuelLogs: [FuelLog] = []
     @Published private(set) var serviceLogs: [ServiceLog] = []
     @Published private(set) var trips: [Trip] = []
@@ -27,6 +30,24 @@ final class DataStore: ObservableObject {
     @Published var loadWarnings: [String] = []
 
     private init() {}
+
+    var activeVehicleIds: Set<String> { Set(vehicles.map(\.id)) }
+
+    /// Trips for active cars only — archived vehicles keep their own history separately.
+    var tripsForActiveVehicles: [Trip] {
+        let ids = activeVehicleIds
+        return trips.filter { ids.contains($0.vehicleId) }
+    }
+
+    var fuelLogsForActiveVehicles: [FuelLog] {
+        let ids = activeVehicleIds
+        return fuelLogs.filter { ids.contains($0.vehicleId) }
+    }
+
+    var serviceLogsForActiveVehicles: [ServiceLog] {
+        let ids = activeVehicleIds
+        return serviceLogs.filter { ids.contains($0.vehicleId) }
+    }
 
     var currentVehicle: Vehicle? {
         if let id = userDocument?.currentVehicleId,
@@ -95,8 +116,9 @@ final class DataStore: ObservableObject {
         }
 
         do {
-            vehicles = try await FirestoreRepository.shared.fetchVehicles(userId: userId)
-            print("[DataStore] vehicles: \(vehicles.count)")
+            let allVehicles = try await FirestoreRepository.shared.fetchVehicles(userId: userId)
+            applyVehicleLists(allVehicles)
+            print("[DataStore] vehicles: \(vehicles.count) active, \(archivedVehicles.count) archived")
         } catch {
             loadWarnings.append("Vehicles: \(error.localizedDescription)")
             print("[DataStore] vehicles fetch failed: \(error)")
@@ -131,11 +153,41 @@ final class DataStore: ObservableObject {
             loadError = loadWarnings.joined(separator: "\n")
         }
 
-        // If currentVehicleId is stale, keep showing first vehicle (getter already falls back).
+        // If currentVehicleId points at an archived/missing car, point at an active one.
+        await reconcileCurrentVehicleIfNeeded(userId: userId)
+
         if let vehicle = currentVehicle {
             await refreshManufacturerStandard(for: vehicle)
         }
         publishCarPlayWidgetState()
+    }
+
+    private func applyVehicleLists(_ all: [Vehicle]) {
+        vehicles = all.filter { !$0.isArchived }.sorted { $0.createdAt > $1.createdAt }
+        archivedVehicles = all.filter(\.isArchived).sorted {
+            ($0.archivedAt ?? $0.createdAt) > ($1.archivedAt ?? $1.createdAt)
+        }
+    }
+
+    private func reconcileCurrentVehicleIfNeeded(userId: String) async {
+        let currentId = userDocument?.currentVehicleId
+        let currentStillActive = currentId.map { id in vehicles.contains(where: { $0.id == id }) } ?? false
+        guard !currentStillActive else { return }
+
+        let nextId = vehicles.first?.id
+        do {
+            try await FirestoreRepository.shared.updateUserProfile(
+                userId: userId,
+                currentVehicleId: nextId,
+                clearCurrentVehicle: nextId == nil
+            )
+            if var document = userDocument {
+                document.currentVehicleId = nextId
+                userDocument = document
+            }
+        } catch {
+            print("[DataStore] could not reconcile currentVehicleId: \(error)")
+        }
     }
 
     func refreshManufacturerStandard(for vehicle: Vehicle) async {
@@ -212,7 +264,9 @@ final class DataStore: ObservableObject {
             fuelTankCapacity: fuelTankCapacity,
             currency: currency,
             icon: icon,
-            createdAt: Date()
+            createdAt: Date(),
+            isArchived: false,
+            archivedAt: nil
         )
         vehicles.insert(vehicle, at: 0)
 
@@ -261,11 +315,76 @@ final class DataStore: ObservableObject {
 
     func updateVehicle(_ vehicle: Vehicle) async throws {
         try await FirestoreRepository.shared.updateVehicle(vehicle: vehicle)
-        vehicles = vehicles.map { $0.id == vehicle.id ? vehicle : $0 }
-        if currentVehicle?.id == vehicle.id {
-            await refreshManufacturerStandard(for: vehicle)
+        if vehicle.isArchived {
+            vehicles.removeAll { $0.id == vehicle.id }
+            if let index = archivedVehicles.firstIndex(where: { $0.id == vehicle.id }) {
+                archivedVehicles[index] = vehicle
+            } else {
+                archivedVehicles.insert(vehicle, at: 0)
+            }
+        } else {
+            archivedVehicles.removeAll { $0.id == vehicle.id }
+            if let index = vehicles.firstIndex(where: { $0.id == vehicle.id }) {
+                vehicles[index] = vehicle
+            } else {
+                vehicles.insert(vehicle, at: 0)
+            }
+            if currentVehicle?.id == vehicle.id {
+                await refreshManufacturerStandard(for: vehicle)
+            }
         }
         publishCarPlayWidgetState()
+    }
+
+    /// Archives a vehicle from the garage without deleting its fuel, service, or trip history.
+    /// The active vehicle cannot be archived — switch to another car first.
+    func archiveVehicle(_ vehicleId: String) async throws {
+        guard AuthService.shared.userId != nil else {
+            throw NSError(domain: "Veloseete", code: 401, userInfo: [NSLocalizedDescriptionKey: "Not signed in"])
+        }
+        guard let vehicle = vehicles.first(where: { $0.id == vehicleId }) else {
+            throw NSError(domain: "Veloseete", code: 404, userInfo: [NSLocalizedDescriptionKey: "Vehicle not found"])
+        }
+        if currentVehicle?.id == vehicleId {
+            throw NSError(
+                domain: "Veloseete",
+                code: 409,
+                userInfo: [NSLocalizedDescriptionKey: "Make another vehicle active before archiving this one."]
+            )
+        }
+
+        try await FirestoreRepository.shared.setVehicleArchived(vehicleId: vehicleId, archived: true)
+
+        var archived = vehicle
+        archived.isArchived = true
+        archived.archivedAt = Date()
+        vehicles.removeAll { $0.id == vehicleId }
+        archivedVehicles.insert(archived, at: 0)
+        publishCarPlayWidgetState()
+    }
+
+    /// Restores an archived vehicle to the active garage. History was never deleted.
+    func restoreVehicle(_ vehicleId: String) async throws {
+        guard let userId = AuthService.shared.userId else {
+            throw NSError(domain: "Veloseete", code: 401, userInfo: [NSLocalizedDescriptionKey: "Not signed in"])
+        }
+        guard let vehicle = archivedVehicles.first(where: { $0.id == vehicleId }) else {
+            throw NSError(domain: "Veloseete", code: 404, userInfo: [NSLocalizedDescriptionKey: "Archived vehicle not found"])
+        }
+
+        try await FirestoreRepository.shared.setVehicleArchived(vehicleId: vehicleId, archived: false)
+
+        var restored = vehicle
+        restored.isArchived = false
+        restored.archivedAt = nil
+        archivedVehicles.removeAll { $0.id == vehicleId }
+        vehicles.insert(restored, at: 0)
+
+        if userDocument?.currentVehicleId == nil {
+            try await selectVehicle(vehicleId)
+        } else {
+            publishCarPlayWidgetState()
+        }
     }
 
     func addFuelLog(
@@ -411,6 +530,7 @@ final class DataStore: ObservableObject {
     func clear() {
         userDocument = nil
         vehicles = []
+        archivedVehicles = []
         fuelLogs = []
         serviceLogs = []
         trips = []

@@ -273,6 +273,9 @@ struct DetailsListView: View {
     @State private var showAddVehicle = false
     @State private var editingVehicle: Vehicle?
     @State private var selectionError: String?
+    @State private var vehiclePendingArchive: Vehicle?
+    @State private var archiveError: String?
+    @State private var isArchiving = false
 
     var body: some View {
         ScrollView {
@@ -303,6 +306,11 @@ struct DetailsListView: View {
                         .font(VS.Typography.body(12))
                         .foregroundStyle(VS.Color.error)
                 }
+                if let archiveError {
+                    Text(archiveError)
+                        .font(VS.Typography.body(12))
+                        .foregroundStyle(VS.Color.error)
+                }
 
                 if store.vehicles.isEmpty {
                     VStack(spacing: 12) {
@@ -329,6 +337,22 @@ struct DetailsListView: View {
                         garageVehicleCard(vehicle)
                     }
                 }
+
+                if !store.archivedVehicles.isEmpty {
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("Archived")
+                            .font(VS.Typography.heading(18))
+                            .foregroundStyle(VS.Color.textPrimary)
+                        Text("Hidden from the garage. Drives, fuel and service stay on that car — other vehicles are untouched.")
+                            .font(VS.Typography.body(12))
+                            .foregroundStyle(VS.Color.textTertiary)
+
+                        ForEach(store.archivedVehicles) { vehicle in
+                            archivedVehicleCard(vehicle)
+                        }
+                    }
+                    .padding(.top, 8)
+                }
             }
             .padding(.horizontal, 16)
             .padding(.bottom, 110)
@@ -340,14 +364,32 @@ struct DetailsListView: View {
                 .veloseeteSheet()
         }
         .sheet(item: $editingVehicle) { vehicle in
-            VehicleEditorView(vehicle: vehicle)
+            VehicleEditorView(vehicle: vehicle) { vehiclePendingArchive = $0 }
                 .environmentObject(vehiclePhotos)
                 .veloseeteSheet()
         }
-        .onAppear {
-            vehiclePhotos.load(vehicleIds: store.vehicles.map(\.id))
+        .confirmationDialog(
+            "Archive \(vehiclePendingArchive?.nickname ?? "vehicle")?",
+            isPresented: Binding(
+                get: { vehiclePendingArchive != nil },
+                set: { if !$0 { vehiclePendingArchive = nil } }
+            ),
+            titleVisibility: .visible
+        ) {
+            Button("Archive vehicle", role: .destructive) {
+                guard let vehicle = vehiclePendingArchive else { return }
+                Task { await archiveVehicle(vehicle) }
+            }
+            Button("Cancel", role: .cancel) {
+                vehiclePendingArchive = nil
+            }
+        } message: {
+            Text("Removes it from your garage only. Fuel, drives and service for this car stay saved — other vehicles are not changed.")
         }
-        .onChange(of: store.vehicles.map(\.id)) { _, ids in
+        .onAppear {
+            vehiclePhotos.load(vehicleIds: (store.vehicles + store.archivedVehicles).map(\.id))
+        }
+        .onChange(of: store.vehicles.map(\.id) + store.archivedVehicles.map(\.id)) { _, ids in
             vehiclePhotos.load(vehicleIds: ids)
         }
     }
@@ -436,6 +478,68 @@ struct DetailsListView: View {
         .glassCard(elevated: isCurrent)
     }
 
+    private func archivedVehicleCard(_ vehicle: Vehicle) -> some View {
+        let refuels = store.fuelLogs.filter { $0.vehicleId == vehicle.id }.count
+        let drives = store.trips.filter { $0.vehicleId == vehicle.id }.count
+
+        return HStack(spacing: 12) {
+            vehicleAppearancePreview(
+                image: vehiclePhotos.image(for: vehicle.id),
+                emoji: vehicle.icon ?? "🚗",
+                size: 48
+            )
+            .opacity(0.7)
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(vehicle.nickname)
+                    .font(VS.Typography.heading(16))
+                    .foregroundStyle(VS.Color.textPrimary)
+                Text("\(vehicle.make) \(vehicle.model) · \(drives) drives · \(refuels) fills")
+                    .font(VS.Typography.body(12))
+                    .foregroundStyle(VS.Color.textTertiary)
+            }
+
+            Spacer(minLength: 0)
+
+            Button {
+                Task {
+                    do {
+                        archiveError = nil
+                        try await store.restoreVehicle(vehicle.id)
+                        UINotificationFeedbackGenerator().notificationOccurred(.success)
+                    } catch {
+                        archiveError = error.localizedDescription
+                    }
+                }
+            } label: {
+                Text("Restore")
+                    .font(VS.Typography.body(12, weight: .semibold))
+                    .foregroundStyle(VS.Color.accent)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .background(VS.Color.chip, in: Capsule())
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(14)
+        .glassCard()
+    }
+
+    private func archiveVehicle(_ vehicle: Vehicle) async {
+        isArchiving = true
+        archiveError = nil
+        defer {
+            isArchiving = false
+            vehiclePendingArchive = nil
+        }
+        do {
+            try await store.archiveVehicle(vehicle.id)
+            UINotificationFeedbackGenerator().notificationOccurred(.success)
+        } catch {
+            archiveError = error.localizedDescription
+        }
+    }
+
     private func garageMetric(_ value: String, _ label: String) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(value)
@@ -466,6 +570,7 @@ private struct VehicleEditorView: View {
     @EnvironmentObject private var vehiclePhotos: VehiclePhotoStore
     @Environment(\.dismiss) private var dismiss
     let vehicle: Vehicle
+    var onRequestArchive: ((Vehicle) -> Void)?
 
     @State private var nickname: String
     @State private var make: String
@@ -483,11 +588,17 @@ private struct VehicleEditorView: View {
     @State private var isPreparingCrop = false
     @State private var isSaving = false
     @State private var errorMessage: String?
+    @State private var showAdvanced = false
 
     private let icons = ["🚗", "🚙", "🚕", "🚌", "🚐", "🏎️", "🚓", "🚑", "🚒", "🚚", "🚛", "🛻", "🏍️", "🛵", "🚜", "🚎"]
 
-    init(vehicle: Vehicle) {
+    private var isActiveVehicle: Bool {
+        store.currentVehicle?.id == vehicle.id
+    }
+
+    init(vehicle: Vehicle, onRequestArchive: ((Vehicle) -> Void)? = nil) {
         self.vehicle = vehicle
+        self.onRequestArchive = onRequestArchive
         _nickname = State(initialValue: vehicle.nickname)
         _make = State(initialValue: vehicle.make)
         _model = State(initialValue: vehicle.model)
@@ -537,6 +648,34 @@ private struct VehicleEditorView: View {
                 }
                 if let errorMessage {
                     Section { Text(errorMessage).foregroundStyle(VS.Color.error) }
+                }
+
+                Section {
+                    DisclosureGroup("Advanced", isExpanded: $showAdvanced) {
+                        if isActiveVehicle {
+                            Text("Make another vehicle active before you can archive this one.")
+                                .font(VS.Typography.body(13))
+                                .foregroundStyle(VS.Color.textSecondary)
+                                .padding(.vertical, 4)
+                        } else {
+                            Button(role: .destructive) {
+                                dismiss()
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+                                    onRequestArchive?(vehicle)
+                                }
+                            } label: {
+                                Text("Archive vehicle")
+                            }
+                        }
+                    }
+                } footer: {
+                    if showAdvanced {
+                        Text(
+                            isActiveVehicle
+                                ? "The active car can’t be archived. Switch active in Garage first."
+                                : "Hides this car from the garage. Drives, fuel and service stay saved and won’t affect your other vehicles."
+                        )
+                    }
                 }
             }
             .scrollContentBackground(.hidden)
@@ -760,8 +899,8 @@ struct DriverProfileView: View {
 
     private var totalKm: Double {
         InsightGenerator.totalKilometersDriven(
-            trips: store.trips,
-            logs: store.fuelLogs,
+            trips: store.tripsForActiveVehicles,
+            logs: store.fuelLogsForActiveVehicles,
             vehicleId: nil
         )
     }
@@ -799,9 +938,9 @@ struct DriverProfileView: View {
 
     private var achievements: [DriverAchievement] {
         InsightGenerator.achievements(
-            trips: store.trips,
-            logs: store.fuelLogs,
-            serviceLogs: store.serviceLogs,
+            trips: store.tripsForActiveVehicles,
+            logs: store.fuelLogsForActiveVehicles,
+            serviceLogs: store.serviceLogsForActiveVehicles,
             vehicleCount: store.vehicles.count,
             vehicleId: nil,
             unit: unit,

@@ -106,6 +106,7 @@ final class FirestoreRepository {
             "fuelType": input.fuelType,
             "currentOdometer": input.currentOdometer,
             "currency": input.currency,
+            "isArchived": false,
             "createdAt": FieldValue.serverTimestamp(),
             "updatedAt": FieldValue.serverTimestamp()
         ]
@@ -134,11 +135,23 @@ final class FirestoreRepository {
             "fuelType": vehicle.fuelType,
             "currentOdometer": vehicle.currentOdometer,
             "currency": vehicle.currency,
+            "isArchived": vehicle.isArchived,
             "updatedAt": FieldValue.serverTimestamp()
         ]
         data["fuelTankCapacity"] = vehicle.fuelTankCapacity.map { $0 as Any } ?? NSNull()
         data["icon"] = vehicle.icon.map { $0 as Any } ?? NSNull()
+        data["archivedAt"] = vehicle.archivedAt.map { $0 as Any } ?? NSNull()
         try await db.collection("vehicles").document(vehicle.id).updateData(data)
+    }
+
+    /// Soft-remove from the garage. Does not delete fuel, service, or trip history for this vehicle.
+    func setVehicleArchived(vehicleId: String, archived: Bool) async throws {
+        var data: [String: Any] = [
+            "isArchived": archived,
+            "updatedAt": FieldValue.serverTimestamp()
+        ]
+        data["archivedAt"] = archived ? FieldValue.serverTimestamp() : NSNull()
+        try await db.collection("vehicles").document(vehicleId).updateData(data)
     }
 
     // MARK: - Fuel logs

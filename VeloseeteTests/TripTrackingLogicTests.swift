@@ -142,7 +142,7 @@ final class TripTrackingLogicTests: XCTestCase {
     }
 
     private var testVehicle: Vehicle {
-        Vehicle(id: "car", nickname: "Test", make: "Test", model: "Car", fuelType: "petrol", currentOdometer: 10_500, fuelTankCapacity: 50, currency: "QAR", icon: nil, createdAt: Date())
+        Vehicle(id: "car", nickname: "Test", make: "Test", model: "Car", fuelType: "petrol", currentOdometer: 10_500, fuelTankCapacity: 50, currency: "QAR", icon: nil, createdAt: Date(), isArchived: false, archivedAt: nil)
     }
 
     private func fuelLog(id: String, vehicleId: String = "car", odometer: Double, liters: Double, full: Bool, daysAgo: Int) -> FuelLog {
