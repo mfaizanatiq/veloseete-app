@@ -258,9 +258,10 @@ final class TripRecordingService: NSObject, ObservableObject {
 
         let start = startedAt ?? Date()
         TripLiveActivityController.shared.start(vehicleName: vehicleName, startedAt: start)
+        let startCopy = DriveNotificationCopy.start(vehicleName: vehicleName)
         scheduleDriveNotification(
-            title: personalized("we're rolling"),
-            body: "Tracking \(vehicleName) quietly in the background."
+            title: personalized(startCopy.title),
+            body: startCopy.body
         )
         publishSnapshot()
         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
@@ -295,9 +296,13 @@ final class TripRecordingService: NSObject, ObservableObject {
             lastError = autoEnded
                 ? "Short movement ignored (< \(String(format: "%.1f", minSaveDistanceKm)) km)."
                 : "Drive too short to save. Need at least \(String(format: "%.1f", minSaveDistanceKm)) km."
+            let shortCopy = DriveNotificationCopy.tooShort(
+                distanceKm: distanceKm,
+                minimumKm: minSaveDistanceKm
+            )
             scheduleDriveNotification(
-                title: personalized("that one was too short"),
-                body: String(format: "%.1f km — needs %.1f to count. Odometer unchanged.", distanceKm, minSaveDistanceKm)
+                title: personalized(shortCopy.title),
+                body: shortCopy.body
             )
             resetSession()
             phase = autoTrackingEnabled ? .watching : .idle
@@ -330,9 +335,13 @@ final class TripRecordingService: NSObject, ObservableObject {
 
         if autoTrackingEnabled { startWatchingIfNeeded() }
 
+        let doneCopy = DriveNotificationCopy.ready(
+            distanceKm: distanceKm,
+            duration: durationText(duration)
+        )
         scheduleDriveNotification(
-            title: personalized("drive’s ready"),
-            body: String(format: "%.1f km in %@. Waiting in My Drives.", distanceKm, durationText(duration))
+            title: personalized(doneCopy.title),
+            body: doneCopy.body
         )
 
         UINotificationFeedbackGenerator().notificationOccurred(.success)
@@ -638,6 +647,47 @@ final class TripRecordingService: NSObject, ObservableObject {
         let minutes = max(1, Int(seconds / 60))
         if minutes < 60 { return "\(minutes) min" }
         return "\(minutes / 60) hr \(minutes % 60) min"
+    }
+}
+
+/// Quirky co-pilot lines for trip notifications — short, personal, a little Veloseete.
+private enum DriveNotificationCopy {
+    struct Line {
+        let title: String
+        let body: String
+    }
+
+    static func start(vehicleName: String) -> Line {
+        pick([
+            Line(title: "engines on", body: "I've got \(vehicleName). You drive — I'll hover."),
+            Line(title: "we're rolling", body: "\(vehicleName) is live. I'm tagging along like a quiet co-pilot."),
+            Line(title: "seatbelt check", body: "Tracking \(vehicleName) in the background. Don't mind me."),
+            Line(title: "plot twist: movement", body: "\(vehicleName) just woke up. Route, distance, vibes — noted."),
+        ])
+    }
+
+    static func tooShort(distanceKm: Double, minimumKm: Double) -> Line {
+        let stats = String(format: "%.1f km · needs %.1f", distanceKm, minimumKm)
+        return pick([
+            Line(title: "that was a driveway", body: "\(stats). Cute try — odometer unchanged."),
+            Line(title: "blink and you missed it", body: "\(stats). Not enough asphalt for Veloseete."),
+            Line(title: "almost a drive", body: "\(stats). Stretch the legs next time."),
+            Line(title: "too short to brag about", body: "\(stats). I pretended I didn't see that."),
+        ])
+    }
+
+    static func ready(distanceKm: Double, duration: String) -> Line {
+        let stats = String(format: "%.1f km in %@", distanceKm, duration)
+        return pick([
+            Line(title: "drive's in the bag", body: "\(stats). Stashed in My Drives — go flex later."),
+            Line(title: "nice one", body: "\(stats). Waiting for your review like a souvenir."),
+            Line(title: "logged, legend", body: "\(stats). Peek at it in My Drives when you're free."),
+            Line(title: "another one for the scrapbook", body: "\(stats). Ready when you are."),
+        ])
+    }
+
+    private static func pick(_ lines: [Line]) -> Line {
+        lines.randomElement() ?? lines[0]
     }
 }
 
