@@ -71,6 +71,8 @@ final class TripRecordingService: NSObject, ObservableObject {
     private var motionTimer: Timer?
     private var tickTimer: Timer?
 
+    private static let pendingReviewPrefix = "veloseete.trip.pending."
+
     private var vehicleId: String?
     private var vehicleName: String = "Vehicle"
     private var driverName: String = ""
@@ -87,6 +89,7 @@ final class TripRecordingService: NSObject, ObservableObject {
     private var automotiveSince: Date?
     private var stationarySince: Date?
     private var lastLiveActivityUpdate = Date.distantPast
+    private var lastWidgetTrackingUpdate = Date.distantPast
 
     /// Auto-start once automotive / speed holds for this long.
     private let autoStartHold: TimeInterval = 18
@@ -106,6 +109,7 @@ final class TripRecordingService: NSObject, ObservableObject {
         locationManager.showsBackgroundLocationIndicator = true
         autoTrackingEnabled = UserDefaults.standard.bool(forKey: Keys.autoTracking)
         restorePendingSaves()
+        refreshPendingReviewReminders(forceReschedule: true)
 
         // Recording sessions are not restored after a terminated app, so any
         // surviving system activity would be stale while this service is idle.
@@ -116,6 +120,80 @@ final class TripRecordingService: NSObject, ObservableObject {
     func resumeBackgroundWatchingIfNeeded() {
         guard autoTrackingEnabled else { return }
         startWatchingIfNeeded()
+    }
+
+    /// Keeps (or clears) nudges for trips waiting in My Drives.
+    /// Pass `forceReschedule` when the pending queue itself changed.
+    func refreshPendingReviewReminders(forceReschedule: Bool = false) {
+        let count = pendingSaves.count
+        let center = UNUserNotificationCenter.current()
+        center.getPendingNotificationRequests { pending in
+            let existing = pending
+                .map(\.identifier)
+                .filter { $0.hasPrefix(Self.pendingReviewPrefix) }
+
+            if count == 0 {
+                if !existing.isEmpty {
+                    center.removePendingNotificationRequests(withIdentifiers: existing)
+                }
+                return
+            }
+
+            // Foreground / launch: don't reset the clock if nudges are already queued.
+            if !forceReschedule, !existing.isEmpty {
+                return
+            }
+
+            if !existing.isEmpty {
+                center.removePendingNotificationRequests(withIdentifiers: existing)
+            }
+
+            let copy = DriveNotificationCopy.pendingReview(count: count)
+            Task { @MainActor in
+                let title = self.personalized(copy.title)
+                let body = copy.body
+                center.getNotificationSettings { settings in
+                    let deliver: () -> Void = {
+                        let intervals: [(id: String, seconds: TimeInterval)] = [
+                            ("soon", 60 * 60),
+                            ("later", 6 * 60 * 60),
+                            ("day", 24 * 60 * 60),
+                        ]
+                        for slot in intervals {
+                            let content = UNMutableNotificationContent()
+                            content.title = title
+                            content.body = body
+                            content.sound = .default
+                            content.categoryIdentifier = "TRIP_PENDING_REVIEW"
+                            let request = UNNotificationRequest(
+                                identifier: Self.pendingReviewPrefix + slot.id,
+                                content: content,
+                                trigger: UNTimeIntervalNotificationTrigger(
+                                    timeInterval: max(slot.seconds, 60),
+                                    repeats: false
+                                )
+                            )
+                            center.add(request) { error in
+                                if let error {
+                                    print("[TripNotification] pending review schedule failed: \(error)")
+                                }
+                            }
+                        }
+                    }
+
+                    switch settings.authorizationStatus {
+                    case .authorized, .provisional, .ephemeral:
+                        deliver()
+                    case .notDetermined:
+                        center.requestAuthorization(options: [.alert, .sound, .badge]) { granted, _ in
+                            if granted { deliver() }
+                        }
+                    default:
+                        break
+                    }
+                }
+            }
+        }
     }
 
     /// Centers the Tracking map even when idle / waiting for the first fix.
@@ -211,6 +289,32 @@ final class TripRecordingService: NSObject, ObservableObject {
 
     func clearError() {
         lastError = nil
+    }
+
+    /// Clears queued trips / follow pose when the account is wiped.
+    func wipeLocalStateForAccountDeletion() {
+        pendingSaves = []
+        persistPendingSaves()
+        snapshot = nil
+        liveRoute = []
+        if phase == .recording {
+            tickTimer?.invalidate()
+            tickTimer = nil
+            stopLocationUpdates()
+            stopMotionUpdates()
+            TripLiveActivityController.shared.cancel()
+        }
+        phase = .idle
+        setAutoTracking(false)
+        followLatitude = nil
+        followLongitude = nil
+        followCourseDegrees = -1
+        resetSession()
+        CarPlayWidgetStateStore.updateTracking(
+            state: .idle,
+            autoTrackingEnabled: false,
+            reloadTimeline: true
+        )
     }
 
     // MARK: - Watching / recording internals
@@ -364,6 +468,8 @@ final class TripRecordingService: NSObject, ObservableObject {
         } catch {
             print("[TripQueue] Could not persist pending trips: \(error.localizedDescription)")
         }
+        refreshPendingReviewReminders(forceReschedule: true)
+        CarPlayWidgetStateStore.updatePendingTripCount(pendingSaves.count)
     }
 
     private func resetSession() {
@@ -559,6 +665,7 @@ final class TripRecordingService: NSObject, ObservableObject {
     private func publishSnapshot() {
         guard phase == .recording, let startedAt else {
             snapshot = nil
+            syncWidgetTracking(force: true)
             return
         }
         var duration = Date().timeIntervalSince(startedAt) - pausedAccumulated
@@ -582,6 +689,42 @@ final class TripRecordingService: NSObject, ObservableObject {
             vehicleName: vehicleName,
             route: liveRoute
         )
+        syncWidgetTracking(force: false)
+    }
+
+    private func syncWidgetTracking(force: Bool) {
+        let state: CarPlayWidgetTrackingState
+        switch phase {
+        case .idle: state = .idle
+        case .watching: state = .watching
+        case .recording: state = isPaused ? .paused : .recording
+        case .confirming: state = .confirming
+        }
+
+        let now = Date()
+        let shouldReload = force || now.timeIntervalSince(lastWidgetTrackingUpdate) >= 30
+        guard force || shouldReload || phase == .recording else { return }
+
+        if phase == .recording, let snapshot {
+            CarPlayWidgetStateStore.updateTracking(
+                state: state,
+                autoTrackingEnabled: autoTrackingEnabled,
+                startedAt: snapshot.startedAt,
+                distanceKm: snapshot.distanceKm,
+                durationSec: snapshot.durationSec,
+                currentSpeedKmh: snapshot.currentSpeedKmh,
+                reloadTimeline: shouldReload
+            )
+        } else {
+            CarPlayWidgetStateStore.updateTracking(
+                state: state,
+                autoTrackingEnabled: autoTrackingEnabled,
+                reloadTimeline: shouldReload
+            )
+        }
+        if shouldReload {
+            lastWidgetTrackingUpdate = now
+        }
     }
 
     private func updateLiveActivity(force: Bool) {
@@ -683,6 +826,21 @@ private enum DriveNotificationCopy {
             Line(title: "nice one", body: "\(stats). Waiting for your review like a souvenir."),
             Line(title: "logged, legend", body: "\(stats). Peek at it in My Drives when you're free."),
             Line(title: "another one for the scrapbook", body: "\(stats). Ready when you are."),
+        ])
+    }
+
+    static func pendingReview(count: Int) -> Line {
+        if count == 1 {
+            return pick([
+                Line(title: "that drive is getting lonely", body: "Still waiting in My Drives. Confirm it whenever you're free."),
+                Line(title: "unclaimed souvenir", body: "One trip is parked on review. Don't leave it on read."),
+                Line(title: "hey — still pending", body: "Your last drive wants a nod in My Drives."),
+            ])
+        }
+        return pick([
+            Line(title: "\(count) trips collecting dust", body: "My Drives has a little backlog. Confirm when you can."),
+            Line(title: "review pile growing", body: "\(count) drives are waiting. Future-you likes a tidy log."),
+            Line(title: "co-pilot nudge", body: "\(count) unconfirmed trips. Tap My Drives and clear the stack."),
         ])
     }
 

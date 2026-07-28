@@ -82,10 +82,25 @@ struct VeloseeteApp: App {
             }
             .onAppear {
                 tripRecorder.resumeBackgroundWatchingIfNeeded()
+                tripRecorder.refreshPendingReviewReminders()
+                if dataStore.isLoaded {
+                    VehicleInsightScheduler.shared.refresh(using: dataStore)
+                    dataStore.refreshHomeWidgets()
+                }
             }
             .onChange(of: scenePhase) { _, phase in
                 guard phase == .active else { return }
                 tripRecorder.resumeBackgroundWatchingIfNeeded()
+                tripRecorder.refreshPendingReviewReminders()
+                if dataStore.isLoaded {
+                    VehicleInsightScheduler.shared.refresh(using: dataStore)
+                    dataStore.refreshHomeWidgets()
+                }
+            }
+            .onChange(of: dataStore.isLoaded) { _, loaded in
+                guard loaded else { return }
+                VehicleInsightScheduler.shared.refresh(using: dataStore)
+                dataStore.refreshHomeWidgets()
             }
             .onChange(of: dataStore.currentVehicle?.id) { _, _ in
                 guard let vehicle = dataStore.currentVehicle else { return }
@@ -96,6 +111,8 @@ struct VeloseeteApp: App {
                     driverName: dataStore.userName
                 )
                 tripRecorder.resumeBackgroundWatchingIfNeeded()
+                VehicleInsightScheduler.shared.refresh(using: dataStore)
+                dataStore.refreshHomeWidgets()
             }
         }
     }

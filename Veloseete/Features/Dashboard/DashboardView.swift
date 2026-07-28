@@ -120,7 +120,11 @@ struct DashboardView: View {
             } else {
                 VStack(spacing: 0) {
                     ForEach(logs) { log in
-                        RefuelRowView(log: log, unit: store.defaultDistanceUnit)
+                        RefuelRowView(
+                            log: log,
+                            distanceUnit: store.defaultDistanceUnit,
+                            volumeUnit: vehicle?.fuelVolumeUnit ?? VolumeFormat.liters
+                        )
                         if log.id != logs.last?.id {
                             Divider().overlay(VS.Color.divider)
                         }
@@ -298,7 +302,8 @@ struct MetricsRow: View {
 
 struct RefuelRowView: View {
     let log: FuelLog
-    let unit: String
+    let distanceUnit: String
+    var volumeUnit: String = VolumeFormat.liters
 
     var body: some View {
         HStack {
@@ -306,9 +311,15 @@ struct RefuelRowView: View {
                 Text(log.timestamp.formatted(date: .abbreviated, time: .omitted))
                     .font(VS.Typography.heading(14))
                     .foregroundStyle(VS.Color.textPrimary)
-                Text(String(format: "%.1f L · %@", log.fuelVolume, DistanceFormat.formatOdometer(log.odometerReading, unit: unit)))
+                Text("\(VolumeFormat.format(log.fuelVolume, unit: volumeUnit)) · \(DistanceFormat.formatOdometer(log.odometerReading, unit: distanceUnit))")
                     .font(VS.Typography.body(12))
                     .foregroundStyle(VS.Color.textTertiary)
+                if let station = log.stationName, !station.isEmpty {
+                    Text(station)
+                        .font(VS.Typography.body(11, weight: .medium))
+                        .foregroundStyle(VS.Color.accentSecondary)
+                        .lineLimit(1)
+                }
             }
             Spacer()
             Text(CurrencyFormat.format(log.totalCost, currency: log.currency))

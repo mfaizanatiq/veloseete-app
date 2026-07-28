@@ -3,7 +3,6 @@ import FirebaseCore
 
 enum FirebaseBootstrap {
     /// Prefer `GoogleService-Info.plist` when present (register iOS app in Firebase Console).
-    /// Falls back to programmatic options for the shared `velocity-5e576` project.
     static func configure() {
         guard FirebaseApp.app() == nil else { return }
 
@@ -14,7 +13,8 @@ enum FirebaseBootstrap {
             return
         }
 
-        // Registered iOS app in Firebase Console (prefer GoogleService-Info.plist in the bundle).
+        #if DEBUG
+        // Local/dev fallback only — Release builds must ship GoogleService-Info.plist.
         let options = FirebaseOptions(
             googleAppID: "1:1090690719538:ios:9f5299b05e4b451bbec12b",
             gcmSenderID: "1090690719538"
@@ -26,6 +26,10 @@ enum FirebaseBootstrap {
         options.clientID = "1090690719538-7betv9lmo15m6qftsmuc9pdfqo87mf1c.apps.googleusercontent.com"
 
         FirebaseApp.configure(options: options)
-        print("[Firebase] Configured programmatic fallback — project \(options.projectID ?? "?")")
+        print("[Firebase] Configured programmatic DEBUG fallback — project \(options.projectID ?? "?")")
+        #else
+        assertionFailure("GoogleService-Info.plist missing from Release bundle")
+        print("[Firebase] FATAL: GoogleService-Info.plist is required for Release")
+        #endif
     }
 }

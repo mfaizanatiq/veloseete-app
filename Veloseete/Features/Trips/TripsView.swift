@@ -91,6 +91,18 @@ struct TripsView: View {
         mode == .tracking || driveMapCoordinates.isEmpty
     }
 
+    /// Prefer our recorder pose so the avatar stays locked to the live route tip
+    /// (MapKit's `UserAnnotation` lags and doubles up with the tracker dot).
+    private var mapCharacterCoordinate: CLLocationCoordinate2D? {
+        if let lat = recorder.followLatitude, let lng = recorder.followLongitude {
+            return CLLocationCoordinate2D(latitude: lat, longitude: lng)
+        }
+        if let last = recorder.liveRoute.last {
+            return CLLocationCoordinate2D(latitude: last.latitude, longitude: last.longitude)
+        }
+        return nil
+    }
+
     var body: some View {
         ZStack(alignment: .top) {
             GeometryReader { proxy in
@@ -101,6 +113,7 @@ struct TripsView: View {
                     isActivelyRecording: recorder.phase == .recording,
                     showsUserCharacter: usesLocationFocalMap,
                     courseDegrees: recorder.followCourseDegrees,
+                    characterCoordinate: mapCharacterCoordinate,
                     position: $mapPosition
                 )
                 .frame(
@@ -532,6 +545,7 @@ struct TripsView: View {
                 isActivelyRecording: recorder.phase == .recording,
                 showsUserCharacter: mode == .tracking,
                 courseDegrees: recorder.followCourseDegrees,
+                characterCoordinate: mapCharacterCoordinate,
                 position: $mapPosition
             )
             .frame(height: height)
@@ -945,18 +959,30 @@ struct TripsMapCanvas: View {
     let showsUserCharacter: Bool
     /// Degrees clockwise from true north; negative when unknown.
     let courseDegrees: Double
+    /// Recorder follow pose — keeps the avatar on our route, not MapKit's lagging user location.
+    let characterCoordinate: CLLocationCoordinate2D?
     @Binding var position: MapCameraPosition
     @State private var mapHeading: Double = 0
 
     var body: some View {
         Map(position: $position) {
             if showsUserCharacter {
-                UserAnnotation {
-                    VeloseeteMapCharacter(
-                        isLive: isActivelyRecording,
-                        courseDegrees: courseDegrees,
-                        mapHeading: mapHeading
-                    )
+                if let characterCoordinate {
+                    Annotation("You", coordinate: characterCoordinate, anchor: .center) {
+                        VeloseeteMapCharacter(
+                            isLive: isActivelyRecording,
+                            courseDegrees: courseDegrees,
+                            mapHeading: mapHeading
+                        )
+                    }
+                } else {
+                    UserAnnotation {
+                        VeloseeteMapCharacter(
+                            isLive: isActivelyRecording,
+                            courseDegrees: courseDegrees,
+                            mapHeading: mapHeading
+                        )
+                    }
                 }
             }
 
@@ -1013,7 +1039,8 @@ struct TripsMapCanvas: View {
                 .stroke(VS.Color.accent, style: StrokeStyle(lineWidth: 4, lineCap: .round, lineJoin: .round))
             }
 
-            if let current = activeRoute.last {
+            // Only show the tip dot when the character avatar isn't already covering it.
+            if !showsUserCharacter, let current = activeRoute.last {
                 Annotation(isActivelyRecording ? "Live" : "Last point", coordinate: CLLocationCoordinate2D(latitude: current.latitude, longitude: current.longitude)) {
                     ZStack {
                         if isActivelyRecording {
@@ -1032,6 +1059,8 @@ struct TripsMapCanvas: View {
         .onMapCameraChange(frequency: .continuous) { context in
             mapHeading = context.camera.heading
         }
+        .animation(.linear(duration: 0.35), value: characterCoordinate?.latitude)
+        .animation(.linear(duration: 0.35), value: characterCoordinate?.longitude)
     }
 
     /// Street map only (never satellite/hybrid) with realistic elevation so

@@ -14,6 +14,7 @@ struct AuthView: View {
     @State private var resetSuccess = false
     @State private var localError = ""
     @State private var appleNonceHash = ""
+    @State private var legalDocument: AppLegal.Document?
     @FocusState private var focusedField: Field?
 
     private enum Field { case name, email, password, reset }
@@ -156,13 +157,20 @@ struct AuthView: View {
                     .font(VS.Typography.body(14))
                 }
                 .frame(maxWidth: .infinity)
-                .padding(.bottom, 40)
+                .padding(.bottom, 16)
+
+                LegalLinksRow { legalDocument = $0 }
+                    .frame(maxWidth: .infinity)
+                    .padding(.bottom, 40)
             }
             .padding(.horizontal, 20)
         }
         .veloseetePage()
         .sheet(isPresented: $showForgot) {
             forgotSheet
+        }
+        .sheet(item: $legalDocument) { doc in
+            LegalDocumentView(document: doc)
         }
         .onAppear {
             if let pending = auth.pendingLinkEmail, email.isEmpty {

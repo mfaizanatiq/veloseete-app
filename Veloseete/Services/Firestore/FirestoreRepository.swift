@@ -94,10 +94,12 @@ final class FirestoreRepository {
         var currency: String
         var icon: String?
         var fuelTankCapacity: Double?
+        var fuelVolumeUnit: String
     }
 
     func addVehicle(userId: String, input: NewVehicleInput) async throws -> String {
         let ref = db.collection("vehicles").document()
+        let volumeUnit = VolumeFormat.normalize(input.fuelVolumeUnit) ?? VolumeFormat.defaultUnit(currency: input.currency)
         var data: [String: Any] = [
             "userId": userId,
             "nickname": input.nickname,
@@ -106,6 +108,7 @@ final class FirestoreRepository {
             "fuelType": input.fuelType,
             "currentOdometer": input.currentOdometer,
             "currency": input.currency,
+            "fuelVolumeUnit": volumeUnit,
             "isArchived": false,
             "createdAt": FieldValue.serverTimestamp(),
             "updatedAt": FieldValue.serverTimestamp()
@@ -128,6 +131,8 @@ final class FirestoreRepository {
     }
 
     func updateVehicle(vehicle: Vehicle) async throws {
+        let volumeUnit = VolumeFormat.normalize(vehicle.fuelVolumeUnit)
+            ?? VolumeFormat.defaultUnit(currency: vehicle.currency)
         var data: [String: Any] = [
             "nickname": vehicle.nickname,
             "make": vehicle.make,
@@ -135,6 +140,7 @@ final class FirestoreRepository {
             "fuelType": vehicle.fuelType,
             "currentOdometer": vehicle.currentOdometer,
             "currency": vehicle.currency,
+            "fuelVolumeUnit": volumeUnit,
             "isArchived": vehicle.isArchived,
             "updatedAt": FieldValue.serverTimestamp()
         ]
@@ -183,11 +189,14 @@ final class FirestoreRepository {
         var currency: String
         var isFullTank: Bool
         var timestamp: Date
+        var stationName: String? = nil
+        var stationLatitude: Double? = nil
+        var stationLongitude: Double? = nil
     }
 
     func addFuelLog(userId: String, input: NewFuelLogInput) async throws -> String {
         let ref = db.collection("fuelLogs").document()
-        let data: [String: Any] = [
+        var data: [String: Any] = [
             "userId": userId,
             "vehicle_id": input.vehicleId,
             "odometer_reading": input.odometerReading,
@@ -200,6 +209,13 @@ final class FirestoreRepository {
             "createdAt": FieldValue.serverTimestamp(),
             "updatedAt": FieldValue.serverTimestamp()
         ]
+        if let stationName = input.stationName, !stationName.isEmpty {
+            data["station_name"] = stationName
+        }
+        if let lat = input.stationLatitude, let lng = input.stationLongitude {
+            data["station_lat"] = lat
+            data["station_lng"] = lng
+        }
         try await ref.setData(data)
         return ref.documentID
     }
@@ -380,5 +396,38 @@ final class FirestoreRepository {
             return avg
         }
         return FirestoreDecode.optionalDouble(data["fuelConsumptionL100km"])
+    }
+
+    // MARK: - Account deletion
+
+    /// Deletes Firestore documents owned by this user (vehicles, logs, trips, profile).
+    func deleteAllUserData(userId: String) async throws {
+        let collections = ["vehicles", "fuelLogs", "serviceLogs", "trips"]
+        for name in collections {
+            try await deleteCollectionDocuments(collection: name, userId: userId)
+        }
+        try await db.collection("users").document(userId).delete()
+    }
+
+    private func deleteCollectionDocuments(collection: String, userId: String) async throws {
+        let snap = try await db.collection(collection)
+            .whereField("userId", isEqualTo: userId)
+            .getDocuments()
+        guard !snap.documents.isEmpty else { return }
+
+        var batch = db.batch()
+        var pending = 0
+        for doc in snap.documents {
+            batch.deleteDocument(doc.reference)
+            pending += 1
+            if pending >= 400 {
+                try await batch.commit()
+                batch = db.batch()
+                pending = 0
+            }
+        }
+        if pending > 0 {
+            try await batch.commit()
+        }
     }
 }

@@ -171,6 +171,7 @@ final class DataStore: ObservableObject {
             await refreshManufacturerStandard(for: vehicle)
         }
         publishCarPlayWidgetState()
+        VehicleInsightScheduler.shared.refresh(using: self)
     }
 
     private func fetchWithTimeout<T: Sendable>(
@@ -253,12 +254,14 @@ final class DataStore: ObservableObject {
         currentOdometer: Double,
         currency: String,
         icon: String?,
-        fuelTankCapacity: Double?
+        fuelTankCapacity: Double?,
+        fuelVolumeUnit: String
     ) async throws {
         guard let userId = AuthService.shared.userId else {
             throw NSError(domain: "Veloseete", code: 401, userInfo: [NSLocalizedDescriptionKey: "Not signed in"])
         }
 
+        let volumeUnit = VolumeFormat.normalize(fuelVolumeUnit) ?? VolumeFormat.defaultUnit(currency: currency)
         let input = FirestoreRepository.NewVehicleInput(
             nickname: nickname,
             make: make,
@@ -267,7 +270,8 @@ final class DataStore: ObservableObject {
             currentOdometer: currentOdometer,
             currency: currency,
             icon: icon,
-            fuelTankCapacity: fuelTankCapacity
+            fuelTankCapacity: fuelTankCapacity,
+            fuelVolumeUnit: volumeUnit
         )
 
         let id = try await FirestoreRepository.shared.addVehicle(userId: userId, input: input)
@@ -281,6 +285,7 @@ final class DataStore: ObservableObject {
             currentOdometer: currentOdometer,
             fuelTankCapacity: fuelTankCapacity,
             currency: currency,
+            fuelVolumeUnit: volumeUnit,
             icon: icon,
             createdAt: Date(),
             isArchived: false,
@@ -412,7 +417,10 @@ final class DataStore: ObservableObject {
         totalCost: Double,
         currency: String,
         isFullTank: Bool,
-        timestamp: Date
+        timestamp: Date,
+        stationName: String? = nil,
+        stationLatitude: Double? = nil,
+        stationLongitude: Double? = nil
     ) async throws {
         guard let userId = AuthService.shared.userId else {
             throw NSError(domain: "Veloseete", code: 401, userInfo: [NSLocalizedDescriptionKey: "Not signed in"])
@@ -427,7 +435,10 @@ final class DataStore: ObservableObject {
             totalCost: totalCost,
             currency: currency,
             isFullTank: isFullTank,
-            timestamp: timestamp
+            timestamp: timestamp,
+            stationName: stationName,
+            stationLatitude: stationLatitude,
+            stationLongitude: stationLongitude
         )
 
         let id = try await FirestoreRepository.shared.addFuelLog(userId: userId, input: input)
@@ -442,7 +453,10 @@ final class DataStore: ObservableObject {
             pricePerUnit: pricePerUnit,
             totalCost: totalCost,
             currency: currency,
-            isFullTank: isFullTank
+            isFullTank: isFullTank,
+            stationName: stationName,
+            stationLatitude: stationLatitude,
+            stationLongitude: stationLongitude
         )
         fuelLogs.insert(log, at: 0)
         vehicles = vehicles.map { v in
@@ -452,6 +466,7 @@ final class DataStore: ObservableObject {
             return updated
         }
         publishCarPlayWidgetState()
+        VehicleInsightScheduler.shared.refresh(using: self)
     }
 
     func saveServiceLog(id: String?, input: FirestoreRepository.ServiceLogInput) async throws {
@@ -480,6 +495,7 @@ final class DataStore: ObservableObject {
         serviceLogs.removeAll { $0.id == resolvedId }
         serviceLogs.append(saved)
         serviceLogs.sort { $0.timestamp > $1.timestamp }
+        VehicleInsightScheduler.shared.refresh(using: self)
     }
 
     func deleteServiceLog(_ log: ServiceLog) async throws {
@@ -559,8 +575,17 @@ final class DataStore: ObservableObject {
         CarPlayWidgetStateStore.clearUserData()
     }
 
+    /// Push the latest vehicle stats into the App Group for home-screen widgets.
+    func refreshHomeWidgets() {
+        publishCarPlayWidgetState()
+        CarPlayWidgetStateStore.reloadAllTimelines()
+    }
+
     private func publishCarPlayWidgetState() {
-        guard let vehicle = currentVehicle else { return }
+        guard let vehicle = currentVehicle else {
+            CarPlayWidgetStateStore.reloadAllTimelines()
+            return
+        }
         let lastFuel = fuelLogs
             .filter { $0.vehicleId == vehicle.id }
             .max { $0.timestamp < $1.timestamp }
@@ -579,18 +604,22 @@ final class DataStore: ObservableObject {
             id: vehicle.id,
             name: vehicle.nickname,
             odometerKm: vehicle.currentOdometer,
+            estimatedOdometerKm: odometerEstimate(vehicleId: vehicle.id)?.estimatedKm,
             autoTrackingEnabled: TripRecordingService.shared.autoTrackingEnabled,
             lastFuelVolume: lastFuel?.fuelVolume,
             lastFuelTotalCost: lastFuel?.totalCost,
             lastFuelCurrency: lastFuel?.currency,
             lastFuelDate: lastFuel?.timestamp,
+            lastStationName: lastFuel?.stationName,
             totalDistanceKm: totalDistance,
             efficiencyLPer100Km: metrics.current,
             monthlySpend: metrics.monthlySpend,
             currency: vehicle.currency,
+            fuelVolumeUnit: vehicle.fuelVolumeUnit,
             recentRoute: recentRoute.map {
                 CarPlayWidgetRoutePoint(latitude: $0.latitude, longitude: $0.longitude)
-            }
+            },
+            pendingTripCount: TripRecordingService.shared.pendingSaves.count
         )
     }
 }

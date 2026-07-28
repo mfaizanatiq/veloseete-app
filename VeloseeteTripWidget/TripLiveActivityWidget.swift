@@ -6,6 +6,9 @@ import WidgetKit
 struct VeloseeteTripWidgetBundle: WidgetBundle {
     var body: some Widget {
         CarPlayStatusWidget()
+        FuelPulseWidget()
+        LiveDriveWidget()
+        ReviewQueueWidget()
         TripLiveActivityWidget()
     }
 }

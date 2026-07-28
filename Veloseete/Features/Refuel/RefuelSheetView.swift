@@ -16,8 +16,20 @@ struct RefuelSheetView: View {
     @State private var isSubmitting = false
     @State private var errorMessage: String?
     @State private var showSuccess = false
+    @State private var station: StationLookup.Station?
+    @State private var nearbyStations: [StationLookup.Station] = []
+    @State private var isResolvingStation = false
+    @State private var stationLookupFailed = false
+    @State private var stationSkipped = false
+    @State private var showStationMap = false
 
     private let entryCurrencies = ["QAR", "AED", "SAR", "USD", "EUR", "GBP", "PKR", "INR"]
+
+    private var resolvedStationForSave: (name: String, latitude: Double?, longitude: Double?)? {
+        if stationSkipped { return nil }
+        guard let station else { return nil }
+        return (station.name, station.latitude, station.longitude)
+    }
 
     init(vehicleId: String, carPlayDraft: CarPlayRefuelDraft? = nil) {
         self.vehicleId = vehicleId
@@ -30,6 +42,10 @@ struct RefuelSheetView: View {
 
     private var vehicle: Vehicle? {
         store.vehicles.first { $0.id == vehicleId }
+    }
+
+    private var volumeUnit: String {
+        vehicle?.fuelVolumeUnit ?? VolumeFormat.liters
     }
 
     private var defaultCurrency: String {
@@ -54,7 +70,7 @@ struct RefuelSheetView: View {
         return enteredOdometer - estimate.estimatedKm
     }
 
-    private var pricePerLiter: Double? {
+    private var pricePerUnit: Double? {
         guard let cost = Double(totalCost), let vol = Double(liters), vol > 0, cost > 0 else { return nil }
         return cost / vol
     }
@@ -67,65 +83,67 @@ struct RefuelSheetView: View {
     var body: some View {
         NavigationStack {
             ScrollView {
-                VStack(alignment: .leading, spacing: 20) {
-                    if let carPlayDraft {
-                        HStack(alignment: .top, spacing: 10) {
-                            Image(systemName: "car.side.fill")
-                                .foregroundStyle(VS.Color.accent)
-                            VStack(alignment: .leading, spacing: 3) {
-                                Text("Continued from CarPlay")
-                                    .font(VS.Typography.body(13, weight: .semibold))
-                                    .foregroundStyle(VS.Color.textPrimary)
-                                Text("Time and estimated odometer are ready for \(carPlayDraft.vehicleName). Add the exact receipt values below.")
-                                    .font(VS.Typography.body(12))
-                                    .foregroundStyle(VS.Color.textTertiary)
-                            }
+                VStack(alignment: .leading, spacing: 28) {
+                    if carPlayDraft != nil {
+                        Label("From CarPlay", systemImage: "car.side.fill")
+                            .font(VS.Typography.body(13, weight: .semibold))
+                            .foregroundStyle(VS.Color.accent)
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 10)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .glassCard(radius: 12)
+                    }
+
+                    // Receipt amounts
+                    VStack(alignment: .leading, spacing: 14) {
+                        HStack(spacing: 12) {
+                            costField
+                            litersField
                         }
-                        .padding(14)
-                        .glassCard(radius: 12)
+
+                        if let price = pricePerUnit {
+                            Text(String(
+                                format: "%@ %.3f / %@",
+                                CurrencyFormat.symbols[selectedCurrency] ?? selectedCurrency,
+                                price,
+                                VolumeFormat.suffix(volumeUnit)
+                            ))
+                                .font(VS.Typography.body(13, weight: .medium))
+                                .foregroundStyle(VS.Color.accentSecondary)
+                        }
+
+                        currencyPicker
                     }
 
-                    HStack(spacing: 12) {
-                        costField
-                        litersField
-                    }
+                    // Odometer
+                    VStack(alignment: .leading, spacing: 12) {
+                        odometerSection
 
-                    if let price = pricePerLiter {
-                        Text(String(format: "%@ %.3f / L", CurrencyFormat.symbols[selectedCurrency] ?? selectedCurrency, price))
-                            .font(VS.Typography.body(13, weight: .medium))
-                            .foregroundStyle(VS.Color.accentSecondary)
-                    }
-
-                    currencyPicker
-
-                    odometerSection
-
-                    if let entered = Double(odometer), entered < lastOdometer {
-                        Text("Lower than last reading (\(DistanceFormat.formatOdometer(lastOdometer, unit: "km")))")
-                            .font(VS.Typography.body(12))
-                            .foregroundStyle(VS.Color.warning)
-                    }
-
-                    Toggle(isOn: $isFullTank) {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("Full tank")
-                                .font(VS.Typography.heading(15))
-                                .foregroundStyle(VS.Color.textPrimary)
-                            Text("Needed for accurate efficiency")
+                        if let entered = Double(odometer), entered < lastOdometer {
+                            Text("Below last reading (\(DistanceFormat.formatOdometer(lastOdometer, unit: "km")))")
                                 .font(VS.Typography.body(12))
-                                .foregroundStyle(VS.Color.textTertiary)
+                                .foregroundStyle(VS.Color.warning)
                         }
                     }
-                    .tint(VS.Color.accent)
-                    .padding(14)
-                    .glassCard()
 
-                    DatePicker("Date", selection: $selectedDate, displayedComponents: .date)
-                        .datePickerStyle(.compact)
-                        .tint(VS.Color.accent)
-                        .padding(14)
-                        .glassCard()
-                        .foregroundStyle(VS.Color.textPrimary)
+                    // Fill details
+                    VStack(alignment: .leading, spacing: 16) {
+                        Toggle("Full tank", isOn: $isFullTank)
+                            .font(VS.Typography.heading(15))
+                            .foregroundStyle(VS.Color.textPrimary)
+                            .tint(VS.Color.accent)
+                            .padding(14)
+                            .glassCard()
+
+                        stationCard
+
+                        DatePicker("Date", selection: $selectedDate, displayedComponents: .date)
+                            .datePickerStyle(.compact)
+                            .tint(VS.Color.accent)
+                            .padding(14)
+                            .glassCard()
+                            .foregroundStyle(VS.Color.textPrimary)
+                    }
 
                     if let errorMessage {
                         Text(errorMessage)
@@ -134,12 +152,14 @@ struct RefuelSheetView: View {
                     }
 
                     if showSuccess {
-                        Text("Refuel entry added successfully")
+                        Text("Saved")
                             .font(VS.Typography.body(13))
                             .foregroundStyle(VS.Color.success)
                     }
                 }
-                .padding(20)
+                .padding(.horizontal, 20)
+                .padding(.top, 12)
+                .padding(.bottom, 28)
             }
             .veloseetePage()
             .navigationTitle("Add Refuel")
@@ -170,18 +190,149 @@ struct RefuelSheetView: View {
                     odometer = String(format: "%.0f", lastOdometer)
                 }
             }
+            .task {
+                await resolveStation()
+            }
+            .sheet(isPresented: $showStationMap) {
+                StationMapPickerView(
+                    initialStations: nearbyStations,
+                    initialSelection: station
+                ) { picked in
+                    station = picked
+                    if !nearbyStations.contains(where: { $0.id == picked.id }) {
+                        nearbyStations.insert(picked, at: 0)
+                    }
+                    stationSkipped = false
+                }
+            }
         }
         .presentationDetents([.large])
         .veloseeteSheet()
     }
 
+    private var stationCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 8) {
+                Image(systemName: "mappin.and.ellipse")
+                    .foregroundStyle(VS.Color.accent)
+                Text("Station")
+                    .font(VS.Typography.body(12, weight: .medium))
+                    .foregroundStyle(VS.Color.textTertiary)
+                Text("Optional")
+                    .font(VS.Typography.body(10, weight: .semibold))
+                    .foregroundStyle(VS.Color.textTertiary.opacity(0.75))
+                Spacer(minLength: 0)
+                if isResolvingStation {
+                    ProgressView()
+                        .controlSize(.small)
+                        .tint(VS.Color.accent)
+                } else if let station, !stationSkipped {
+                    Text(distanceLabel(for: station))
+                        .font(VS.Typography.body(12))
+                        .foregroundStyle(VS.Color.textTertiary)
+                }
+            }
+
+            if let station, !stationSkipped {
+                Text(station.name)
+                    .font(VS.Typography.heading(15))
+                    .foregroundStyle(VS.Color.textPrimary)
+                    .lineLimit(1)
+            }
+
+            if !nearbyStations.isEmpty {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        ForEach(nearbyStations) { candidate in
+                            let selected = station?.id == candidate.id && !stationSkipped
+                            Button {
+                                UISelectionFeedbackGenerator().selectionChanged()
+                                station = candidate
+                                stationSkipped = false
+                            } label: {
+                                Text(candidate.name)
+                                    .font(VS.Typography.body(13, weight: .semibold))
+                                    .lineLimit(1)
+                                    .padding(.horizontal, 12)
+                                    .padding(.vertical, 9)
+                                    .background(
+                                        Capsule().fill(selected ? VS.Color.accent : VS.Color.chip)
+                                    )
+                                    .foregroundStyle(selected ? VS.Color.navPill : VS.Color.textSecondary)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
+            }
+
+            HStack(spacing: 14) {
+                Button(station == nil || stationSkipped ? "Skip" : "Clear") {
+                    UISelectionFeedbackGenerator().selectionChanged()
+                    stationSkipped = true
+                    station = nil
+                }
+                .font(VS.Typography.body(13, weight: .semibold))
+                .foregroundStyle(VS.Color.textSecondary)
+
+                Button {
+                    showStationMap = true
+                } label: {
+                    Label("Map", systemImage: "map")
+                        .font(VS.Typography.body(13, weight: .semibold))
+                }
+                .foregroundStyle(VS.Color.accent)
+
+                Spacer(minLength: 0)
+            }
+        }
+        .padding(14)
+        .glassCard(radius: 12)
+    }
+
+    private func distanceLabel(for station: StationLookup.Station) -> String {
+        if station.distanceMeters < 80 {
+            return "At the pump"
+        }
+        if station.distanceMeters < 1_000 {
+            return String(format: "%.0f m away", station.distanceMeters)
+        }
+        return String(format: "%.1f km away", station.distanceMeters / 1_000)
+    }
+
+    private func resolveStation(forceRefresh: Bool = false) async {
+        isResolvingStation = true
+        stationLookupFailed = false
+        defer { isResolvingStation = false }
+
+        let found = await StationLookup.nearbyPetrolStations(limit: 8)
+        nearbyStations = found
+        stationLookupFailed = found.isEmpty
+
+        if stationSkipped, !forceRefresh { return }
+
+        if forceRefresh {
+            stationSkipped = false
+        }
+
+        if let auto = found.first(where: { $0.distanceMeters <= StationLookup.autoSelectMaxMeters }) {
+            if forceRefresh || station == nil {
+                station = auto
+                stationSkipped = false
+            }
+        } else if forceRefresh || station != nil {
+            // Far from pumps — leave unset so Skip / map pick stay optional.
+            station = nil
+        }
+    }
+
     private var odometerSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 12) {
             HStack {
-                fieldLabel("Dashboard odometer (km)")
+                fieldLabel("Odometer (km)")
                 Spacer()
                 if let estimate {
-                    Text("Estimate " + String(format: "%.0f", estimate.estimatedKm))
+                    Text("~" + String(format: "%.0f", estimate.estimatedKm))
                         .font(VS.Typography.body(11, weight: .semibold))
                         .foregroundStyle(VS.Color.accent)
                 }
@@ -194,28 +345,20 @@ struct RefuelSheetView: View {
                 .padding(14)
                 .glassCard(radius: 12, elevated: true)
 
-            Text("Enter the number physically shown in your vehicle. This becomes the new verified reading.")
-                .font(VS.Typography.body(12))
-                .foregroundStyle(VS.Color.textTertiary)
-
             if let varianceKm {
-                HStack(spacing: 9) {
+                HStack(spacing: 8) {
                     VSIcon(
                         icon: abs(varianceKm) <= 2 ? .checkCircle : .warningCircle,
-                        size: 18,
+                        size: 16,
                         weight: .fill,
                         tint: abs(varianceKm) <= 2 ? VS.Color.success : VS.Color.warning
                     )
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(abs(varianceKm) <= 2 ? "Tracking matches closely" : "Reconciles GPS variance")
-                            .font(VS.Typography.body(12, weight: .semibold))
-                            .foregroundStyle(VS.Color.textPrimary)
-                        Text(String(format: "%@%.1f km versus the trip estimate", varianceKm >= 0 ? "+" : "", varianceKm))
-                            .font(VS.Typography.body(11))
-                            .foregroundStyle(VS.Color.textTertiary)
-                    }
+                    Text(String(format: "%@%.1f km vs estimate", varianceKm >= 0 ? "+" : "", varianceKm))
+                        .font(VS.Typography.body(12, weight: .medium))
+                        .foregroundStyle(VS.Color.textSecondary)
                 }
-                .padding(12)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 10)
                 .metricInset()
                 .transition(.opacity.combined(with: .move(edge: .top)))
             }
@@ -225,7 +368,7 @@ struct RefuelSheetView: View {
 
     private var costField: some View {
         VStack(alignment: .leading, spacing: 8) {
-            fieldLabel("Total Cost")
+            fieldLabel("Cost")
             HStack {
                 TextField("0.00", text: $totalCost)
                     .keyboardType(.decimalPad)
@@ -242,15 +385,7 @@ struct RefuelSheetView: View {
 
     private var currencyPicker: some View {
         VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                fieldLabel("Currency for this fill")
-                Spacer()
-                if selectedCurrency == defaultCurrency {
-                    Text("Vehicle default")
-                        .font(VS.Typography.body(11, weight: .semibold))
-                        .foregroundStyle(VS.Color.accent)
-                }
-            }
+            fieldLabel("Currency")
 
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 8) {
@@ -280,22 +415,18 @@ struct RefuelSheetView: View {
                     }
                 }
             }
-
-            Text("Defaults to \(defaultCurrency). Switch when you fill up in KSA, UAE, or elsewhere — only this entry changes.")
-                .font(VS.Typography.body(12))
-                .foregroundStyle(VS.Color.textTertiary)
         }
     }
 
     private var litersField: some View {
         VStack(alignment: .leading, spacing: 8) {
-            fieldLabel("Litres")
+            fieldLabel(VolumeFormat.label(volumeUnit))
             HStack {
                 TextField("0.0", text: $liters)
                     .keyboardType(.decimalPad)
                     .font(VS.Typography.heading(20, weight: .semibold))
                     .foregroundStyle(VS.Color.textPrimary)
-                Text("L")
+                Text(VolumeFormat.suffix(volumeUnit))
                     .font(VS.Typography.body(13, weight: .medium))
                     .foregroundStyle(VS.Color.textTertiary)
             }
@@ -330,14 +461,19 @@ struct RefuelSheetView: View {
                 of: stamp
             ) ?? stamp
 
+            let resolved = resolvedStationForSave
+            let volumeLiters = VolumeFormat.toLiters(vol, unit: volumeUnit)
             try await store.addFuelLog(
                 vehicleId: vehicleId,
                 odometerReading: odo,
-                fuelVolume: vol,
+                fuelVolume: volumeLiters,
                 totalCost: cost,
                 currency: selectedCurrency,
                 isFullTank: isFullTank,
-                timestamp: stamp
+                timestamp: stamp,
+                stationName: resolved?.name,
+                stationLatitude: resolved?.latitude,
+                stationLongitude: resolved?.longitude
             )
             UINotificationFeedbackGenerator().notificationOccurred(.success)
             showSuccess = true

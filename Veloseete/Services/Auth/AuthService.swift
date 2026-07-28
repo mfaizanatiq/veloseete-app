@@ -7,6 +7,7 @@ import FirebaseAuth
 import FirebaseCore
 import FirebaseFirestore
 import GoogleSignIn
+@preconcurrency import UserNotifications
 
 enum AuthProviderKind: String, CaseIterable, Identifiable {
     case apple = "apple.com"
@@ -222,6 +223,39 @@ final class AuthService: ObservableObject {
         DataStore.shared.clear()
     }
 
+    /// Deletes Firestore data + Firebase Auth user, then clears local state.
+    /// If Firebase requires a fresh login, throws `requiresRecentLogin`.
+    func deleteAccount() async throws {
+        guard let user = Auth.auth().currentUser else {
+            throw AuthServiceError.notSignedIn
+        }
+        let uid = user.uid
+
+        try await FirestoreRepository.shared.deleteAllUserData(userId: uid)
+
+        try? ProfileAvatarStore.shared.remove(userId: uid)
+        VehiclePhotoStore.shared.removeAll()
+        TripRecordingService.shared.wipeLocalStateForAccountDeletion()
+        CarPlayWidgetStateStore.clearUserData()
+        UNUserNotificationCenter.current().removeAllPendingNotificationRequests()
+        UNUserNotificationCenter.current().removeAllDeliveredNotifications()
+
+        do {
+            try await user.delete()
+        } catch {
+            let ns = error as NSError
+            if AuthErrorCode(rawValue: ns.code) == .requiresRecentLogin {
+                throw AuthServiceError.requiresRecentLogin
+            }
+            throw error
+        }
+
+        clearPendingLink()
+        try? GIDSignIn.sharedInstance.signOut()
+        DataStore.shared.clear()
+        applyUser(nil)
+    }
+
     // MARK: - Internals
 
     private func signIn(with credential: AuthCredential, displayNameHint: String?) async throws {
@@ -408,6 +442,7 @@ enum AuthServiceError: LocalizedError {
     case cannotUnlinkLastProvider
     case credentialAlreadyLinkedElsewhere
     case needsLinkWithExistingAccount(email: String?)
+    case requiresRecentLogin
 
     var errorDescription: String? {
         switch self {
@@ -428,6 +463,8 @@ enum AuthServiceError: LocalizedError {
                 return "An account already exists for \(email). Sign in with email, and we’ll link Apple/Google automatically."
             }
             return "An account already exists with this email. Sign in with email/password, and we’ll link Apple/Google automatically."
+        case .requiresRecentLogin:
+            return "For security, sign out, sign back in, then delete your account again."
         }
     }
 }

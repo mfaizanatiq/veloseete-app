@@ -357,18 +357,14 @@ struct VeloseeteBackground: View {
     }
 }
 
-/// Canonical dismissal control for read-only sheets and modal destinations.
+/// System toolbar close — lets iOS apply liquid glass; don’t wrap in custom chrome.
 struct ModalCloseButton: View {
     let action: () -> Void
 
     var body: some View {
         Button(action: action) {
-            VSIcon(icon: .x, size: 15, weight: .bold, tint: VS.Color.textSecondary)
-                .frame(width: 36, height: 36)
-                .background(.ultraThinMaterial, in: Circle())
-                .overlay(Circle().stroke(Color.white.opacity(0.12), lineWidth: 1))
+            Image(systemName: "xmark")
         }
-        .buttonStyle(ScaleButtonStyle())
         .accessibilityLabel("Close")
     }
 }

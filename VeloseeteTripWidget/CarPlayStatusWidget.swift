@@ -10,39 +10,15 @@ struct CarPlayStatusProvider: TimelineProvider {
     func placeholder(in context: Context) -> CarPlayStatusEntry {
         CarPlayStatusEntry(
             date: Date(),
-            snapshot: CarPlayWidgetSnapshot(
-                vehicleID: "preview",
-                vehicleName: "My Car",
-                odometerKm: 42_180,
-                trackingState: .idle,
-                autoTrackingEnabled: true,
-                tripStartedAt: nil,
-                distanceKm: 0,
-                durationSec: 0,
-                currentSpeedKmh: 0,
-                lastFuelVolume: 46.2,
-                lastFuelTotalCost: 96,
-                lastFuelCurrency: "QAR",
-                lastFuelDate: Date().addingTimeInterval(-86_400),
-                totalDistanceKm: 12_480,
-                efficiencyLPer100Km: 7.6,
-                monthlySpend: 420,
-                currency: "QAR",
-                recentRoute: [
-                    CarPlayWidgetRoutePoint(latitude: 25.285, longitude: 51.531),
-                    CarPlayWidgetRoutePoint(latitude: 25.294, longitude: 51.522),
-                    CarPlayWidgetRoutePoint(latitude: 25.303, longitude: 51.516),
-                    CarPlayWidgetRoutePoint(latitude: 25.314, longitude: 51.527),
-                    CarPlayWidgetRoutePoint(latitude: 25.326, longitude: 51.521),
-                ],
-                pendingRefuelAt: nil,
-                updatedAt: Date()
-            )
+            snapshot: VeloseeteWidgetFormat.previewSnapshot()
         )
     }
 
     func getSnapshot(in context: Context, completion: @escaping (CarPlayStatusEntry) -> Void) {
-        completion(CarPlayStatusEntry(date: Date(), snapshot: CarPlayWidgetStateStore.loadSnapshot()))
+        let snapshot = context.isPreview
+            ? VeloseeteWidgetFormat.previewSnapshot()
+            : CarPlayWidgetStateStore.loadSnapshot()
+        completion(CarPlayStatusEntry(date: Date(), snapshot: snapshot))
     }
 
     func getTimeline(in context: Context, completion: @escaping (Timeline<CarPlayStatusEntry>) -> Void) {
@@ -62,9 +38,9 @@ struct CarPlayStatusWidget: Widget {
                     Color(red: 0.035, green: 0.045, blue: 0.038)
                 }
         }
-        .configurationDisplayName("Veloseete Footprint")
+        .configurationDisplayName("Driving Footprint")
         .description("Your current car, driving footprint, efficiency, and monthly spend.")
-        .supportedFamilies([.systemSmall])
+        .supportedFamilies([.systemSmall, .systemMedium])
         .containerBackgroundRemovable()
     }
 }
@@ -88,9 +64,12 @@ private struct CarPlayStatusWidgetView: View {
 
             if snapshot.vehicleID == nil {
                 Spacer()
-                Text("Select a car in Veloseete")
+                Text("Waiting for sync")
                     .font(.headline)
                     .lineLimit(2)
+                Text("Open Veloseete once")
+                    .font(.caption)
+                    .foregroundStyle(.white.opacity(0.58))
                 Spacer()
             } else {
                 HStack(alignment: .center, spacing: 8) {

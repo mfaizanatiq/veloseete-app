@@ -34,6 +34,12 @@
 		B3763817EE58A8BABBD8B09F /* DataStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 032D9685E63E087090A2889A /* DataStore.swift */; };
 		B54A52B0BE07BAC01A98668D /* Metrics.swift in Sources */ = {isa = PBXBuildFile; fileRef = FF78BFABE392DBE393254431 /* Metrics.swift */; };
 		B54A52B0BE07BAC01A98668E /* AsyncTimeout.swift in Sources */ = {isa = PBXBuildFile; fileRef = FF78BFABE392DBE393254432 /* AsyncTimeout.swift */; };
+		LEG000000000000000000001 /* AppLegal.swift in Sources */ = {isa = PBXBuildFile; fileRef = LEG000000000000000000002 /* AppLegal.swift */; };
+		LEG000000000000000000003 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = LEG000000000000000000004 /* PrivacyInfo.xcprivacy */; };
+		LEG000000000000000000005 /* PrivacyPolicy.md in Resources */ = {isa = PBXBuildFile; fileRef = LEG000000000000000000006 /* PrivacyPolicy.md */; };
+		LEG000000000000000000007 /* TermsOfUse.md in Resources */ = {isa = PBXBuildFile; fileRef = LEG000000000000000000008 /* TermsOfUse.md */; };
+		B54A52B0BE07BAC01A98668F /* StationLookup.swift in Sources */ = {isa = PBXBuildFile; fileRef = FF78BFABE392DBE393254433 /* StationLookup.swift */; };
+		B54A52B0BE07BAC01A986690 /* VehicleInsightScheduler.swift in Sources */ = {isa = PBXBuildFile; fileRef = FF78BFABE392DBE393254434 /* VehicleInsightScheduler.swift */; };
 		BC566CBB50ED4FC839E3301F /* BottomNavChrome.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1455C6E27E977E53DE7B98E6 /* BottomNavChrome.swift */; };
 		C717BA273A6E967FDB7EE6D4 /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5C8ECCF8B347101E05AE05BF /* Theme.swift */; };
 		C993CEE9E96A91831F35B9A2 /* TripPermissionsOnboardingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE380E91E0F721685A913B2D /* TripPermissionsOnboardingView.swift */; };
@@ -47,6 +53,8 @@
 		CA2A12000000000000000001 /* CarPlayWidgetState.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA2A12000000000000000005 /* CarPlayWidgetState.swift */; };
 		CA2A12000000000000000002 /* CarPlayWidgetState.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA2A12000000000000000005 /* CarPlayWidgetState.swift */; };
 		CA2A12000000000000000004 /* CarPlayStatusWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA2A12000000000000000006 /* CarPlayStatusWidget.swift */; };
+		VHW00000000000000000001 /* VeloseeteHomeWidgets.swift in Sources */ = {isa = PBXBuildFile; fileRef = VHW00000000000000000002 /* VeloseeteHomeWidgets.swift */; };
+		SMP00000000000000000001 /* StationMapPickerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = SMP00000000000000000002 /* StationMapPickerView.swift */; };
 		EC841A9AA4068093C17C015F /* Fonts in Resources */ = {isa = PBXBuildFile; fileRef = 03E2E1E23C22D331E66874CF /* Fonts */; };
 		F983209FA5BCEA0169A62034 /* TripLiveActivityWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2DC6CBCD403057F0E42E9DE2 /* TripLiveActivityWidget.swift */; };
 		F9F060079AC13AC8A73A9539 /* GarageView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1594DF57756A4459A585537A /* GarageView.swift */; };
@@ -122,10 +130,18 @@
 		FA8C64FAF2E09B5C9D1B38E7 /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
 		FF78BFABE392DBE393254431 /* Metrics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Metrics.swift; sourceTree = "<group>"; };
 		FF78BFABE392DBE393254432 /* AsyncTimeout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AsyncTimeout.swift; sourceTree = "<group>"; };
+		LEG000000000000000000002 /* AppLegal.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppLegal.swift; sourceTree = "<group>"; };
+		LEG000000000000000000004 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
+		LEG000000000000000000006 /* PrivacyPolicy.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = PrivacyPolicy.md; sourceTree = "<group>"; };
+		LEG000000000000000000008 /* TermsOfUse.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = TermsOfUse.md; sourceTree = "<group>"; };
+		FF78BFABE392DBE393254433 /* StationLookup.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StationLookup.swift; sourceTree = "<group>"; };
+		FF78BFABE392DBE393254434 /* VehicleInsightScheduler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VehicleInsightScheduler.swift; sourceTree = "<group>"; };
 		A7B101000000000000000004 /* GoogleService-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = "GoogleService-Info.plist"; sourceTree = "<group>"; };
 		CA2A11000000000000000002 /* CarPlaySceneDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CarPlaySceneDelegate.swift; sourceTree = "<group>"; };
 		CA2A12000000000000000005 /* CarPlayWidgetState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CarPlayWidgetState.swift; sourceTree = "<group>"; };
 		CA2A12000000000000000006 /* CarPlayStatusWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CarPlayStatusWidget.swift; sourceTree = "<group>"; };
+		VHW00000000000000000002 /* VeloseeteHomeWidgets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VeloseeteHomeWidgets.swift; sourceTree = "<group>"; };
+		SMP00000000000000000002 /* StationMapPickerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StationMapPickerView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -169,6 +185,7 @@
 			isa = PBXGroup;
 			children = (
 				CA2A12000000000000000006 /* CarPlayStatusWidget.swift */,
+				VHW00000000000000000002 /* VeloseeteHomeWidgets.swift */,
 				2DC6CBCD403057F0E42E9DE2 /* TripLiveActivityWidget.swift */,
 			);
 			path = VeloseeteTripWidget;
@@ -179,10 +196,20 @@
 			children = (
 				2EA9791C5548E1A003AFAFA4 /* Auth */,
 				DC44BF1EF560ADE6DAED8D86 /* Firestore */,
+				INSG00000000000000000001 /* Insights */,
 				BA40ADAC08BE1F749BDD2984 /* Permissions */,
 				761CE7D67BD5901C6645859E /* Trips */,
 			);
 			path = Services;
+			sourceTree = "<group>";
+		};
+		INSG00000000000000000001 /* Insights */ = {
+			isa = PBXGroup;
+			children = (
+				FF78BFABE392DBE393254433 /* StationLookup.swift */,
+				FF78BFABE392DBE393254434 /* VehicleInsightScheduler.swift */,
+			);
+			path = Insights;
 			sourceTree = "<group>";
 		};
 		2EA9791C5548E1A003AFAFA4 /* Auth */ = {
@@ -222,6 +249,7 @@
 			isa = PBXGroup;
 			children = (
 				4E2D03F5821346DD9CB163CB /* RefuelSheetView.swift */,
+				SMP00000000000000000002 /* StationMapPickerView.swift */,
 			);
 			path = Refuel;
 			sourceTree = "<group>";
@@ -273,6 +301,7 @@
 		ABB1FEF1A5418800BB795175 /* Utilities */ = {
 			isa = PBXGroup;
 			children = (
+				LEG000000000000000000002 /* AppLegal.swift */,
 				FF78BFABE392DBE393254432 /* AsyncTimeout.swift */,
 				FF78BFABE392DBE393254431 /* Metrics.swift */,
 			);
@@ -318,6 +347,7 @@
 			isa = PBXGroup;
 			children = (
 				A7B101000000000000000004 /* GoogleService-Info.plist */,
+				LEG000000000000000000004 /* PrivacyInfo.xcprivacy */,
 				C627DC7AE48FFC25E80952C0 /* App */,
 				D94E1ED4A9F3A641520DA7D7 /* Design */,
 				52F0396AED3A20C3A424FB63 /* Features */,
@@ -375,9 +405,19 @@
 				9431519E24928BF21DD4BA7B /* Assets.xcassets */,
 				AE792FA01498EEABB68D8BCB /* FluentEmoji */,
 				03E2E1E23C22D331E66874CF /* Fonts */,
+				LEG000000000000000000009 /* Legal */,
 				8CCCB0D552ADF2C858E7B307 /* Media */,
 			);
 			path = Resources;
+			sourceTree = "<group>";
+		};
+		LEG000000000000000000009 /* Legal */ = {
+			isa = PBXGroup;
+			children = (
+				LEG000000000000000000006 /* PrivacyPolicy.md */,
+				LEG000000000000000000008 /* TermsOfUse.md */,
+			);
+			path = Legal;
 			sourceTree = "<group>";
 		};
 		E3D4D2F2E61B89CA17C90149 /* Auth */ = {
@@ -515,6 +555,9 @@
 				11791EB2D027F01AE3A0ED81 /* FluentEmoji in Resources */,
 				EC841A9AA4068093C17C015F /* Fonts in Resources */,
 				CC1B3A24417C167CCF243AA4 /* Media in Resources */,
+				LEG000000000000000000005 /* PrivacyPolicy.md in Resources */,
+				LEG000000000000000000007 /* TermsOfUse.md in Resources */,
+				LEG000000000000000000003 /* PrivacyInfo.xcprivacy in Resources */,
 				A7B101000000000000000003 /* GoogleService-Info.plist in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -570,8 +613,12 @@
 				CD5113461FD49DA09C3067BF /* MainTabShell.swift in Sources */,
 				B54A52B0BE07BAC01A98668D /* Metrics.swift in Sources */,
 				B54A52B0BE07BAC01A98668E /* AsyncTimeout.swift in Sources */,
+				LEG000000000000000000001 /* AppLegal.swift in Sources */,
+				B54A52B0BE07BAC01A98668F /* StationLookup.swift in Sources */,
+				B54A52B0BE07BAC01A986690 /* VehicleInsightScheduler.swift in Sources */,
 				77BDCB559F4E40817A499C77 /* Models.swift in Sources */,
 				7501512F21A76B272AE85F51 /* RefuelSheetView.swift in Sources */,
+				SMP00000000000000000001 /* StationMapPickerView.swift in Sources */,
 				57A042468492884909112FF7 /* RootView.swift in Sources */,
 				698975EF12A294DC28B0C938 /* SplashView.swift in Sources */,
 				C717BA273A6E967FDB7EE6D4 /* Theme.swift in Sources */,
@@ -595,6 +642,7 @@
 			files = (
 				CA2A12000000000000000002 /* CarPlayWidgetState.swift in Sources */,
 				CA2A12000000000000000004 /* CarPlayStatusWidget.swift in Sources */,
+				VHW00000000000000000001 /* VeloseeteHomeWidgets.swift in Sources */,
 				553179B906447ACE5654AA56 /* TripActivityAttributes.swift in Sources */,
 				F983209FA5BCEA0169A62034 /* TripLiveActivityWidget.swift in Sources */,
 			);

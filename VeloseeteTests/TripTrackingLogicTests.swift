@@ -141,8 +141,47 @@ final class TripTrackingLogicTests: XCTestCase {
         XCTAssertEqual(metrics.current ?? 0, 115.0 / 1_500.0 * 100, accuracy: 0.001)
     }
 
+    func testFuelPredictionUsesFillCadence() {
+        let logs = [
+            fuelLog(id: "1", odometer: 10_000, liters: 40, full: true, daysAgo: 20),
+            fuelLog(id: "2", odometer: 10_400, liters: 40, full: true, daysAgo: 10),
+            fuelLog(id: "3", odometer: 10_800, liters: 40, full: true, daysAgo: 0)
+        ]
+        let prediction = FuelInsightLogic.predictNextFill(
+            logs: logs,
+            estimatedOdometer: 10_800,
+            now: Date()
+        )
+        XCTAssertNotNil(prediction)
+        // ~10 day cadence just filled → about 9–10 days remaining (with early lean).
+        XCTAssertGreaterThanOrEqual(prediction?.daysRemaining ?? -1, 7)
+        XCTAssertLessThanOrEqual(prediction?.daysRemaining ?? 99, 11)
+    }
+
+    func testServicePredictionHonorsDueDate() {
+        let due = Calendar.current.date(byAdding: .day, value: 5, to: Date())!
+        let log = ServiceLog(
+            id: "s1",
+            vehicleId: "car",
+            timestamp: Date().addingTimeInterval(-86_400 * 30),
+            odometerReading: 10_000,
+            serviceType: "Oil change",
+            description: nil,
+            cost: 200,
+            currency: "QAR",
+            nextServiceOdometer: nil,
+            nextServiceDate: due
+        )
+        let prediction = FuelInsightLogic.predictServiceDue(
+            services: [log],
+            estimatedOdometer: 10_100
+        )
+        XCTAssertNotNil(prediction)
+        XCTAssertEqual(prediction?.daysRemaining, 5)
+    }
+
     private var testVehicle: Vehicle {
-        Vehicle(id: "car", nickname: "Test", make: "Test", model: "Car", fuelType: "petrol", currentOdometer: 10_500, fuelTankCapacity: 50, currency: "QAR", icon: nil, createdAt: Date(), isArchived: false, archivedAt: nil)
+        Vehicle(id: "car", nickname: "Test", make: "Test", model: "Car", fuelType: "petrol", currentOdometer: 10_500, fuelTankCapacity: 50, currency: "QAR", fuelVolumeUnit: "L", icon: nil, createdAt: Date(), isArchived: false, archivedAt: nil)
     }
 
     private func fuelLog(id: String, vehicleId: String = "car", odometer: Double, liters: Double, full: Bool, daysAgo: Int) -> FuelLog {

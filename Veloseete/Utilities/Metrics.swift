@@ -31,6 +31,67 @@ enum DistanceFormat {
     }
 }
 
+/// Fuel volume display/entry. Canonical storage is always litres.
+enum VolumeFormat {
+    static let liters = "L"
+    static let gallons = "gal"
+    /// US liquid gallon.
+    private static let litersPerGallon = 3.785411784
+
+    static func normalize(_ raw: String) -> String? {
+        switch raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
+        case "l", "liter", "liters", "litre", "litres": return liters
+        case "gal", "gallon", "gallons", "us_gal", "us-gal": return gallons
+        default: return nil
+        }
+    }
+
+    static func defaultUnit(currency: String) -> String {
+        switch currency.uppercased() {
+        case "USD", "CAD": return gallons
+        default:
+            if Locale.current.measurementSystem == .us { return gallons }
+            return liters
+        }
+    }
+
+    static func usesGallons(_ unit: String) -> Bool {
+        normalize(unit) == gallons
+    }
+
+    static func suffix(_ unit: String) -> String {
+        usesGallons(unit) ? "gal" : "L"
+    }
+
+    static func label(_ unit: String) -> String {
+        usesGallons(unit) ? "Gallons" : "Litres"
+    }
+
+    static func toDisplay(_ litersValue: Double, unit: String) -> Double {
+        usesGallons(unit) ? litersValue / litersPerGallon : litersValue
+    }
+
+    static func toLiters(_ displayValue: Double, unit: String) -> Double {
+        usesGallons(unit) ? displayValue * litersPerGallon : displayValue
+    }
+
+    static func format(_ litersValue: Double, unit: String, decimals: Int = 1) -> String {
+        let value = toDisplay(litersValue, unit: unit)
+        return String(format: "%.\(decimals)f %@", value, suffix(unit))
+    }
+
+    static func formatTank(_ litersValue: Double?, unit: String) -> String {
+        guard let litersValue else { return "—" }
+        let value = toDisplay(litersValue, unit: unit)
+        return String(format: "%.0f %@", value, suffix(unit))
+    }
+
+    static func pricePerUnitLabel(currency: String, unit: String) -> String {
+        let symbol = CurrencyFormat.symbols[currency] ?? currency
+        return "\(symbol) / \(suffix(unit))"
+    }
+}
+
 struct EfficiencyMetrics {
     let current: Double?
     let monthlySpend: Double

@@ -362,12 +362,10 @@ struct DetailsListView: View {
         .veloseetePage()
         .sheet(isPresented: $showAddVehicle) {
             GarageView(onComplete: { showAddVehicle = false })
-                .veloseeteSheet()
         }
         .sheet(item: $editingVehicle) { vehicle in
             VehicleEditorView(vehicle: vehicle) { vehiclePendingArchive = $0 }
                 .environmentObject(vehiclePhotos)
-                .veloseeteSheet()
         }
         .confirmationDialog(
             "Archive \(vehiclePendingArchive?.nickname ?? "vehicle")?",
@@ -441,7 +439,7 @@ struct DetailsListView: View {
 
             HStack(spacing: 10) {
                 garageMetric(DistanceFormat.formatOdometer(vehicle.currentOdometer, unit: store.defaultDistanceUnit), "ODOMETER")
-                garageMetric(vehicle.fuelTankCapacity.map { String(format: "%.0f L", $0) } ?? "—", "TANK")
+                garageMetric(VolumeFormat.formatTank(vehicle.fuelTankCapacity, unit: vehicle.fuelVolumeUnit), "TANK")
             }
 
             HStack(spacing: 0) {
@@ -580,6 +578,7 @@ private struct VehicleEditorView: View {
     @State private var odometer: String
     @State private var tankCapacity: String
     @State private var currency: String
+    @State private var fuelVolumeUnit: String
     @State private var icon: String
     @State private var usePhoto: Bool
     @State private var draftPhoto: UIImage?
@@ -591,6 +590,17 @@ private struct VehicleEditorView: View {
     @State private var errorMessage: String?
     @State private var showAdvanced = false
 
+    private let fuelTypes = [
+        ("petrol", "Petrol"),
+        ("diesel", "Diesel"),
+        ("hybrid", "Hybrid"),
+        ("electric", "Electric")
+    ]
+    private let popularMakes = [
+        "Toyota", "Honda", "Ford", "BMW", "Mercedes-Benz", "Audi",
+        "Volkswagen", "Nissan", "Hyundai", "Kia", "Mazda", "Lexus"
+    ]
+    private let currencies = ["QAR", "AED", "SAR", "USD", "EUR", "GBP", "PKR", "INR"]
     private let icons = ["🚗", "🚙", "🚕", "🚌", "🚐", "🏎️", "🚓", "🚑", "🚒", "🚚", "🚛", "🛻", "🏍️", "🛵", "🚜", "🚎"]
 
     private var isActiveVehicle: Bool {
@@ -605,7 +615,14 @@ private struct VehicleEditorView: View {
         _model = State(initialValue: vehicle.model)
         _fuelType = State(initialValue: vehicle.fuelType)
         _odometer = State(initialValue: String(format: "%.0f", vehicle.currentOdometer))
-        _tankCapacity = State(initialValue: vehicle.fuelTankCapacity.map { String(format: "%.1f", $0) } ?? "")
+        let volumeUnit = VolumeFormat.normalize(vehicle.fuelVolumeUnit)
+            ?? VolumeFormat.defaultUnit(currency: vehicle.currency)
+        _fuelVolumeUnit = State(initialValue: volumeUnit)
+        _tankCapacity = State(
+            initialValue: vehicle.fuelTankCapacity.map {
+                String(format: "%.1f", VolumeFormat.toDisplay($0, unit: volumeUnit))
+            } ?? ""
+        )
         _currency = State(initialValue: vehicle.currency)
         _icon = State(initialValue: vehicle.icon ?? "🚗")
         let hasPhoto = VehiclePhotoStore.shared.image(for: vehicle.id) != nil
@@ -620,75 +637,108 @@ private struct VehicleEditorView: View {
 
     var body: some View {
         NavigationStack {
-            Form {
-                Section {
-                    appearanceEditor
-                } header: {
-                    Text("Appearance")
-                } footer: {
-                    Text("Use a photo of your car, or pick a Fluent emoji. Photo wins when both are set.")
-                }
+            ScrollView {
+                VStack(alignment: .leading, spacing: 28) {
+                    appearanceSection
 
-                Section("Vehicle") {
-                    TextField("Vehicle name", text: $nickname)
-                    TextField("Make", text: $make)
-                    TextField("Model", text: $model)
-                    Picker("Fuel type", selection: $fuelType) {
-                        ForEach(["petrol", "diesel", "hybrid", "electric"], id: \.self) { Text($0.capitalized).tag($0) }
-                    }
-                }
-                Section("Readings & region") {
-                    TextField("Current odometer", text: $odometer).keyboardType(.decimalPad)
-                    TextField("Tank capacity (L)", text: $tankCapacity).keyboardType(.decimalPad)
-                    Picker("Currency", selection: $currency) {
-                        ForEach(["QAR", "AED", "SAR", "USD", "EUR", "GBP", "PKR", "INR"], id: \.self) { Text($0) }
-                    }
-                    Text("Use the physical dashboard reading when correcting the odometer. Drives remain estimates between verified readings.")
-                        .font(VS.Typography.body(11))
-                        .foregroundStyle(VS.Color.textTertiary)
-                }
-                if let errorMessage {
-                    Section { Text(errorMessage).foregroundStyle(VS.Color.error) }
-                }
+                    glassTextField(label: "Name", placeholder: "My car", text: $nickname, large: true)
 
-                Section {
-                    DisclosureGroup("Advanced", isExpanded: $showAdvanced) {
-                        if isActiveVehicle {
-                            Text("Make another vehicle active before you can archive this one.")
-                                .font(VS.Typography.body(13))
-                                .foregroundStyle(VS.Color.textSecondary)
-                                .padding(.vertical, 4)
-                        } else {
-                            Button(role: .destructive) {
-                                dismiss()
-                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
-                                    onRequestArchive?(vehicle)
+                    VStack(alignment: .leading, spacing: 10) {
+                        glassTextField(label: "Make", placeholder: "Toyota", text: $make)
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 8) {
+                                ForEach(popularMakes, id: \.self) { m in
+                                    capsuleChip(m, selected: make == m) { make = m }
                                 }
-                            } label: {
-                                Text("Archive vehicle")
+                            }
+                        }
+                        glassTextField(label: "Model", placeholder: "Camry", text: $model)
+                    }
+
+                    VStack(alignment: .leading, spacing: 10) {
+                        fieldLabel("Fuel type")
+                        HStack(spacing: 8) {
+                            ForEach(fuelTypes, id: \.0) { type in
+                                capsuleChip(type.1, selected: fuelType == type.0) {
+                                    fuelType = type.0
+                                }
                             }
                         }
                     }
-                } footer: {
-                    if showAdvanced {
-                        Text(
-                            isActiveVehicle
-                                ? "The active car can’t be archived. Switch active in Garage first."
-                                : "Hides this car from the garage. Drives, fuel and service stay saved and won’t affect your other vehicles."
-                        )
+
+                    VStack(alignment: .leading, spacing: 10) {
+                        fieldLabel("Currency")
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 8) {
+                                ForEach(currencies, id: \.self) { code in
+                                    capsuleChip(code, selected: currency == code) {
+                                        currency = code
+                                    }
+                                }
+                            }
+                        }
                     }
+
+                    VStack(alignment: .leading, spacing: 10) {
+                        fieldLabel("Fuel volume")
+                        HStack(spacing: 8) {
+                            capsuleChip("Litres", selected: fuelVolumeUnit == VolumeFormat.liters) {
+                                convertTankDisplay(to: VolumeFormat.liters)
+                            }
+                            capsuleChip("Gallons", selected: fuelVolumeUnit == VolumeFormat.gallons) {
+                                convertTankDisplay(to: VolumeFormat.gallons)
+                            }
+                        }
+                    }
+
+                    glassNumberField(
+                        label: "Current odometer",
+                        placeholder: "0",
+                        text: $odometer,
+                        suffix: "km",
+                        large: true
+                    )
+
+                    glassNumberField(
+                        label: "Tank capacity",
+                        placeholder: "Optional",
+                        text: $tankCapacity,
+                        suffix: VolumeFormat.suffix(fuelVolumeUnit),
+                        large: false
+                    )
+
+                    if let errorMessage {
+                        Text(errorMessage)
+                            .font(VS.Typography.body(13))
+                            .foregroundStyle(VS.Color.error)
+                    }
+
+                    advancedSection
                 }
+                .padding(.horizontal, 20)
+                .padding(.top, 12)
+                .padding(.bottom, 28)
             }
-            .scrollContentBackground(.hidden)
-            .background(VS.Color.bgPrimary)
+            .veloseetePage()
             .navigationTitle("Edit vehicle")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button(isSaving ? "Saving…" : "Save") { Task { await save() } }
-                        .disabled(!canSave || isSaving || isPreparingCrop)
+                ToolbarItem(placement: .topBarLeading) {
+                    Button("Cancel") { dismiss() }
+                        .foregroundStyle(VS.Color.textSecondary)
                 }
+            }
+            .safeAreaInset(edge: .bottom) {
+                PrimaryCTAButton(
+                    title: "Save changes",
+                    icon: .checkCircle,
+                    isLoading: isSaving,
+                    isEnabled: canSave && !isPreparingCrop
+                ) {
+                    Task { await save() }
+                }
+                .padding(20)
+                .background(VS.Color.bgPrimary.opacity(0.96))
             }
             .onAppear {
                 vehiclePhotos.load(vehicleId: vehicle.id)
@@ -721,10 +771,14 @@ private struct VehicleEditorView: View {
                 )
             }
         }
+        .presentationDetents([.large])
+        .veloseeteSheet()
     }
 
-    private var appearanceEditor: some View {
+    private var appearanceSection: some View {
         VStack(alignment: .leading, spacing: 16) {
+            fieldLabel("Appearance")
+
             HStack(spacing: 14) {
                 vehicleAppearancePreview(image: usePhoto ? previewImage : nil, emoji: icon, size: 72)
 
@@ -756,12 +810,11 @@ private struct VehicleEditorView: View {
             }
 
             if !usePhoto || previewImage == nil {
-                Text("Emoji")
-                    .font(VS.Typography.body(12, weight: .medium))
-                    .foregroundStyle(VS.Color.textTertiary)
+                fieldLabel("Emoji")
                 LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 8), spacing: 8) {
                     ForEach(icons, id: \.self) { item in
                         Button {
+                            UISelectionFeedbackGenerator().selectionChanged()
                             icon = item
                             usePhoto = false
                             removeExistingPhoto = true
@@ -770,12 +823,8 @@ private struct VehicleEditorView: View {
                             FluentEmojiView(emoji: item, size: 26)
                                 .frame(width: 36, height: 36)
                                 .background(
-                                    RoundedRectangle(cornerRadius: 10)
-                                        .fill(icon == item && !usePhoto ? VS.Color.accent.opacity(0.2) : VS.Color.controlDisabled)
-                                )
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: 10)
-                                        .stroke(icon == item && !usePhoto ? VS.Color.accent : Color.clear, lineWidth: 1.5)
+                                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                        .fill(icon == item && !usePhoto ? VS.Color.accent : VS.Color.chip)
                                 )
                         }
                         .buttonStyle(.plain)
@@ -783,11 +832,119 @@ private struct VehicleEditorView: View {
                 }
             }
         }
-        .padding(.vertical, 4)
+    }
+
+    private var advancedSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Button {
+                withAnimation(.snappy(duration: 0.25)) { showAdvanced.toggle() }
+            } label: {
+                Text(showAdvanced ? "Hide advanced" : "Advanced")
+                    .font(VS.Typography.body(13, weight: .semibold))
+                    .foregroundStyle(VS.Color.accent)
+            }
+            .buttonStyle(.plain)
+
+            if showAdvanced {
+                if isActiveVehicle {
+                    Text("Switch active in Garage before you can archive this car.")
+                        .font(VS.Typography.body(13))
+                        .foregroundStyle(VS.Color.textSecondary)
+                } else {
+                    Button {
+                        dismiss()
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+                            onRequestArchive?(vehicle)
+                        }
+                    } label: {
+                        Text("Archive vehicle")
+                            .font(VS.Typography.body(14, weight: .semibold))
+                            .foregroundStyle(VS.Color.error)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 14)
+                            .glassCard(radius: 12)
+                    }
+                    .buttonStyle(.plain)
+
+                    Text("Hides this car from the garage. Drives, fuel and service stay saved.")
+                        .font(VS.Typography.body(12))
+                        .foregroundStyle(VS.Color.textTertiary)
+                }
+            }
+        }
     }
 
     private var canSave: Bool {
         !nickname.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && Double(odometer) != nil
+    }
+
+    private func fieldLabel(_ text: String) -> some View {
+        Text(text)
+            .font(VS.Typography.body(12, weight: .medium))
+            .foregroundStyle(VS.Color.textTertiary)
+    }
+
+    private func glassTextField(
+        label: String,
+        placeholder: String,
+        text: Binding<String>,
+        large: Bool = false
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            fieldLabel(label)
+            TextField(placeholder, text: text)
+                .font(large ? VS.Typography.heading(20, weight: .semibold) : VS.Typography.heading(18, weight: .semibold))
+                .foregroundStyle(VS.Color.textPrimary)
+                .padding(14)
+                .glassCard(radius: 12)
+        }
+    }
+
+    private func glassNumberField(
+        label: String,
+        placeholder: String,
+        text: Binding<String>,
+        suffix: String,
+        large: Bool
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            fieldLabel(label)
+            HStack {
+                TextField(placeholder, text: text)
+                    .keyboardType(suffix == "km" ? .numberPad : .decimalPad)
+                    .font(large ? VS.Typography.heading(28, weight: .bold) : VS.Typography.heading(20, weight: .semibold))
+                    .foregroundStyle(VS.Color.textPrimary)
+                Text(suffix)
+                    .font(VS.Typography.body(13, weight: .medium))
+                    .foregroundStyle(VS.Color.textTertiary)
+            }
+            .padding(14)
+            .glassCard(radius: 12, elevated: large)
+        }
+    }
+
+    private func capsuleChip(_ title: String, selected: Bool, action: @escaping () -> Void) -> some View {
+        Button {
+            UISelectionFeedbackGenerator().selectionChanged()
+            action()
+        } label: {
+            Text(title)
+                .font(VS.Typography.body(13, weight: .semibold))
+                .padding(.horizontal, 14)
+                .padding(.vertical, 10)
+                .background(Capsule().fill(selected ? VS.Color.accent : VS.Color.chip))
+                .foregroundStyle(selected ? VS.Color.navPill : VS.Color.textSecondary)
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func convertTankDisplay(to newUnit: String) {
+        guard newUnit != fuelVolumeUnit else { return }
+        if let value = Double(tankCapacity) {
+            let liters = VolumeFormat.toLiters(value, unit: fuelVolumeUnit)
+            tankCapacity = String(format: "%.1f", VolumeFormat.toDisplay(liters, unit: newUnit))
+        }
+        fuelVolumeUnit = newUnit
     }
 
     private func loadPhotoForCrop(_ item: PhotosPickerItem) async {
@@ -817,8 +974,11 @@ private struct VehicleEditorView: View {
         updated.model = model.trimmingCharacters(in: .whitespacesAndNewlines)
         updated.fuelType = fuelType
         updated.currentOdometer = odometerValue
-        updated.fuelTankCapacity = Double(tankCapacity)
+        updated.fuelTankCapacity = Double(tankCapacity).map {
+            VolumeFormat.toLiters($0, unit: fuelVolumeUnit)
+        }
         updated.currency = currency
+        updated.fuelVolumeUnit = fuelVolumeUnit
         updated.icon = icon
         do {
             if usePhoto, let draftPhoto {
@@ -1937,7 +2097,7 @@ struct ServiceListView: View {
             }.padding(.horizontal, 16).padding(.bottom, 110).tracksBottomNavScroll()
         }
         .veloseetePage()
-        .sheet(isPresented: $showEditor) { ServiceEditorSheet(log: editingLog).veloseeteSheet() }
+        .sheet(isPresented: $showEditor) { ServiceEditorSheet(log: editingLog) }
     }
 
     private var serviceTrendCard: some View {
@@ -2004,59 +2164,96 @@ struct ServiceEditorSheet: View {
     @State private var errorMessage: String?
     @State private var showDeleteConfirmation = false
 
-    private let types = ["Oil Change", "Tire Rotation", "Brake Service", "Air Filter", "Battery Replacement", "Transmission Service", "General Inspection", "Other"]
+    private let types = [
+        "Oil Change", "Tire Rotation", "Brake Service", "Air Filter",
+        "Battery Replacement", "Transmission Service", "General Inspection", "Other"
+    ]
     private var vehicle: Vehicle? { store.currentVehicle }
-    private var finalType: String { serviceType == "Other" ? customType.trimmingCharacters(in: .whitespacesAndNewlines) : serviceType }
+    private var currencyCode: String { vehicle?.currency ?? "QAR" }
+    private var finalType: String {
+        serviceType == "Other"
+            ? customType.trimmingCharacters(in: .whitespacesAndNewlines)
+            : serviceType
+    }
     private var canSave: Bool { !finalType.isEmpty && (Double(odometer) ?? 0) > 0 }
 
     var body: some View {
         NavigationStack {
             ScrollView {
-                VStack(alignment: .leading, spacing: 20) {
-                    fieldLabel("Service type")
-                    LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 8) {
-                        ForEach(types, id: \.self) { type in
-                            Button(type) { serviceType = type }
-                                .font(VS.Typography.body(12, weight: .semibold))
-                                .foregroundStyle(serviceType == type ? VS.Color.accent : VS.Color.textSecondary)
-                                .frame(maxWidth: .infinity).padding(.vertical, 12)
-                                .background(serviceType == type ? VS.Color.accent.opacity(0.14) : VS.Color.chip, in: RoundedRectangle(cornerRadius: VS.Radius.metric))
-                                .overlay(RoundedRectangle(cornerRadius: VS.Radius.metric).stroke(serviceType == type ? VS.Color.accent : VS.Color.divider))
-                        }
-                    }
-                    if serviceType == "Other" { TextField("Service type", text: $customType).vsInputField().foregroundStyle(VS.Color.textPrimary) }
+                VStack(alignment: .leading, spacing: 28) {
+                    typeSection
 
                     HStack(spacing: 12) {
-                        VStack(alignment: .leading, spacing: 7) { fieldLabel("Odometer"); TextField("Current km", text: $odometer).keyboardType(.decimalPad).vsInputField().foregroundStyle(VS.Color.textPrimary) }
-                        VStack(alignment: .leading, spacing: 7) { fieldLabel("Cost (\(vehicle?.currency ?? "QAR"))"); TextField("Optional", text: $cost).keyboardType(.decimalPad).vsInputField().foregroundStyle(VS.Color.textPrimary) }
+                        numberField(
+                            label: "Odometer",
+                            placeholder: "0",
+                            text: $odometer,
+                            suffix: "km"
+                        )
+                        numberField(
+                            label: "Cost",
+                            placeholder: "Optional",
+                            text: $cost,
+                            suffix: currencyCode
+                        )
                     }
 
-                    fieldLabel("Service date")
-                    DatePicker("Service date", selection: $serviceDate, in: ...Date(), displayedComponents: .date).labelsHidden().datePickerStyle(.compact).tint(VS.Color.accent)
+                    VStack(alignment: .leading, spacing: 8) {
+                        fieldLabel("Date")
+                        DatePicker(
+                            "Service date",
+                            selection: $serviceDate,
+                            in: ...Date(),
+                            displayedComponents: .date
+                        )
+                        .datePickerStyle(.compact)
+                        .labelsHidden()
+                        .tint(VS.Color.accent)
+                        .padding(14)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .glassCard(radius: 12)
+                    }
 
-                    fieldLabel("Notes")
-                    TextField("What was done?", text: $notes, axis: .vertical).lineLimit(3...6).vsInputField().foregroundStyle(VS.Color.textPrimary)
+                    VStack(alignment: .leading, spacing: 8) {
+                        fieldLabel("Notes")
+                        TextField("What was done?", text: $notes, axis: .vertical)
+                            .lineLimit(3...5)
+                            .font(VS.Typography.body(15))
+                            .foregroundStyle(VS.Color.textPrimary)
+                            .padding(14)
+                            .glassCard(radius: 12)
+                    }
 
-                    VStack(alignment: .leading, spacing: 12) {
-                        Text("NEXT SERVICE REMINDER").font(VS.Typography.body(10, weight: .bold)).tracking(1).foregroundStyle(VS.Color.textTertiary)
-                        TextField("Next odometer (optional)", text: $nextOdometer).keyboardType(.decimalPad).vsInputField().foregroundStyle(VS.Color.textPrimary)
-                        Toggle("Add a due date", isOn: $hasNextDate).font(VS.Typography.body(13)).tint(VS.Color.accent)
-                        if hasNextDate { DatePicker("Due date", selection: $nextDate, in: Date()..., displayedComponents: .date).tint(VS.Color.accent) }
-                    }.padding(15).glassCard()
+                    reminderSection
 
-                    if let errorMessage { Text(errorMessage).font(VS.Typography.body(12)).foregroundStyle(VS.Color.error) }
+                    if let errorMessage {
+                        Text(errorMessage)
+                            .font(VS.Typography.body(13))
+                            .foregroundStyle(VS.Color.error)
+                    }
 
                     if log != nil {
-                        Button("Delete service entry", role: .destructive) { showDeleteConfirmation = true }
-                            .font(VS.Typography.body(14, weight: .semibold)).frame(maxWidth: .infinity).padding(.vertical, 12)
+                        Button("Delete service entry", role: .destructive) {
+                            showDeleteConfirmation = true
+                        }
+                        .font(VS.Typography.body(14, weight: .semibold))
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 14)
+                        .glassCard(radius: 12)
                     }
-                }.padding(20).padding(.bottom, 90)
+                }
+                .padding(.horizontal, 20)
+                .padding(.top, 12)
+                .padding(.bottom, 28)
             }
             .veloseetePage()
             .navigationTitle(log == nil ? "Log Service" : "Edit Service")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .topBarLeading) { Button("Cancel") { dismiss() }.foregroundStyle(VS.Color.textSecondary) }
+                ToolbarItem(placement: .topBarLeading) {
+                    Button("Cancel") { dismiss() }
+                        .foregroundStyle(VS.Color.textSecondary)
+                }
             }
             .safeAreaInset(edge: .bottom) {
                 PrimaryCTAButton(
@@ -2074,11 +2271,108 @@ struct ServiceEditorSheet: View {
             .alert("Delete service entry?", isPresented: $showDeleteConfirmation) {
                 Button("Delete", role: .destructive) { Task { await delete() } }
                 Button("Cancel", role: .cancel) {}
-            } message: { Text("This removes the record from both iOS and the web app.") }
+            } message: {
+                Text("This removes the record from both iOS and the web app.")
+            }
+        }
+        .presentationDetents([.large])
+        .veloseeteSheet()
+    }
+
+    private var typeSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            fieldLabel("Service type")
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(types, id: \.self) { type in
+                        let selected = serviceType == type
+                        Button {
+                            UISelectionFeedbackGenerator().selectionChanged()
+                            serviceType = type
+                        } label: {
+                            Text(type)
+                                .font(VS.Typography.body(13, weight: .semibold))
+                                .padding(.horizontal, 14)
+                                .padding(.vertical, 10)
+                                .background(Capsule().fill(selected ? VS.Color.accent : VS.Color.chip))
+                                .foregroundStyle(selected ? VS.Color.navPill : VS.Color.textSecondary)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+
+            if serviceType == "Other" {
+                TextField("Custom type", text: $customType)
+                    .font(VS.Typography.heading(18, weight: .semibold))
+                    .foregroundStyle(VS.Color.textPrimary)
+                    .padding(14)
+                    .glassCard(radius: 12)
+            }
         }
     }
 
-    private func fieldLabel(_ text: String) -> some View { Text(text).font(VS.Typography.body(11, weight: .medium)).foregroundStyle(VS.Color.textTertiary) }
+    private var reminderSection: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            fieldLabel("Next reminder")
+            numberField(
+                label: "Next odometer",
+                placeholder: "Optional",
+                text: $nextOdometer,
+                suffix: "km"
+            )
+
+            Toggle("Due date", isOn: $hasNextDate)
+                .font(VS.Typography.heading(15))
+                .foregroundStyle(VS.Color.textPrimary)
+                .tint(VS.Color.accent)
+                .padding(14)
+                .glassCard(radius: 12)
+
+            if hasNextDate {
+                DatePicker(
+                    "Due date",
+                    selection: $nextDate,
+                    in: Date()...,
+                    displayedComponents: .date
+                )
+                .datePickerStyle(.compact)
+                .tint(VS.Color.accent)
+                .padding(14)
+                .glassCard(radius: 12)
+                .foregroundStyle(VS.Color.textPrimary)
+            }
+        }
+    }
+
+    private func numberField(
+        label: String,
+        placeholder: String,
+        text: Binding<String>,
+        suffix: String
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            fieldLabel(label)
+            HStack {
+                TextField(placeholder, text: text)
+                    .keyboardType(.decimalPad)
+                    .font(VS.Typography.heading(20, weight: .semibold))
+                    .foregroundStyle(VS.Color.textPrimary)
+                Text(suffix)
+                    .font(VS.Typography.body(13, weight: .medium))
+                    .foregroundStyle(VS.Color.textTertiary)
+            }
+            .padding(14)
+            .glassCard(radius: 12)
+        }
+    }
+
+    private func fieldLabel(_ text: String) -> some View {
+        Text(text)
+            .font(VS.Typography.body(12, weight: .medium))
+            .foregroundStyle(VS.Color.textTertiary)
+    }
+
     private func populate() {
         guard let log else {
             odometer = vehicle.map { String(format: "%.0f", $0.currentOdometer) } ?? ""
@@ -2091,20 +2385,45 @@ struct ServiceEditorSheet: View {
         notes = log.description ?? ""
         serviceDate = log.timestamp
         nextOdometer = log.nextServiceOdometer.map { String(format: "%.0f", $0) } ?? ""
-        if let date = log.nextServiceDate { hasNextDate = true; nextDate = date }
+        if let date = log.nextServiceDate {
+            hasNextDate = true
+            nextDate = date
+        }
     }
+
     private func save() async {
         guard let vehicle, let odo = Double(odometer) else { return }
-        saving = true; errorMessage = nil; defer { saving = false }
+        saving = true
+        errorMessage = nil
+        defer { saving = false }
         do {
-            let input = FirestoreRepository.ServiceLogInput(vehicleId: vehicle.id, timestamp: serviceDate, odometerReading: odo, serviceType: finalType, description: notes.isEmpty ? nil : notes, cost: Double(cost), currency: vehicle.currency, nextServiceOdometer: Double(nextOdometer), nextServiceDate: hasNextDate ? nextDate : nil)
+            let input = FirestoreRepository.ServiceLogInput(
+                vehicleId: vehicle.id,
+                timestamp: serviceDate,
+                odometerReading: odo,
+                serviceType: finalType,
+                description: notes.isEmpty ? nil : notes,
+                cost: Double(cost),
+                currency: vehicle.currency,
+                nextServiceOdometer: Double(nextOdometer),
+                nextServiceDate: hasNextDate ? nextDate : nil
+            )
             try await store.saveServiceLog(id: log?.id, input: input)
-            UINotificationFeedbackGenerator().notificationOccurred(.success); dismiss()
-        } catch { errorMessage = error.localizedDescription }
+            UINotificationFeedbackGenerator().notificationOccurred(.success)
+            dismiss()
+        } catch {
+            errorMessage = error.localizedDescription
+        }
     }
+
     private func delete() async {
         guard let log else { return }
-        do { try await store.deleteServiceLog(log); dismiss() } catch { errorMessage = error.localizedDescription }
+        do {
+            try await store.deleteServiceLog(log)
+            dismiss()
+        } catch {
+            errorMessage = error.localizedDescription
+        }
     }
 }
 
@@ -2120,12 +2439,12 @@ struct ProfileView: View {
     @State private var cropDraft: AvatarCropDraft?
     /// Frozen UI avatar for the whole change/crop session — never follows drafts.
     @State private var displayAvatar: UIImage?
-    @State private var isEditingDetails = false
     @State private var draftName = ""
     @State private var draftCurrency = "QAR"
     @State private var draftDistance = "km"
     @State private var isSavingDetails = false
     @State private var profileError: String?
+    @State private var showEditAccount = false
     @State private var showReplayOnboarding = false
     @State private var showPermissionManager = false
     @State private var showLinkEmail = false
@@ -2135,6 +2454,10 @@ struct ProfileView: View {
     @State private var linkError: String?
     @State private var isLinking = false
     @State private var appleLinkNonce = ""
+    @State private var legalDocument: AppLegal.Document?
+    @State private var showDeleteAccountConfirm = false
+    @State private var isDeletingAccount = false
+    @State private var deleteAccountError: String?
 
     /// What the profile header shows: locked display during replace, else store.
     private var headerAvatar: UIImage? {
@@ -2207,73 +2530,28 @@ struct ProfileView: View {
                 .listRowBackground(VS.Color.bgSecondary)
 
                 Section {
-                    if isEditingDetails {
-                        VStack(alignment: .leading, spacing: 7) {
-                            Text("Display name").font(VS.Typography.body(11, weight: .medium)).foregroundStyle(VS.Color.textTertiary)
-                            TextField("Your name", text: $draftName)
-                                .font(VS.Typography.body(15))
-                                .foregroundStyle(VS.Color.textPrimary)
-                        }
-
-                        Picker("Currency", selection: $draftCurrency) {
-                            ForEach(["QAR", "AED", "SAR", "USD", "EUR", "GBP", "PKR", "INR"], id: \.self) { Text($0) }
-                        }
-                        Picker("Distance", selection: $draftDistance) {
-                            Text("Kilometres").tag("km")
-                            Text("Miles").tag("mi")
-                        }
-                    } else {
-                        LabeledContent("Name", value: store.userName.isEmpty ? "—" : store.userName)
-                        LabeledContent("Currency", value: store.userDocument?.profile.defaultCurrency ?? "QAR")
-                        LabeledContent("Distance", value: store.defaultDistanceUnit == "mi" ? "Miles" : "Kilometres")
-                    }
+                    LabeledContent("Name", value: store.userName.isEmpty ? "—" : store.userName)
+                    LabeledContent("Currency", value: store.userDocument?.profile.defaultCurrency ?? "QAR")
+                    LabeledContent("Distance", value: store.defaultDistanceUnit == "mi" ? "Miles" : "Kilometres")
 
                     VStack(alignment: .leading, spacing: 4) {
                         LabeledContent("Email", value: auth.user?.email ?? "Hidden / not shared")
-                        Text("Managed by your linked sign-in methods (Apple may hide email).")
+                        Text("Managed by your linked sign-in methods.")
                             .font(VS.Typography.body(10))
                             .foregroundStyle(VS.Color.textTertiary)
                     }
 
-                    if let profileError {
-                        Text(profileError)
-                            .font(VS.Typography.body(11))
-                            .foregroundStyle(VS.Color.error)
+                    Button {
+                        prepareProfileDrafts()
+                        profileError = nil
+                        showEditAccount = true
+                    } label: {
+                        Label("Edit account", systemImage: "pencil")
+                            .font(VS.Typography.body(14, weight: .semibold))
+                            .foregroundStyle(VS.Color.accent)
                     }
                 } header: {
-                    HStack {
-                        Text("Account")
-                        Spacer()
-                        Button(isEditingDetails ? "Cancel" : "Edit") {
-                            if isEditingDetails {
-                                isEditingDetails = false
-                            } else {
-                                prepareProfileDrafts()
-                                isEditingDetails = true
-                            }
-                        }
-                        .textCase(nil)
-                        .font(VS.Typography.body(12, weight: .semibold))
-                        .foregroundStyle(VS.Color.accent)
-                    }
-                } footer: {
-                    if isEditingDetails {
-                        Button {
-                            Task { await saveProfileDetails() }
-                        } label: {
-                            HStack {
-                                if isSavingDetails { ProgressView().tint(VS.Color.navPill) }
-                                Text("Save profile")
-                            }
-                            .font(VS.Typography.heading(15))
-                            .foregroundStyle(VS.Color.navPill)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 13)
-                            .background(VS.Color.accent, in: RoundedRectangle(cornerRadius: VS.Radius.card, style: .continuous))
-                        }
-                        .buttonStyle(.plain)
-                        .disabled(draftName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isSavingDetails)
-                    }
+                    Text("Account")
                 }
                 .listRowBackground(VS.Color.bgSecondary)
 
@@ -2370,22 +2648,84 @@ struct ProfileView: View {
                 }
                 .listRowBackground(VS.Color.bgSecondary)
 
+                Section("Legal") {
+                    Button("Privacy Policy") { legalDocument = .privacy }
+                    Button("Terms of Use") { legalDocument = .terms }
+                }
+                .listRowBackground(VS.Color.bgSecondary)
+
                 Section {
                     Button("Sign out", role: .destructive) {
                         try? auth.signOut()
                         dismiss()
                     }
+                    Button(role: .destructive) {
+                        showDeleteAccountConfirm = true
+                    } label: {
+                        if isDeletingAccount {
+                            ProgressView()
+                                .tint(VS.Color.error)
+                        } else {
+                            Text("Delete account")
+                        }
+                    }
+                    .disabled(isDeletingAccount)
+                } footer: {
+                    Text("Deletes your Veloseete cloud data and sign-in on this account. This can’t be undone.")
+                        .font(VS.Typography.body(11))
                 }
                 .listRowBackground(VS.Color.bgSecondary)
+
+                if let deleteAccountError {
+                    Section {
+                        Text(deleteAccountError)
+                            .font(VS.Typography.body(12))
+                            .foregroundStyle(VS.Color.error)
+                    }
+                    .listRowBackground(VS.Color.bgSecondary)
+                }
             }
             .scrollContentBackground(.hidden)
             .veloseetePage()
             .foregroundStyle(VS.Color.textPrimary)
             .navigationTitle("Profile")
+            .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
-                    ModalCloseButton { dismiss() }
+                    Button {
+                        dismiss()
+                    } label: {
+                        Image(systemName: "xmark")
+                    }
+                    .accessibilityLabel("Close")
                 }
+            }
+            .sheet(item: $legalDocument) { doc in
+                LegalDocumentView(document: doc)
+            }
+            .sheet(isPresented: $showEditAccount) {
+                EditAccountDrawer(
+                    draftName: $draftName,
+                    draftCurrency: $draftCurrency,
+                    draftDistance: $draftDistance,
+                    isSaving: isSavingDetails,
+                    errorMessage: profileError
+                ) {
+                    Task {
+                        await saveProfileDetails()
+                        if profileError == nil {
+                            showEditAccount = false
+                        }
+                    }
+                }
+            }
+            .alert("Delete account?", isPresented: $showDeleteAccountConfirm) {
+                Button("Cancel", role: .cancel) {}
+                Button("Delete forever", role: .destructive) {
+                    Task { await deleteAccount() }
+                }
+            } message: {
+                Text("This removes your vehicles, fuel, service, trips, and sign-in. Photos saved only on this iPhone are cleared too.")
             }
             .fullScreenCover(item: $cropDraft, onDismiss: {
                 abandonAvatarReplacementIfNeeded()
@@ -2619,9 +2959,20 @@ struct ProfileView: View {
         defer { isSavingDetails = false }
         do {
             try await store.updateProfile(userName: name, currency: draftCurrency, distanceUnit: draftDistance)
-            isEditingDetails = false
         } catch {
             profileError = error.localizedDescription
+        }
+    }
+
+    private func deleteAccount() async {
+        isDeletingAccount = true
+        deleteAccountError = nil
+        defer { isDeletingAccount = false }
+        do {
+            try await auth.deleteAccount()
+            dismiss()
+        } catch {
+            deleteAccountError = error.localizedDescription
         }
     }
 
@@ -2651,6 +3002,134 @@ struct ProfileView: View {
             linkPassword = ""
             showLinkEmail = true
         }
+    }
+}
+
+private struct EditAccountDrawer: View {
+    @Environment(\.dismiss) private var dismiss
+    @Binding var draftName: String
+    @Binding var draftCurrency: String
+    @Binding var draftDistance: String
+    let isSaving: Bool
+    let errorMessage: String?
+    let onSave: () -> Void
+
+    private let currencies = ["QAR", "AED", "SAR", "USD", "EUR", "GBP", "PKR", "INR"]
+
+    private var canSave: Bool {
+        !draftName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !isSaving
+    }
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 20) {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Display name")
+                            .font(VS.Typography.body(12, weight: .medium))
+                            .foregroundStyle(VS.Color.textTertiary)
+                        TextField("Your name", text: $draftName)
+                            .font(VS.Typography.heading(18, weight: .semibold))
+                            .foregroundStyle(VS.Color.textPrimary)
+                            .padding(14)
+                            .glassCard(radius: 12)
+                    }
+
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("Currency")
+                            .font(VS.Typography.body(12, weight: .medium))
+                            .foregroundStyle(VS.Color.textTertiary)
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 8) {
+                                ForEach(currencies, id: \.self) { code in
+                                    Button {
+                                        UISelectionFeedbackGenerator().selectionChanged()
+                                        draftCurrency = code
+                                    } label: {
+                                        Text(code)
+                                            .font(VS.Typography.body(13, weight: .semibold))
+                                            .padding(.horizontal, 14)
+                                            .padding(.vertical, 10)
+                                            .background(
+                                                Capsule().fill(draftCurrency == code ? VS.Color.accent : VS.Color.chip)
+                                            )
+                                            .foregroundStyle(draftCurrency == code ? VS.Color.navPill : VS.Color.textSecondary)
+                                    }
+                                    .buttonStyle(.plain)
+                                }
+                            }
+                        }
+                    }
+
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("Distance")
+                            .font(VS.Typography.body(12, weight: .medium))
+                            .foregroundStyle(VS.Color.textTertiary)
+                        HStack(spacing: 8) {
+                            distanceChip("km", title: "Kilometres")
+                            distanceChip("mi", title: "Miles")
+                        }
+                    }
+
+                    if let errorMessage {
+                        Text(errorMessage)
+                            .font(VS.Typography.body(13))
+                            .foregroundStyle(VS.Color.error)
+                    }
+                }
+                .padding(20)
+            }
+            .veloseetePage()
+            .navigationTitle("Edit account")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button("Cancel") { dismiss() }
+                        .foregroundStyle(VS.Color.textSecondary)
+                }
+            }
+            .safeAreaInset(edge: .bottom) {
+                Button(action: onSave) {
+                    HStack(spacing: 10) {
+                        if isSaving { ProgressView().tint(VS.Color.navPill) }
+                        Text("Save")
+                            .font(VS.Typography.heading(16))
+                    }
+                    .foregroundStyle(VS.Color.navPill)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 16)
+                    .background(
+                        RoundedRectangle(cornerRadius: VS.Radius.card, style: .continuous)
+                            .fill(canSave ? VS.Color.accent : VS.Color.chip)
+                    )
+                }
+                .buttonStyle(.plain)
+                .disabled(!canSave)
+                .padding(20)
+                .background(VS.Color.bgPrimary.opacity(0.96))
+            }
+        }
+        .presentationDetents([.medium, .large])
+        .presentationDragIndicator(.visible)
+        .veloseeteSheet()
+    }
+
+    private func distanceChip(_ tag: String, title: String) -> some View {
+        Button {
+            UISelectionFeedbackGenerator().selectionChanged()
+            draftDistance = tag
+        } label: {
+            Text(title)
+                .font(VS.Typography.body(13, weight: .semibold))
+                .padding(.horizontal, 14)
+                .padding(.vertical, 10)
+                .frame(maxWidth: .infinity)
+                .background(
+                    Capsule().fill(draftDistance == tag ? VS.Color.accent : VS.Color.chip)
+                )
+                .foregroundStyle(draftDistance == tag ? VS.Color.navPill : VS.Color.textSecondary)
+        }
+        .buttonStyle(.plain)
     }
 }
 
@@ -2704,6 +3183,11 @@ final class VehiclePhotoStore: ObservableObject {
             try fileManager.removeItem(at: url)
         }
         images[vehicleId] = nil
+    }
+
+    func removeAll() {
+        images.removeAll()
+        try? fileManager.removeItem(at: photoDirectory)
     }
 
     private var photoDirectory: URL {

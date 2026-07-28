@@ -37,11 +37,15 @@
 	<key>UIViewControllerBasedStatusBarAppearance</key>
 	<true/>
 	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>Veloseete uses your location to track drive distance and routes for accurate fuel efficiency.</string>
+	<string>Veloseete uses your location to track drives and tag which petrol station you refuel at.</string>
 	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
-	<string>Veloseete can detect drives in the background so trip distance stays accurate.</string>
+	<string>Veloseete can detect drives in the background so trip distance stays accurate, and learn when you’re due for fuel or service.</string>
 	<key>NSMotionUsageDescription</key>
 	<string>Veloseete uses motion to detect when you are driving and avoid false trip starts.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Veloseete uses your photo library so you can set a profile picture and vehicle photos.</string>
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
 	<key>NSSupportsLiveActivities</key>
 	<true/>
 	<key>NSSupportsLiveActivitiesFrequentUpdates</key>

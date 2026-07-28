@@ -13,6 +13,7 @@ struct GarageView: View {
     @State private var showMakeModel = false
     @State private var fuelType = "petrol"
     @State private var currency = "QAR"
+    @State private var fuelVolumeUnit = VolumeFormat.liters
     @State private var odometer = ""
     @State private var tankCapacity = ""
     @State private var showTank = false
@@ -32,48 +33,37 @@ struct GarageView: View {
         "Volkswagen", "Nissan", "Hyundai", "Kia", "Mazda", "Lexus"
     ]
 
+    private let currencies = ["QAR", "AED", "SAR", "USD", "EUR", "GBP", "PKR", "INR"]
     private let icons = ["🚗", "🚙", "🚕", "🚌", "🚐", "🏎️", "🚓", "🚑", "🚒", "🚚", "🚛", "🛻", "🏍️", "🛵", "🚜", "🚎"]
 
-    var body: some View {
-        VStack(spacing: 0) {
-            if let onComplete {
-                HStack {
-                    Text("Add vehicle")
-                        .font(VS.Typography.heading(17, weight: .bold))
-                        .foregroundStyle(VS.Color.textPrimary)
-                    Spacer()
-                    ModalCloseButton(action: onComplete)
-                }
-                .padding(.horizontal, 16)
-                .frame(height: 52)
-                .overlay(Rectangle().fill(VS.Color.divider).frame(height: 1), alignment: .bottom)
-            }
+    private var isSheet: Bool { onComplete != nil }
 
+    var body: some View {
+        Group {
+            if isSheet {
+                NavigationStack { sheetBody }
+                    .presentationDetents([.large])
+                    .veloseeteSheet()
+            } else {
+                sheetBody
+            }
+        }
+        .onAppear {
+            currency = Locale.current.currency?.identifier == "USD" ? "USD"
+                : Locale.current.region?.identifier == "AE" ? "AED"
+                : Locale.current.region?.identifier == "SA" ? "SAR"
+                : "QAR"
+            fuelVolumeUnit = VolumeFormat.defaultUnit(currency: currency)
+        }
+    }
+
+    private var sheetBody: some View {
+        VStack(spacing: 0) {
             if store.vehicles.isEmpty {
                 accountBanner
-            } else {
-                addVehicleBanner
             }
 
-            HStack {
-                if step > 1 {
-                    Button {
-                        withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
-                            step -= 1
-                        }
-                    } label: {
-                        VSIcon(icon: .caretLeft, size: 18, weight: .bold, tint: VS.Color.textSecondary)
-                            .frame(width: 40, height: 40)
-                            .glassCard(radius: 20)
-                    }
-                }
-                Spacer()
-                Text("Step \(step) of 3")
-                    .font(VS.Typography.body(13, weight: .medium))
-                    .foregroundStyle(VS.Color.textTertiary)
-            }
-            .padding(.horizontal, 16)
-            .padding(.top, 12)
+            stepHeader
 
             ScrollView {
                 Group {
@@ -83,7 +73,9 @@ struct GarageView: View {
                     default: stepOdometer
                     }
                 }
-                .padding(20)
+                .padding(.horizontal, 20)
+                .padding(.top, 12)
+                .padding(.bottom, 28)
                 .animation(.spring(response: 0.35, dampingFraction: 0.85), value: step)
             }
 
@@ -92,10 +84,11 @@ struct GarageView: View {
                     .font(VS.Typography.body(13))
                     .foregroundStyle(VS.Color.error)
                     .padding(.horizontal, 20)
+                    .padding(.bottom, 8)
             }
 
             PrimaryCTAButton(
-                title: step == 3 ? "Finish setup" : "Continue",
+                title: step == 3 ? "Add vehicle" : "Continue",
                 icon: step == 3 ? .checkCircle : nil,
                 isLoading: isSubmitting,
                 isEnabled: canContinue
@@ -105,26 +98,49 @@ struct GarageView: View {
             .padding(20)
         }
         .veloseetePage()
-        .onAppear {
-            currency = Locale.current.currency?.identifier == "USD" ? "USD"
-                : Locale.current.region?.identifier == "AE" ? "AED"
-                : Locale.current.region?.identifier == "SA" ? "SAR"
-                : "QAR"
+        .navigationTitle(isSheet ? "Add vehicle" : "")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            if let onComplete {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button { onComplete() } label: {
+                        Image(systemName: "xmark")
+                    }
+                    .accessibilityLabel("Close")
+                }
+            }
         }
     }
 
-    private var accountBanner: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Signed in as")
-                .font(VS.Typography.body(11, weight: .medium))
+    private var stepHeader: some View {
+        HStack {
+            if step > 1 {
+                Button {
+                    withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
+                        step -= 1
+                    }
+                } label: {
+                    Label("Back", systemImage: "chevron.left")
+                        .font(VS.Typography.body(14, weight: .semibold))
+                        .foregroundStyle(VS.Color.textSecondary)
+                }
+                .buttonStyle(.plain)
+            }
+            Spacer()
+            Text("Step \(step) of 3")
+                .font(VS.Typography.body(13, weight: .medium))
                 .foregroundStyle(VS.Color.textTertiary)
-            Text(auth.user?.email ?? "Unknown")
-                .font(VS.Typography.heading(14))
-                .foregroundStyle(VS.Color.textPrimary)
+        }
+        .padding(.horizontal, 20)
+        .padding(.top, isSheet ? 8 : 12)
+        .padding(.bottom, 4)
+    }
 
-            Text("No vehicles found for this account yet. If this isn’t the email you use on the web app, sign out and sign in with that one — then tap Retry sync.")
-                .font(VS.Typography.body(12))
-                .foregroundStyle(VS.Color.textSecondary)
+    private var accountBanner: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(auth.user?.email ?? "Signed in")
+                .font(VS.Typography.body(13, weight: .semibold))
+                .foregroundStyle(VS.Color.textPrimary)
 
             if !store.loadWarnings.isEmpty {
                 Text(store.loadWarnings.joined(separator: "\n"))
@@ -132,7 +148,7 @@ struct GarageView: View {
                     .foregroundStyle(VS.Color.warning)
             }
 
-            HStack(spacing: 12) {
+            HStack(spacing: 14) {
                 Button {
                     Task {
                         isRetrying = true
@@ -149,36 +165,21 @@ struct GarageView: View {
                     }
                     .foregroundStyle(VS.Color.accent)
                 }
+                .buttonStyle(.plain)
 
                 Button("Sign out") {
                     try? auth.signOut()
                 }
                 .font(VS.Typography.body(13, weight: .semibold))
                 .foregroundStyle(VS.Color.textSecondary)
+                .buttonStyle(.plain)
             }
         }
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(VS.Color.bgSecondary)
-        .overlay(Rectangle().frame(height: 1).foregroundStyle(VS.Color.divider), alignment: .bottom)
-    }
-
-    private var addVehicleBanner: some View {
-        HStack(spacing: 12) {
-            VSIcon(icon: .plusCircle, size: 22, weight: .fill, tint: VS.Color.accent)
-            VStack(alignment: .leading, spacing: 3) {
-                Text("Add another vehicle")
-                    .font(VS.Typography.heading(15))
-                    .foregroundStyle(VS.Color.textPrimary)
-                Text("You already have \(store.vehicles.count) \(store.vehicles.count == 1 ? "vehicle" : "vehicles") in your garage.")
-                    .font(VS.Typography.body(12))
-                    .foregroundStyle(VS.Color.textSecondary)
-            }
-            Spacer()
-        }
-        .padding(14)
-        .background(VS.Color.bgSecondary)
-        .overlay(Rectangle().frame(height: 1).foregroundStyle(VS.Color.divider), alignment: .bottom)
+        .glassCard(radius: 12)
+        .padding(.horizontal, 20)
+        .padding(.top, 8)
     }
 
     private var canContinue: Bool {
@@ -190,119 +191,96 @@ struct GarageView: View {
     }
 
     private var stepBasics: some View {
-        VStack(alignment: .leading, spacing: 20) {
-            titleBlock(store.vehicles.isEmpty ? "Let's set up your first vehicle" : "Add a vehicle", "Takes about 30 seconds")
+        VStack(alignment: .leading, spacing: 22) {
+            titleBlock(
+                store.vehicles.isEmpty ? "Your first vehicle" : "New vehicle",
+                "Name it, pick an icon"
+            )
 
-            fieldLabel("Vehicle name")
-            TextField("My car", text: $nickname)
-                .font(VS.Typography.heading(18))
-                .foregroundStyle(VS.Color.textPrimary)
-                .vsInputField()
+            glassTextField(label: "Name", placeholder: "My car", text: $nickname, large: true)
 
-            fieldLabel("Icon")
-            LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 8), spacing: 8) {
-                ForEach(icons, id: \.self) { item in
-                    Button {
-                        icon = item
-                    } label: {
-                        FluentEmojiView(emoji: item, size: 26)
-                            .frame(width: 36, height: 36)
-                            .background(
-                                RoundedRectangle(cornerRadius: 10)
-                                    .fill(icon == item ? VS.Color.accent.opacity(0.2) : VS.Color.controlDisabled)
-                            )
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 10)
-                                    .stroke(icon == item ? VS.Color.accent : Color.clear, lineWidth: 1.5)
-                            )
+            VStack(alignment: .leading, spacing: 10) {
+                fieldLabel("Icon")
+                LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 8), spacing: 8) {
+                    ForEach(icons, id: \.self) { item in
+                        Button {
+                            UISelectionFeedbackGenerator().selectionChanged()
+                            icon = item
+                        } label: {
+                            FluentEmojiView(emoji: item, size: 26)
+                                .frame(width: 36, height: 36)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                        .fill(icon == item ? VS.Color.accent : VS.Color.chip)
+                                )
+                        }
+                        .buttonStyle(.plain)
                     }
                 }
             }
 
             Button {
-                withAnimation { showMakeModel.toggle() }
+                withAnimation(.snappy(duration: 0.25)) { showMakeModel.toggle() }
             } label: {
-                Text(showMakeModel ? "Hide make & model" : "Add make & model (optional)")
-                    .font(VS.Typography.body(14, weight: .medium))
+                Text(showMakeModel ? "Hide make & model" : "Make & model (optional)")
+                    .font(VS.Typography.body(13, weight: .semibold))
                     .foregroundStyle(VS.Color.accent)
             }
+            .buttonStyle(.plain)
 
             if showMakeModel {
-                fieldLabel("Make")
-                TextField("e.g. Toyota", text: $make)
-                    .vsInputField()
-                    .foregroundStyle(VS.Color.textPrimary)
+                glassTextField(label: "Make", placeholder: "Toyota", text: $make)
 
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 8) {
                         ForEach(popularMakes, id: \.self) { m in
-                            Button(m) { make = m }
-                                .font(VS.Typography.body(12, weight: .medium))
-                                .padding(.horizontal, 12)
-                                .padding(.vertical, 8)
-                                .background(Capsule().fill(make == m ? VS.Color.accent.opacity(0.2) : VS.Color.chip))
-                                .foregroundStyle(make == m ? VS.Color.accent : VS.Color.textSecondary)
+                            capsuleChip(m, selected: make == m) { make = m }
                         }
                     }
                 }
 
-                fieldLabel("Model")
-                TextField("e.g. Camry", text: $model)
-                    .vsInputField()
-                    .foregroundStyle(VS.Color.textPrimary)
+                glassTextField(label: "Model", placeholder: "Camry", text: $model)
             }
         }
     }
 
     private var stepFuel: some View {
-        VStack(alignment: .leading, spacing: 20) {
-            titleBlock("Fuel & region", "We've set a currency for your region")
+        VStack(alignment: .leading, spacing: 22) {
+            titleBlock("Fuel & currency", "Used for fills and spend")
 
-            HStack {
-                Text(currency)
-                    .font(VS.Typography.heading(18))
-                    .foregroundStyle(VS.Color.accent)
-                Text("detected — you can change this later")
-                    .font(VS.Typography.body(13))
-                    .foregroundStyle(VS.Color.textSecondary)
-            }
-            .padding(14)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .glassCard()
-
-            fieldLabel("Fuel type")
-            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
-                ForEach(fuelTypes, id: \.0) { type in
-                    Button {
-                        fuelType = type.0
-                    } label: {
-                        Text(type.1)
-                            .font(VS.Typography.heading(15))
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 16)
-                            .background(
-                                RoundedRectangle(cornerRadius: 14)
-                                    .fill(fuelType == type.0 ? VS.Color.accent.opacity(0.18) : VS.Color.controlDisabled)
-                            )
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 14)
-                                    .stroke(fuelType == type.0 ? VS.Color.accent : Color.white.opacity(0.1), lineWidth: 1.5)
-                            )
-                            .foregroundStyle(VS.Color.textPrimary)
+            VStack(alignment: .leading, spacing: 10) {
+                fieldLabel("Fuel type")
+                HStack(spacing: 8) {
+                    ForEach(fuelTypes, id: \.0) { type in
+                        capsuleChip(type.1, selected: fuelType == type.0) {
+                            fuelType = type.0
+                        }
                     }
                 }
             }
 
-            fieldLabel("Currency")
-            ScrollView(.horizontal, showsIndicators: false) {
+            VStack(alignment: .leading, spacing: 10) {
+                fieldLabel("Currency")
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        ForEach(currencies, id: \.self) { code in
+                            capsuleChip(code, selected: currency == code) {
+                                currency = code
+                                fuelVolumeUnit = VolumeFormat.defaultUnit(currency: code)
+                            }
+                        }
+                    }
+                }
+            }
+
+            VStack(alignment: .leading, spacing: 10) {
+                fieldLabel("Fuel volume")
                 HStack(spacing: 8) {
-                    ForEach(["QAR", "AED", "SAR", "USD", "EUR", "GBP", "PKR", "INR"], id: \.self) { code in
-                        Button(code) { currency = code }
-                            .font(VS.Typography.body(13, weight: .semibold))
-                            .padding(.horizontal, 14)
-                            .padding(.vertical, 10)
-                            .background(Capsule().fill(currency == code ? VS.Color.accent : VS.Color.chip))
-                            .foregroundStyle(currency == code ? VS.Color.navPill : VS.Color.textSecondary)
+                    capsuleChip("Litres", selected: fuelVolumeUnit == VolumeFormat.liters) {
+                        fuelVolumeUnit = VolumeFormat.liters
+                    }
+                    capsuleChip("Gallons", selected: fuelVolumeUnit == VolumeFormat.gallons) {
+                        fuelVolumeUnit = VolumeFormat.gallons
                     }
                 }
             }
@@ -310,41 +288,45 @@ struct GarageView: View {
     }
 
     private var stepOdometer: some View {
-        VStack(alignment: .leading, spacing: 20) {
-            titleBlock("Starting odometer", "Enter your vehicle's current odometer reading")
+        VStack(alignment: .leading, spacing: 22) {
+            titleBlock("Odometer", "Dashboard reading right now")
 
-            fieldLabel("Current odometer (km)")
-            TextField("e.g. 50000", text: $odometer)
-                .keyboardType(.numberPad)
-                .font(VS.Typography.heading(28, weight: .bold))
-                .foregroundStyle(VS.Color.textPrimary)
-                .vsInputField()
+            glassNumberField(
+                label: "Current odometer",
+                placeholder: "0",
+                text: $odometer,
+                suffix: "km",
+                large: true
+            )
 
             Button {
-                withAnimation { showTank.toggle() }
+                withAnimation(.snappy(duration: 0.25)) { showTank.toggle() }
             } label: {
-                Text(showTank ? "Hide tank capacity" : "Add tank capacity (optional)")
-                    .font(VS.Typography.body(14, weight: .medium))
+                Text(showTank ? "Hide tank capacity" : "Tank capacity (optional)")
+                    .font(VS.Typography.body(13, weight: .semibold))
                     .foregroundStyle(VS.Color.accent)
             }
+            .buttonStyle(.plain)
 
             if showTank {
-                fieldLabel("Tank capacity (L)")
-                TextField("e.g. 55", text: $tankCapacity)
-                    .keyboardType(.decimalPad)
-                    .vsInputField()
-                    .foregroundStyle(VS.Color.textPrimary)
+                glassNumberField(
+                    label: "Tank capacity",
+                    placeholder: VolumeFormat.usesGallons(fuelVolumeUnit) ? "14.5" : "55",
+                    text: $tankCapacity,
+                    suffix: VolumeFormat.suffix(fuelVolumeUnit),
+                    large: false
+                )
             }
         }
     }
 
     private func titleBlock(_ title: String, _ subtitle: String) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 6) {
             Text(title)
-                .font(VS.Typography.heading(28, weight: .bold))
+                .font(VS.Typography.heading(26, weight: .bold))
                 .foregroundStyle(VS.Color.textPrimary)
             Text(subtitle)
-                .font(VS.Typography.body(15))
+                .font(VS.Typography.body(14))
                 .foregroundStyle(VS.Color.textSecondary)
         }
     }
@@ -353,6 +335,60 @@ struct GarageView: View {
         Text(text)
             .font(VS.Typography.body(12, weight: .medium))
             .foregroundStyle(VS.Color.textTertiary)
+    }
+
+    private func glassTextField(
+        label: String,
+        placeholder: String,
+        text: Binding<String>,
+        large: Bool = false
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            fieldLabel(label)
+            TextField(placeholder, text: text)
+                .font(large ? VS.Typography.heading(20, weight: .semibold) : VS.Typography.heading(18, weight: .semibold))
+                .foregroundStyle(VS.Color.textPrimary)
+                .padding(14)
+                .glassCard(radius: 12)
+        }
+    }
+
+    private func glassNumberField(
+        label: String,
+        placeholder: String,
+        text: Binding<String>,
+        suffix: String,
+        large: Bool
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            fieldLabel(label)
+            HStack {
+                TextField(placeholder, text: text)
+                    .keyboardType(suffix == "km" ? .numberPad : .decimalPad)
+                    .font(large ? VS.Typography.heading(28, weight: .bold) : VS.Typography.heading(20, weight: .semibold))
+                    .foregroundStyle(VS.Color.textPrimary)
+                Text(suffix)
+                    .font(VS.Typography.body(13, weight: .medium))
+                    .foregroundStyle(VS.Color.textTertiary)
+            }
+            .padding(14)
+            .glassCard(radius: 12, elevated: large)
+        }
+    }
+
+    private func capsuleChip(_ title: String, selected: Bool, action: @escaping () -> Void) -> some View {
+        Button {
+            UISelectionFeedbackGenerator().selectionChanged()
+            action()
+        } label: {
+            Text(title)
+                .font(VS.Typography.body(13, weight: .semibold))
+                .padding(.horizontal, 14)
+                .padding(.vertical, 10)
+                .background(Capsule().fill(selected ? VS.Color.accent : VS.Color.chip))
+                .foregroundStyle(selected ? VS.Color.navPill : VS.Color.textSecondary)
+        }
+        .buttonStyle(.plain)
     }
 
     private func advance() async {
@@ -365,7 +401,7 @@ struct GarageView: View {
         }
 
         guard let odo = Double(odometer) else {
-            errorMessage = "Please enter a valid odometer reading"
+            errorMessage = "Enter a valid odometer reading"
             return
         }
 
@@ -373,6 +409,9 @@ struct GarageView: View {
         defer { isSubmitting = false }
 
         do {
+            let tankLiters = Double(tankCapacity).map {
+                VolumeFormat.toLiters($0, unit: fuelVolumeUnit)
+            }
             try await store.addVehicle(
                 nickname: nickname.trimmingCharacters(in: .whitespaces),
                 make: make.trimmingCharacters(in: .whitespaces).isEmpty ? "Unknown" : make.trimmingCharacters(in: .whitespaces),
@@ -381,7 +420,8 @@ struct GarageView: View {
                 currentOdometer: odo,
                 currency: currency,
                 icon: icon,
-                fuelTankCapacity: Double(tankCapacity)
+                fuelTankCapacity: tankLiters,
+                fuelVolumeUnit: fuelVolumeUnit
             )
             UINotificationFeedbackGenerator().notificationOccurred(.success)
             onComplete?()

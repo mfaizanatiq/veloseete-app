@@ -20,8 +20,11 @@ struct Vehicle: Identifiable, Equatable {
     var model: String
     var fuelType: String
     var currentOdometer: Double
+    /// Always stored in litres.
     var fuelTankCapacity: Double?
     var currency: String
+    /// Display/entry unit for fuel volume: `"L"` or `"gal"` (US gallon). Stored litres stay canonical.
+    var fuelVolumeUnit: String
     var icon: String?
     var createdAt: Date
     /// Soft-removed from the garage. History stays on this vehicleId; other cars are untouched.
@@ -39,6 +42,10 @@ struct FuelLog: Identifiable, Equatable {
     var totalCost: Double
     var currency: String
     var isFullTank: Bool
+    /// Nearest petrol station name when the fill was logged (optional).
+    var stationName: String? = nil
+    var stationLatitude: Double? = nil
+    var stationLongitude: Double? = nil
 }
 
 struct ServiceLog: Identifiable, Equatable {
@@ -173,6 +180,9 @@ extension Vehicle {
             currentOdometer: FirestoreDecode.double(data["currentOdometer"]),
             fuelTankCapacity: data["fuelTankCapacity"] == nil ? nil : FirestoreDecode.optionalDouble(data["fuelTankCapacity"]),
             currency: FirestoreDecode.string(data["currency"], fallback: "QAR"),
+            fuelVolumeUnit: VolumeFormat.normalize(
+                FirestoreDecode.string(data["fuelVolumeUnit"], fallback: "")
+            ) ?? VolumeFormat.defaultUnit(currency: FirestoreDecode.string(data["currency"], fallback: "QAR")),
             icon: data["icon"] as? String,
             createdAt: FirestoreDecode.date(data["createdAt"]),
             isArchived: archived,
@@ -198,7 +208,13 @@ extension FuelLog {
             pricePerUnit: FirestoreDecode.double(data["price_per_unit"]),
             totalCost: FirestoreDecode.double(data["total_cost"]),
             currency: FirestoreDecode.string(data["currency"], fallback: "QAR"),
-            isFullTank: FirestoreDecode.bool(data["is_full_tank"], fallback: true)
+            isFullTank: FirestoreDecode.bool(data["is_full_tank"], fallback: true),
+            stationName: {
+                let name = FirestoreDecode.string(data["station_name"])
+                return name.isEmpty ? nil : name
+            }(),
+            stationLatitude: data["station_lat"] == nil ? nil : FirestoreDecode.optionalDouble(data["station_lat"]),
+            stationLongitude: data["station_lng"] == nil ? nil : FirestoreDecode.optionalDouble(data["station_lng"])
         )
     }
 }
