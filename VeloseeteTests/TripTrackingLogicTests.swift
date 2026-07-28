@@ -121,13 +121,13 @@ final class TripTrackingLogicTests: XCTestCase {
     }
 
     func testSpendTrendDoesNotClaimFlatWithoutPriorMonth() {
-        XCTAssertEqual(DashboardCopy.spendTrend(nil), "No prior month to compare")
-        XCTAssertEqual(DashboardCopy.spendTrend(0), "Flat vs last month")
+        XCTAssertEqual(DashboardCopy.spendTrend(nil), "First month on the board")
+        XCTAssertEqual(DashboardCopy.spendTrend(0), "Holding steady")
     }
 
     func testSpecComparisonRequiresTwoValidIntervals() {
         let status = DashboardCopy.status(efficiency: 18.6, standard: 8, sampleCount: 1)
-        XCTAssertEqual(status.text, "Based on 1 interval — add another full tank")
+        XCTAssertEqual(status.text, "One more full tank to lock it in")
         XCTAssertEqual(status.tone, .learning)
     }
 

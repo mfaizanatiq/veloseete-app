@@ -44,7 +44,15 @@ enum VS {
         static let sm: CGFloat = 12
         static let md: CGFloat = 16
         static let lg: CGFloat = 24
-        static let pageInset: CGFloat = 16
+        /// Between major page sections (hero → hub → badges…)
+        static let section: CGFloat = 32
+        /// Title → content inside a section
+        static let stack: CGFloat = 16
+        /// Card internal padding
+        static let card: CGFloat = 20
+        /// Dense list / row vertical padding
+        static let row: CGFloat = 16
+        static let pageInset: CGFloat = 20
         static let sheetInset: CGFloat = 20
     }
 
@@ -291,6 +299,26 @@ extension View {
         presentationBackground(VS.Color.bgPrimary)
             .presentationCornerRadius(VS.Radius.sheet)
             .presentationDragIndicator(.visible)
+    }
+}
+
+/// Shared section title for tab screens — keeps vertical rhythm consistent.
+struct VSSectionHeader: View {
+    let title: String
+    var subtitle: String? = nil
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(title)
+                .font(VS.Typography.heading(20, weight: .bold))
+                .foregroundStyle(VS.Color.textPrimary)
+            if let subtitle {
+                Text(subtitle)
+                    .font(VS.Typography.body(13))
+                    .foregroundStyle(VS.Color.textTertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
     }
 }
 

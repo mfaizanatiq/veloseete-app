@@ -16,14 +16,14 @@ struct DashboardView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 24) {
+            VStack(alignment: .leading, spacing: VS.Spacing.section) {
                 topBar
 
                 if !store.loadWarnings.isEmpty {
                     Text(store.loadWarnings.joined(separator: "\n"))
-                        .font(VS.Typography.body(11))
+                        .font(VS.Typography.body(12))
                         .foregroundStyle(VS.Color.warning)
-                        .padding(12)
+                        .padding(14)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .glassCard(radius: 12)
                 }
@@ -53,7 +53,7 @@ struct DashboardView: View {
                         .padding(.top, 80)
                 }
             }
-            .padding(.horizontal, 16)
+            .padding(.horizontal, VS.Spacing.pageInset)
             .padding(.bottom, 110)
             .tracksBottomNavScroll()
         }
@@ -92,24 +92,22 @@ struct DashboardView: View {
     private var topBar: some View {
         MainTabHeader(
             "Fuels",
-            subtitle: vehicle.map { "\($0.nickname) · Fuel tracking" } ?? "Fuel tracking",
+            subtitle: vehicle.map { "\($0.nickname) · fill & spend" } ?? "Fill & spend",
             onProfile: onProfile
         )
     }
 
     private func recentSection(_ logs: [FuelLog]) -> some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text("Recent Refuels")
-                .font(VS.Typography.heading(20))
-                .foregroundStyle(VS.Color.textSecondary)
+        VStack(alignment: .leading, spacing: VS.Spacing.stack) {
+            VSSectionHeader(title: "Recent fills")
 
             if logs.isEmpty {
-                VStack(spacing: 12) {
+                VStack(spacing: 14) {
                     FluentEmojiView(emoji: "⛽", size: 48)
-                    Text("Track your first refuel")
+                    Text("First fill’s the charm")
                         .font(VS.Typography.heading(16))
                         .foregroundStyle(VS.Color.textPrimary)
-                    Text("See your fuel spending and efficiency over time")
+                    Text("Track a refill — spend and efficiency kick in.")
                         .font(VS.Typography.body(13))
                         .foregroundStyle(VS.Color.textSecondary)
                         .multilineTextAlignment(.center)
@@ -130,7 +128,7 @@ struct DashboardView: View {
                         }
                     }
                 }
-                .padding(16)
+                .padding(VS.Spacing.md)
                 .glassCard()
             }
         }
@@ -153,15 +151,15 @@ struct HeroCard: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: VS.Spacing.stack) {
             tonePill(emoji: vibe.emoji, text: vibe.label, tone: vibe.tone)
 
             Text(vehicle.nickname)
-                .font(VS.Typography.heading(20))
+                .font(VS.Typography.heading(22, weight: .bold))
                 .foregroundStyle(VS.Color.textPrimary)
 
             Text("\(vehicle.make) \(vehicle.model)")
-                .font(VS.Typography.body(12))
+                .font(VS.Typography.body(13))
                 .foregroundStyle(VS.Color.textTertiary)
 
             HStack(spacing: 12) {
@@ -173,7 +171,7 @@ struct HeroCard: View {
                 )
                 metricTile(
                     icon: .car,
-                    label: "Current mileage",
+                    label: "Odometer",
                     value: DistanceFormat.formatOdometer(vehicle.currentOdometer, unit: distanceUnit),
                     unit: nil
                 )
@@ -182,12 +180,12 @@ struct HeroCard: View {
             tonePill(emoji: nil, text: status.text, tone: status.tone)
 
             if refuelCount < 3 && efficiency == nil {
-                Text("Log a few refuels — your car's personality shows up fast")
-                    .font(VS.Typography.body(12))
+                Text("A few fills and this car’s personality shows up.")
+                    .font(VS.Typography.body(13))
                     .foregroundStyle(VS.Color.textTertiary)
             }
         }
-        .padding(16)
+        .padding(VS.Spacing.card)
         .glassCard(elevated: true)
     }
 

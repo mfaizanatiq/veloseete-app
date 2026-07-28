@@ -211,23 +211,23 @@ enum DashboardCopy {
 
     static func status(efficiency: Double?, standard: Double?, sampleCount: Int) -> (text: String, tone: EfficiencyVibe.Tone) {
         guard let efficiency else {
-            return ("Add refuels to unlock comparison", .learning)
+            return ("Fill up so we can compare", .learning)
         }
         guard sampleCount >= 2 else {
-            return ("Based on 1 interval — add another full tank", .learning)
+            return ("One more full tank to lock it in", .learning)
         }
-        guard let standard else { return ("No verified manufacturer spec", .learning) }
+        guard let standard else { return ("No brochure spec on file", .learning) }
         let deviation = ((efficiency - standard) / standard) * 100
         let abs = Int(abs(deviation).rounded())
-        if deviation <= 0 { return ("\(abs)% better than spec", .excellent) }
-        if deviation <= 15 { return ("\(abs)% above spec — still in range", .good) }
-        if deviation <= 25 { return ("\(abs)% above spec", .neutral) }
-        return ("\(abs)% above spec — worth a check", .watch)
+        if deviation <= 0 { return ("\(abs)% better than brochure", .excellent) }
+        if deviation <= 15 { return ("\(abs)% thirstier than brochure", .good) }
+        if deviation <= 25 { return ("\(abs)% above brochure", .neutral) }
+        return ("\(abs)% thirsty — worth a peek", .watch)
     }
 
     static func spendTrend(_ change: Double?) -> String {
-        guard let change else { return "No prior month to compare" }
-        if abs(change) < 1 { return "Flat vs last month" }
+        guard let change else { return "First month on the board" }
+        if abs(change) < 1 { return "Holding steady" }
         let absVal = Int(abs(change).rounded())
         return change < 0 ? "↓ \(absVal)% vs last month" : "↑ \(absVal)% vs last month"
     }
