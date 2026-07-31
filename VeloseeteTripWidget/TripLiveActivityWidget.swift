@@ -138,37 +138,48 @@ private struct CarPlayTripActivityView: View {
     let context: ActivityViewContext<TripActivityAttributes>
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 9) {
-            HStack(spacing: 7) {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 6) {
                 Image(systemName: context.state.isPaused ? "pause.fill" : "car.fill")
+                    .font(.caption.weight(.semibold))
                     .foregroundStyle(context.state.isPaused ? TripActivityStyle.paused : TripActivityStyle.accent)
                 Text(context.attributes.vehicleName)
                     .font(.caption.weight(.semibold))
                     .lineLimit(1)
-                Spacer(minLength: 2)
+                    .minimumScaleFactor(0.85)
+                Spacer(minLength: 4)
                 Text(context.state.isPaused ? "PAUSED" : "LIVE")
                     .font(.system(size: 9, weight: .bold))
                     .foregroundStyle(context.state.isPaused ? TripActivityStyle.paused : TripActivityStyle.accent)
             }
 
+            Spacer(minLength: 0)
+
             HStack(alignment: .lastTextBaseline, spacing: 4) {
                 Text(context.state.distanceKm, format: .number.precision(.fractionLength(1)))
-                    .font(.system(size: 30, weight: .bold, design: .rounded).monospacedDigit())
+                    .font(.system(size: 28, weight: .bold, design: .rounded).monospacedDigit())
+                    .minimumScaleFactor(0.7)
+                    .lineLimit(1)
                 Text("km")
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(TripActivityStyle.secondary)
                 Spacer(minLength: 0)
             }
 
-            HStack {
+            HStack(spacing: 6) {
                 Label(formatDuration(context.state.durationSec), systemImage: "clock.fill")
-                Spacer()
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+                Spacer(minLength: 4)
                 Text("\(Int(context.state.currentSpeedKmh.rounded())) km/h")
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
             }
             .font(.caption2.weight(.semibold))
             .foregroundStyle(TripActivityStyle.secondary)
         }
-        .padding(14)
+        .padding(12)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
         .foregroundStyle(.white)
         .accessibilityElement(children: .combine)
         .accessibilityLabel(
@@ -181,7 +192,7 @@ private struct TripLockScreenView: View {
     let context: ActivityViewContext<TripActivityAttributes>
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 10) {
                 ZStack {
                     Circle()
@@ -196,30 +207,34 @@ private struct TripLockScreenView: View {
                     Text(context.state.isPaused ? "Trip paused" : "Trip in progress")
                         .font(.subheadline.weight(.semibold))
                         .foregroundStyle(.white)
+                        .lineLimit(1)
                     Text(context.attributes.vehicleName)
                         .font(.caption)
                         .foregroundStyle(TripActivityStyle.secondary)
                         .lineLimit(1)
+                        .minimumScaleFactor(0.85)
                 }
 
-                Spacer()
+                Spacer(minLength: 4)
 
                 Text(context.state.isPaused ? "PAUSED" : "LIVE")
                     .font(.system(size: 10, weight: .bold))
                     .foregroundStyle(statusColor)
-                    .padding(.horizontal, 9)
-                    .padding(.vertical, 5)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
                     .background(statusColor.opacity(0.12), in: Capsule())
             }
 
             HStack(alignment: .lastTextBaseline, spacing: 6) {
                 Text(String(format: "%.1f", context.state.distanceKm))
-                    .font(.system(size: 38, weight: .bold, design: .rounded).monospacedDigit())
+                    .font(.system(size: 36, weight: .bold, design: .rounded).monospacedDigit())
                     .foregroundStyle(.white)
+                    .minimumScaleFactor(0.7)
+                    .lineLimit(1)
                 Text("km")
                     .font(.headline.weight(.semibold))
                     .foregroundStyle(TripActivityStyle.secondary)
-                Spacer()
+                Spacer(minLength: 0)
             }
 
             HStack(spacing: 0) {
@@ -230,7 +245,9 @@ private struct TripLockScreenView: View {
                 metric(String(format: "%.0f km/h", context.state.maxSpeedKmh), "Top speed")
             }
         }
-        .padding(16)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 14)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
         .accessibilityElement(children: .combine)
         .accessibilityLabel(accessibilitySummary)
     }

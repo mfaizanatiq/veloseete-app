@@ -802,45 +802,45 @@ private enum DriveNotificationCopy {
 
     static func start(vehicleName: String) -> Line {
         pick([
-            Line(title: "engines on", body: "I've got \(vehicleName). You drive — I'll hover."),
-            Line(title: "we're rolling", body: "\(vehicleName) is live. I'm tagging along like a quiet co-pilot."),
-            Line(title: "seatbelt check", body: "Tracking \(vehicleName) in the background. Don't mind me."),
-            Line(title: "plot twist: movement", body: "\(vehicleName) just woke up. Route, distance, vibes — noted."),
+            Line(title: "Drive time! 🚗", body: "\(vehicleName) is on the move. I'm watching. I'm always watching."),
+            Line(title: "There you are!", body: "I knew \(vehicleName) couldn't sit still. Tracking started — don't mess this up."),
+            Line(title: "Ooh, we're moving!", body: "\(vehicleName) is rolling. Every km counts. I'm counting them."),
+            Line(title: "Trip started!", body: "Me and \(vehicleName) are on it. You just drive. We believe in you. Mostly."),
         ])
     }
 
     static func tooShort(distanceKm: Double, minimumKm: Double) -> Line {
         let stats = String(format: "%.1f km · needs %.1f", distanceKm, minimumKm)
         return pick([
-            Line(title: "that was a driveway", body: "\(stats). Cute try — odometer unchanged."),
-            Line(title: "blink and you missed it", body: "\(stats). Not enough asphalt for Veloseete."),
-            Line(title: "almost a drive", body: "\(stats). Stretch the legs next time."),
-            Line(title: "too short to brag about", body: "\(stats). I pretended I didn't see that."),
+            Line(title: "That... was it?", body: "\(stats). I'm not mad. I'm just disappointed."),
+            Line(title: "Hmm. That didn't count.", body: "\(stats). We don't talk about drives like that one."),
+            Line(title: "So close! (Not really.)", body: "\(stats). Try an actual road next time."),
+            Line(title: "I saw nothing.", body: "\(stats). Your secret is safe with me. This time."),
         ])
     }
 
     static func ready(distanceKm: Double, duration: String) -> Line {
         let stats = String(format: "%.1f km in %@", distanceKm, duration)
         return pick([
-            Line(title: "drive's in the bag", body: "\(stats). Stashed in My Drives — go flex later."),
-            Line(title: "nice one", body: "\(stats). Waiting for your review like a souvenir."),
-            Line(title: "logged, legend", body: "\(stats). Peek at it in My Drives when you're free."),
-            Line(title: "another one for the scrapbook", body: "\(stats). Ready when you are."),
+            Line(title: "Drive complete! 🎉", body: "\(stats). Now confirm it in My Drives. You wouldn't leave it hanging... right?"),
+            Line(title: "Look at you go!", body: "\(stats). One tap in My Drives makes it official. Just one. Tiny. Tap."),
+            Line(title: "You did it!", body: "\(stats). It's waiting in My Drives. Waiting. Patiently. For now."),
+            Line(title: "Nailed it!", body: "\(stats). Confirm it in My Drives before I start sending sad notifications."),
         ])
     }
 
     static func pendingReview(count: Int) -> Line {
         if count == 1 {
             return pick([
-                Line(title: "that drive is getting lonely", body: "Still waiting in My Drives. Confirm it whenever you're free."),
-                Line(title: "unclaimed souvenir", body: "One trip is parked on review. Don't leave it on read."),
-                Line(title: "hey — still pending", body: "Your last drive wants a nod in My Drives."),
+                Line(title: "Your drive misses you 🥺", body: "It's been sitting in My Drives all alone. One tap. That's all it wants."),
+                Line(title: "Still there. Still waiting.", body: "That drive isn't going to confirm itself. Believe me, I checked."),
+                Line(title: "Knock knock.", body: "It's your unconfirmed drive. It knows you saw this notification."),
             ])
         }
         return pick([
-            Line(title: "\(count) trips collecting dust", body: "My Drives has a little backlog. Confirm when you can."),
-            Line(title: "review pile growing", body: "\(count) drives are waiting. Future-you likes a tidy log."),
-            Line(title: "co-pilot nudge", body: "\(count) unconfirmed trips. Tap My Drives and clear the stack."),
+            Line(title: "\(count) drives are crying 😢", body: "They just want to be confirmed. Are you really going to ignore them?"),
+            Line(title: "This is getting awkward.", body: "\(count) drives in My Drives, still unconfirmed. I can't keep covering for you."),
+            Line(title: "Fine. I'll say it.", body: "\(count) drives are waiting and you've been ignoring them. Tap My Drives. Do the right thing."),
         ])
     }
 

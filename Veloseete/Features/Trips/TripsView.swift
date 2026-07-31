@@ -46,6 +46,7 @@ struct TripsView: View {
     @State private var mapPosition: MapCameraPosition = .automatic
     @State private var showTripPermissions = false
     @State private var reviewPendingTrip: PendingTripSave?
+    @State private var isConfirmingAll = false
     @State private var detailTrip: Trip?
     @State private var mode: TripsMode = .tracking
     @State private var driveDrawerExpanded = false
@@ -78,6 +79,25 @@ struct TripsView: View {
         recorder.pendingSaves
             .filter { selectedVehicleId == nil || $0.vehicleId == selectedVehicleId }
             .sorted { $0.endedAt > $1.endedAt }
+    }
+
+    /// Saves every visible pending drive with its suggested odometer — same flow
+    /// as confirming one by one, without opening each sheet.
+    private func confirmAllPending() async {
+        guard !isConfirmingAll else { return }
+        isConfirmingAll = true
+        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        for pending in filteredPendingTrips {
+            do {
+                try await store.saveTrip(pending, odometer: pending.suggestedOdometer, applyOdometer: false)
+                recorder.markPendingSaved(id: pending.id)
+            } catch {
+                // Stop on the first failure; the remaining drives stay queued for review.
+                break
+            }
+        }
+        UINotificationFeedbackGenerator().notificationOccurred(.success)
+        isConfirmingAll = false
     }
 
     private var driveMapCoordinates: [TripCoordinate] {
@@ -376,14 +396,36 @@ struct TripsView: View {
                 ScrollView {
                     LazyVStack(spacing: 0) {
                         if !filteredPendingTrips.isEmpty {
-                            HStack {
+                            HStack(spacing: 8) {
                                 Text("REVIEW REQUIRED")
                                     .font(VS.Typography.body(11, weight: .bold))
                                     .foregroundStyle(VS.Color.warning)
-                                Spacer()
                                 Text("\(filteredPendingTrips.count)")
                                     .font(VS.Typography.body(11, weight: .bold))
                                     .foregroundStyle(VS.Color.warning)
+                                Spacer()
+                                Button {
+                                    Task { await confirmAllPending() }
+                                } label: {
+                                    HStack(spacing: 5) {
+                                        if isConfirmingAll {
+                                            ProgressView()
+                                                .controlSize(.mini)
+                                                .tint(VS.Color.navPill)
+                                        } else {
+                                            VSIcon(icon: .checkCircle, size: 12, weight: .bold, tint: VS.Color.navPill)
+                                        }
+                                        Text(isConfirmingAll ? "Confirming…" : "Confirm all")
+                                            .font(VS.Typography.body(11, weight: .bold))
+                                            .foregroundStyle(VS.Color.navPill)
+                                    }
+                                    .padding(.horizontal, 10)
+                                    .padding(.vertical, 5)
+                                    .background(VS.Color.accent, in: Capsule())
+                                }
+                                .buttonStyle(.plain)
+                                .disabled(isConfirmingAll)
+                                .accessibilityLabel("Confirm all pending drives")
                             }
                             .padding(.top, 5)
                             .padding(.bottom, 4)
@@ -989,27 +1031,62 @@ struct TripsMapCanvas: View {
             ForEach(trips) { trip in
                 let displayRoute = TripTrackingLogic.cleanedForDisplay(trip.route)
                 if displayRoute.count >= 2 {
-                    MapPolyline(coordinates: displayRoute.map {
+                    let coords = displayRoute.map {
                         CLLocationCoordinate2D(latitude: $0.latitude, longitude: $0.longitude)
-                    })
-                    .stroke(
-                        VS.Color.accent.opacity(selected?.id == trip.id ? 0.16 : 0.32),
-                        style: StrokeStyle(
-                            lineWidth: selected?.id == trip.id ? 4 : 6,
-                            lineCap: .round,
-                            lineJoin: .round
+                    }
+                    let isSelected = selected?.id == trip.id
+                    let dim = isSelected ? 0.45 : 1.0
+
+                    // Heatmap bloom: two falloff layers of accent glow,
+                    // then a hot near-white core — overlaps stack to solid white.
+                    MapPolyline(coordinates: coords)
+                        .stroke(
+                            VS.Color.accent.opacity(0.10 * dim),
+                            style: StrokeStyle(lineWidth: 18, lineCap: .round, lineJoin: .round)
                         )
-                    )
+                    MapPolyline(coordinates: coords)
+                        .stroke(
+                            VS.Color.accent.opacity(0.26 * dim),
+                            style: StrokeStyle(lineWidth: 10, lineCap: .round, lineJoin: .round)
+                        )
+                    MapPolyline(coordinates: coords)
+                        .stroke(
+                            VS.Color.accent.opacity(0.55 * dim),
+                            style: StrokeStyle(lineWidth: 5.5, lineCap: .round, lineJoin: .round)
+                        )
+                    MapPolyline(coordinates: coords)
+                        .stroke(
+                            Color.white.opacity(0.82 * dim),
+                            style: StrokeStyle(lineWidth: 2.5, lineCap: .round, lineJoin: .round)
+                        )
                 }
             }
 
             if let selected {
                 let selectedRoute = TripTrackingLogic.cleanedForDisplay(selected.route)
                 if selectedRoute.count >= 2 {
-                    MapPolyline(coordinates: selectedRoute.map {
-                    CLLocationCoordinate2D(latitude: $0.latitude, longitude: $0.longitude)
-                    })
-                    .stroke(VS.Color.accent, style: StrokeStyle(lineWidth: 4, lineCap: .round, lineJoin: .round))
+                    let coords = selectedRoute.map {
+                        CLLocationCoordinate2D(latitude: $0.latitude, longitude: $0.longitude)
+                    }
+
+                    // Focused drive: full-strength bloom so it pops off the heatmap.
+                    MapPolyline(coordinates: coords)
+                        .stroke(
+                            VS.Color.accent.opacity(0.20),
+                            style: StrokeStyle(lineWidth: 20, lineCap: .round, lineJoin: .round)
+                        )
+                    MapPolyline(coordinates: coords)
+                        .stroke(
+                            VS.Color.accent.opacity(0.45),
+                            style: StrokeStyle(lineWidth: 11, lineCap: .round, lineJoin: .round)
+                        )
+                    MapPolyline(coordinates: coords)
+                        .stroke(VS.Color.accent, style: StrokeStyle(lineWidth: 5.5, lineCap: .round, lineJoin: .round))
+                    MapPolyline(coordinates: coords)
+                        .stroke(
+                            Color.white.opacity(0.95),
+                            style: StrokeStyle(lineWidth: 2.5, lineCap: .round, lineJoin: .round)
+                        )
                 }
 
                 if let start = selected.startCoordinate ?? selected.route.first {

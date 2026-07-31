@@ -295,19 +295,19 @@ private enum InsightNotificationCopy {
     static func fuel(vehicleName: String, daysRemaining: Int) -> Line {
         if daysRemaining <= 0 {
             return pick([
-                Line(title: "tank's getting dramatic", body: "\(vehicleName) is due a fill. Don't make me say I told you so."),
-                Line(title: "thirsty vibes", body: "\(vehicleName) wants petrol. Soon-ish. Like, now-ish."),
+                Line(title: "\(vehicleName) is THIRSTY 😰", body: "The tank is due a fill. Right now. This is not a drill."),
+                Line(title: "Uh oh.", body: "\(vehicleName) needed fuel, like, yesterday. Please don't test how far 'empty' goes."),
             ])
         }
         if daysRemaining == 1 {
             return pick([
-                Line(title: "fuel run tomorrow?", body: "Your rhythm says \(vehicleName) is almost empty. Plan a pit stop."),
-                Line(title: "one sleep from empty", body: "\(vehicleName) usually drinks tomorrow. Keep a station in mind."),
+                Line(title: "Tomorrow. Fuel. Don't forget.", body: "\(vehicleName) is almost running on hopes and dreams. Plan a pit stop."),
+                Line(title: "One day left ⛽", body: "\(vehicleName) usually drinks tomorrow. I'll remember if you forget. I always remember."),
             ])
         }
         return pick([
-            Line(title: "fuel window incoming", body: "\(vehicleName) usually fills in about \(daysRemaining) days. I've got my eye on it."),
-            Line(title: "calendar vs carburetor", body: "Based on your cadence, \(vehicleName) wants a top-up in ~\(daysRemaining) days."),
+            Line(title: "Fuel check in \(daysRemaining) days!", body: "\(vehicleName) will want a top-up soon. I'm just preparing you emotionally."),
+            Line(title: "Heads up! ⛽", body: "\(vehicleName) usually fills in about \(daysRemaining) days. Don't make me remind you twice. (I will.)"),
         ])
     }
 
@@ -320,21 +320,21 @@ private enum InsightNotificationCopy {
         let type = serviceType.lowercased()
         if let daysRemaining, daysRemaining <= 0 {
             return pick([
-                Line(title: "service is tapping its watch", body: "\(vehicleName)'s \(type) is due. Book it before it gets loud."),
-                Line(title: "spanner o'clock", body: "\(type.capitalized) reminder for \(vehicleName) — you're in the window."),
+                Line(title: "It's \(type) time. It's overdue.", body: "\(vehicleName) has been very patient with you. Book it today?"),
+                Line(title: "\(vehicleName) needs you 🔧", body: "The \(type) is due. Ignoring this notification won't fix the car. I checked."),
             ])
         }
         if let kmRemaining, kmRemaining <= 150 {
             return pick([
-                Line(title: "service almost in reach", body: String(format: "%@ has ~%.0f km until %@. Easy does it.", vehicleName, max(kmRemaining, 0), type)),
+                Line(title: "Almost \(type) time!", body: String(format: "~%.0f km left on %@. So close. Don't ghost it now.", max(kmRemaining, 0), vehicleName)),
             ])
         }
         if let daysRemaining {
             return pick([
-                Line(title: "service on the horizon", body: "\(vehicleName)'s \(type) is ~\(daysRemaining) days out. Future-you says thanks."),
+                Line(title: "\(type.capitalized) in ~\(daysRemaining) days", body: "\(vehicleName) is counting on you. Literally. I'm counting the days for it."),
             ])
         }
-        return Line(title: "service nudge", body: "\(vehicleName) has a \(type) coming up. Worth a glance.")
+        return Line(title: "Service soon-ish 🔧", body: "\(vehicleName) has a \(type) coming up. You've been warned. Nicely. For now.")
     }
 
     private static func pick(_ lines: [Line]) -> Line {

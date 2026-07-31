@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Veloseete × Wheelz — UI Differentiation Report</title>
+<style>
+  :root {
+    --bg: #0b0e0b;
+    --panel: #141914;
+    --panel2: #1a201a;
+    --accent: #d6fa4f;
+    --warn: #ffb83d;
+    --danger: #ff6b5e;
+    --ok: #59eb9e;
+    --text: #f2f5f0;
+    --text2: #a9b3a7;
+    --text3: #6f7a6e;
+    --hairline: rgba(255,255,255,0.09);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    line-height: 1.55;
+    padding: 48px 24px 96px;
+  }
+  .wrap { max-width: 980px; margin: 0 auto; }
+  h1 { font-size: 30px; letter-spacing: -0.5px; margin-bottom: 6px; }
+  h2 { font-size: 20px; margin: 44px 0 6px; letter-spacing: -0.3px; }
+  h3 { font-size: 15px; margin: 22px 0 8px; color: var(--accent); }
+  .sub { color: var(--text2); font-size: 14px; margin-bottom: 8px; }
+  .meta { color: var(--text3); font-size: 12px; margin-bottom: 28px; }
+  .card {
+    background: var(--panel);
+    border: 1px solid var(--hairline);
+    border-radius: 14px;
+    padding: 20px 22px;
+    margin: 14px 0;
+  }
+  table { width: 100%; border-collapse: collapse; font-size: 13.5px; margin: 12px 0; }
+  th {
+    text-align: left; color: var(--text3); font-size: 11px; letter-spacing: 0.08em;
+    text-transform: uppercase; padding: 8px 10px; border-bottom: 1px solid var(--hairline);
+  }
+  td { padding: 10px; border-bottom: 1px solid var(--hairline); vertical-align: top; color: var(--text2); }
+  td:first-child { color: var(--text); font-weight: 600; white-space: nowrap; }
+  .pill {
+    display: inline-block; font-size: 11px; font-weight: 700; padding: 2px 9px;
+    border-radius: 99px; letter-spacing: 0.02em;
+  }
+  .pill.high { background: rgba(255,107,94,0.16); color: var(--danger); }
+  .pill.med { background: rgba(255,184,61,0.16); color: var(--warn); }
+  .pill.low { background: rgba(89,235,158,0.14); color: var(--ok); }
+  .pill.keep { background: rgba(214,250,79,0.14); color: var(--accent); }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 14px; margin-top: 12px; }
+  .ref {
+    background: var(--panel2); border: 1px solid var(--hairline); border-radius: 12px;
+    padding: 16px; font-size: 13px;
+  }
+  .ref b { display: block; font-size: 14px; color: var(--text); margin-bottom: 2px; }
+  .ref .app { color: var(--text3); font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 8px; }
+  .ref p { color: var(--text2); margin-bottom: 8px; }
+  .do { border-left: 3px solid var(--accent); padding: 2px 0 2px 12px; margin: 10px 0; font-size: 13.5px; color: var(--text2); }
+  .do b { color: var(--text); }
+  ul { margin: 8px 0 8px 20px; color: var(--text2); font-size: 13.5px; }
+  li { margin: 5px 0; }
+  .verdict {
+    border: 1px solid rgba(214,250,79,0.35); background: rgba(214,250,79,0.06);
+    border-radius: 14px; padding: 20px 22px; margin: 18px 0;
+  }
+  .verdict h2 { margin: 0 0 8px; }
+  code { background: var(--panel2); padding: 1px 6px; border-radius: 5px; font-size: 12.5px; color: var(--accent); }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1>Veloseete × Wheelz — UI similarity &amp; differentiation report</h1>
+  <p class="sub">What overlaps, what's actually risky, and where to take influence from instead — sourced from Mobbin.</p>
+  <p class="meta">Generated Jul 31, 2026 · Research: Mobbin iOS library · Constraint: keep all existing features, drawers, colors, and heatmap lines.</p>
+
+  <div class="verdict">
+    <h2>The short answer</h2>
+    <p class="sub" style="margin:0">
+      You're unlikely to face a legal problem — dark map + heatmap + bottom drawer + trip list are <b style="color:var(--text)">generic industry patterns</b> used by Strava, Slopes, Flighty, and dozens of others. Look-and-feel alone is weakly protected; trade-dress claims need distinctive, non-functional elements plus consumer confusion. <b style="color:var(--text)">The real risk is perception</b>: reviewers, users, or Wheelz's team noticing a near-clone. Three things currently make Veloseete read as "Wheelz-like" and all three are cheap to change: the identical sort labels, the identical drive-row anatomy, and the drawer header structure. Fix those and the two apps share only what every map-based tracker shares.
+    </p>
+  </div>
+
+  <h2>1 · Overlap audit</h2>
+  <table>
+    <tr><th>Element</th><th>Wheelz</th><th>Veloseete today</th><th>Similarity</th><th>Action</th></tr>
+    <tr>
+      <td>Heatmap routes</td>
+      <td>Red/orange glow, white-hot core</td>
+      <td>Lime glow, white-hot core</td>
+      <td><span class="pill low">Low risk</span></td>
+      <td>Keep. Strava popularized this; your lime is already distinct from their red.</td>
+    </tr>
+    <tr>
+      <td>Sort pills</td>
+      <td>Recent · Oldest · Fastest · Longest</td>
+      <td>Recent · Oldest · Fastest · Longest</td>
+      <td><span class="pill high">Identical</span></td>
+      <td>Change labels + presentation. This is the single most copy-like detail.</td>
+    </tr>
+    <tr>
+      <td>Drive row</td>
+      <td>Route thumb left · date + time range + km·duration · big colored speed right</td>
+      <td>Same anatomy</td>
+      <td><span class="pill high">High</span></td>
+      <td>Re-anchor rows: lead with distance, group by day, move thumbnail.</td>
+    </tr>
+    <tr>
+      <td>Drawer header</td>
+      <td>"Drives" + car filter + avatar w/ badge</td>
+      <td>"My Drives" + subtitle + count badge</td>
+      <td><span class="pill med">Medium</span></td>
+      <td>Add a stats rollup strip — changes the silhouette entirely.</td>
+    </tr>
+    <tr>
+      <td>Map + bottom sheet layout</td>
+      <td>Full-bleed map, drawer at ~45%</td>
+      <td>Same</td>
+      <td><span class="pill low">Generic</span></td>
+      <td>Keep. This is the standard pattern for every map-first app.</td>
+    </tr>
+    <tr>
+      <td>Dark theme + neon accent</td>
+      <td>Blue/cyan accents on near-black</td>
+      <td>Lime on green-black</td>
+      <td><span class="pill low">Low</span></td>
+      <td>Keep. Your lime + Space Grotesk is already a different brand voice.</td>
+    </tr>
+  </table>
+
+  <h2>2 · Mobbin influences — what to borrow, and for which screen</h2>
+  <p class="sub">Each reference links to the live screen on Mobbin.</p>
+
+  <h3>A. Drives list — the biggest differentiation win</h3>
+  <div class="grid">
+    <div class="ref">
+      <b>Month header with rollups</b>
+      <div class="app">Nike Run Club</div>
+      <p>History grouped by month, each header shows aggregates: "10 runs · 42.5 mi · 9'49"/mi". Instantly different rhythm from Wheelz's flat list.</p>
+      <a href="https://mobbin.com/screens/c20a7fbc-a50f-4f54-8d4f-4fec4bf84ca1">View on Mobbin →</a>
+    </div>
+    <div class="ref">
+      <b>Day sections with big numerals</b>
+      <div class="app">pushr</div>
+      <p>TODAY / YESTERDAY section labels, oversized stat leading each row, compact pill on the right. Clean, typographic, zero thumbnails.</p>
+      <a href="https://mobbin.com/screens/bba18edd-e18a-4a70-a124-2c1000714e04">View on Mobbin →</a>
+    </div>
+    <div class="ref">
+      <b>Per-day totals + sort/group popover</b>
+      <div class="app">timespent</div>
+      <p>Each day section ends with a "Total" line; sorting and grouping live in a compact popover menu instead of a pill row.</p>
+      <a href="https://mobbin.com/screens/ed46122d-6939-4b3e-a7f9-36854adcf2eb">View on Mobbin →</a>
+    </div>
+  </div>
+  <div class="do"><b>Apply:</b> group drives under day headers (Today / Yesterday / Jul 28), lead each row with <b>distance</b> in Space Grotesk instead of speed, and add per-day distance totals to headers. Route thumbnail moves inside a subtle inset on the right or is dropped from rows (it lives in the detail view). Speed becomes a small secondary metric — this alone kills the Wheelz row resemblance.</div>
+
+  <h3>B. Sort &amp; filter — replace the identical pill row</h3>
+  <div class="grid">
+    <div class="ref">
+      <b>Dropdown filter chips</b>
+      <div class="app">FocusFlight</div>
+      <p>History sheet uses "Status ▾ / Scenario ▾ / Sort By ▾" dropdown chips — a different control style from Wheelz's flat segmented pills.</p>
+      <a href="https://mobbin.com/screens/9433aabc-2e02-44ea-b464-e7f5196fd678">View on Mobbin →</a>
+    </div>
+    <div class="ref">
+      <b>Period segments + summary</b>
+      <div class="app">Gentler Streak</div>
+      <p>Week / Month / Year / All Time segmented control drives a summary card, with history below. Filtering by time instead of by superlative.</p>
+      <a href="https://mobbin.com/screens/cc039c5d-5b09-460f-b2bf-a66f733e94e8">View on Mobbin →</a>
+    </div>
+  </div>
+  <div class="do"><b>Apply:</b> keep all four sort options (no feature change) but move them into a single "Sort ▾" chip with a menu, and rename: Recent → <code>Latest</code>, Oldest → <code>First drives</code>, Fastest → <code>Top speed</code>, Longest → <code>By distance</code>. The car selector chip stays where it is.</div>
+
+  <h3>C. Drawer header — add a driving identity strip</h3>
+  <div class="grid">
+    <div class="ref">
+      <b>Big-number stat sheet</b>
+      <div class="app">Runbuds</div>
+      <p>Minimal dark sheet: location title, then three huge numbers (KM / TIME / PACE) with tiny uppercase labels. Very typographic, very unlike Wheelz.</p>
+      <a href="https://mobbin.com/screens/ff174a95-2186-456d-9782-54c4fec85a84">View on Mobbin →</a>
+    </div>
+    <div class="ref">
+      <b>Typographic trip stats</b>
+      <div class="app">Polestar</div>
+      <p>"Total distance / 28,460 mi" as pure typography with hairline dividers. Premium automotive feel, zero chrome.</p>
+      <a href="https://mobbin.com/screens/dfaa06c6-d952-4b18-949d-2386cfc182dc">View on Mobbin →</a>
+    </div>
+  </div>
+  <div class="do"><b>Apply:</b> under "My Drives", replace the plain subtitle with a compact rollup strip — <code>128 km · 6 drives · 74 km/h avg</code> for the visible period. Same data you already compute, but the header becomes a stats surface instead of a title bar.</div>
+
+  <h3>D. Trip detail — depth Wheelz doesn't have</h3>
+  <div class="grid">
+    <div class="ref">
+      <b>Milestone badges on the route</b>
+      <div class="app">Strava</div>
+      <p>Achievement markers pinned directly to the route line, plus an AI insight card ("Your fastest 1K"). Route becomes a story, not a line.</p>
+      <a href="https://mobbin.com/screens/125cbc4d-55cc-4abc-82d0-4ff489ed616e">View on Mobbin →</a>
+    </div>
+    <div class="ref">
+      <b>Action row + stat chips</b>
+      <div class="app">Slopes</div>
+      <p>Replay / Compare / AR buttons above tappable stat chips (top speed, longest run). Interactive detail instead of static numbers.</p>
+      <a href="https://mobbin.com/screens/0ddf1eea-3635-4650-bb1b-2c20aefe8460">View on Mobbin →</a>
+    </div>
+    <div class="ref">
+      <b>Drive events</b>
+      <div class="app">State Farm Drive Safe</div>
+      <p>Per-trip event counts: hard braking, fast acceleration, speeding. You already have max-speed data; surfacing events is a natural extension.</p>
+      <a href="https://mobbin.com/screens/66becb08-4d9d-422a-8ee1-d51baeeb9c28">View on Mobbin →</a>
+    </div>
+  </div>
+  <div class="do"><b>Apply (later, optional):</b> pin the top-speed point as a small badge on the detail route map, and add one quirky co-pilot insight line per drive ("Your smoothest run this week"). These are additive — no existing feature changes.</div>
+
+  <h3>E. Map chrome — small identity moves</h3>
+  <div class="grid">
+    <div class="ref">
+      <b>Layer/2D control stack</b>
+      <div class="app">Slopes</div>
+      <p>Compact rounded control stack on the map's top-right corner. Gives the map surface its own identity.</p>
+      <a href="https://mobbin.com/screens/c3731f7e-c3a4-4620-934d-09917a4ec8f2">View on Mobbin →</a>
+    </div>
+    <div class="ref">
+      <b>Globe / zoomed-out identity view</b>
+      <div class="app">Flighty</div>
+      <p>Flighty's map reads as "Flighty" at a glance because of its zoomed-out framing and custom map styling — not because of any UI element.</p>
+      <a href="https://mobbin.com/screens/701bb6f4-9d71-4fb7-9211-f57357bac4ad">View on Mobbin →</a>
+    </div>
+  </div>
+  <div class="do"><b>Apply:</b> you already have a unique character avatar on the map — lean into it. Keep the heatmap exactly as-is; it's your strongest visual and the lime-on-green-black story is yours.</div>
+
+  <h2>3 · Recommended change list (keeps every feature &amp; drawer)</h2>
+  <table>
+    <tr><th>#</th><th>Change</th><th>Effort</th><th>Impact on "Wheelz-ness"</th></tr>
+    <tr><td>1</td><td>Rename sort options + collapse into a "Sort ▾" menu chip (FocusFlight / timespent pattern)</td><td>Small</td><td><span class="pill high">Removes the identical element</span></td></tr>
+    <tr><td>2</td><td>Group drive rows by day with per-day distance totals (pushr / Nike Run Club pattern)</td><td>Medium</td><td><span class="pill high">Changes list rhythm entirely</span></td></tr>
+    <tr><td>3</td><td>Re-anchor rows: distance leads in Space Grotesk, speed demoted to secondary metadata</td><td>Small</td><td><span class="pill high">Kills the row resemblance</span></td></tr>
+    <tr><td>4</td><td>Rollup stat strip under "My Drives" header (Runbuds / Polestar typographic style)</td><td>Small</td><td><span class="pill med">New header silhouette</span></td></tr>
+    <tr><td>5</td><td>Top-speed badge pinned to detail route + co-pilot insight line (Strava pattern)</td><td>Medium</td><td><span class="pill med">Adds depth Wheelz lacks</span></td></tr>
+    <tr><td>—</td><td>Heatmap, drawer behavior, colors, filters-by-car, Confirm all, tracking UI</td><td>—</td><td><span class="pill keep">Keep unchanged</span></td></tr>
+  </table>
+
+  <h2>4 · Sources</h2>
+  <ul>
+    <li><a href="https://mobbin.com/screens/ff174a95-2186-456d-9782-54c4fec85a84">Runbuds — route map + big-number sheet</a></li>
+    <li><a href="https://mobbin.com/screens/9433aabc-2e02-44ea-b464-e7f5196fd678">FocusFlight — history with dropdown filter chips</a></li>
+    <li><a href="https://mobbin.com/screens/c20a7fbc-a50f-4f54-8d4f-4fec4bf84ca1">Nike Run Club — month-grouped history with rollups</a></li>
+    <li><a href="https://mobbin.com/screens/bba18edd-e18a-4a70-a124-2c1000714e04">pushr — day-grouped typographic history</a></li>
+    <li><a href="https://mobbin.com/screens/ed46122d-6939-4b3e-a7f9-36854adcf2eb">timespent — sort/group popover + day totals</a></li>
+    <li><a href="https://mobbin.com/screens/cc039c5d-5b09-460f-b2bf-a66f733e94e8">Gentler Streak — period segments + summary</a></li>
+    <li><a href="https://mobbin.com/screens/125cbc4d-55cc-4abc-82d4-4ff489ed616e">Strava — activity detail with milestones &amp; insights</a></li>
+    <li><a href="https://mobbin.com/screens/0ddf1eea-3635-4650-bb1b-2c20aefe8460">Slopes — action row + stat chips detail</a></li>
+    <li><a href="https://mobbin.com/screens/c3731f7e-c3a4-4620-934d-09917a4ec8f2">Slopes — map layer controls</a></li>
+    <li><a href="https://mobbin.com/screens/701bb6f4-9d71-4fb7-9211-f57357bac4ad">Flighty — map identity framing</a></li>
+    <li><a href="https://mobbin.com/screens/dfaa06c6-d952-4b18-949d-2386cfc182dc">Polestar — typographic vehicle stats</a></li>
+    <li><a href="https://mobbin.com/screens/66becb08-4d9d-422a-8ee1-d51baeeb9c28">State Farm — per-trip drive events</a></li>
+  </ul>
+
+  <p class="meta" style="margin-top:32px">Note: this is a design-risk assessment, not legal advice. If Wheelz ever raises a formal complaint, consult an IP lawyer — but the changes above put you comfortably in "shared genre conventions" territory.</p>
+
+</div>
+</body>
+</html>
