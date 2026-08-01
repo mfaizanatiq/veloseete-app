@@ -6,6 +6,8 @@ struct DashboardView: View {
     var onProfile: () -> Void
 
     @State private var showRefuel = false
+    @State private var showHistory = false
+    @State private var selectedLog: FuelLog?
 
     private var vehicle: Vehicle? { store.currentVehicle }
 
@@ -68,6 +70,12 @@ struct DashboardView: View {
                 RefuelSheetView(vehicleId: vehicle.id)
             }
         }
+        .sheet(isPresented: $showHistory) {
+            FuelHistoryView()
+        }
+        .sheet(item: $selectedLog) { log in
+            FillDetailSheet(log: log)
+        }
     }
 
     private var syncStatusChip: some View {
@@ -99,7 +107,25 @@ struct DashboardView: View {
 
     private func recentSection(_ logs: [FuelLog]) -> some View {
         VStack(alignment: .leading, spacing: VS.Spacing.stack) {
-            VSSectionHeader(title: "Recent fills")
+            HStack(alignment: .firstTextBaseline) {
+                VSSectionHeader(title: "Recent fills")
+                Spacer()
+                if !logs.isEmpty {
+                    Button {
+                        UISelectionFeedbackGenerator().selectionChanged()
+                        showHistory = true
+                    } label: {
+                        HStack(spacing: 4) {
+                            Text("See all")
+                                .font(VS.Typography.body(13, weight: .semibold))
+                            Image(systemName: "chevron.right")
+                                .font(.system(size: 10, weight: .bold))
+                        }
+                        .foregroundStyle(VS.Color.accent)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
 
             if logs.isEmpty {
                 VStack(spacing: 14) {
@@ -118,11 +144,23 @@ struct DashboardView: View {
             } else {
                 VStack(spacing: 0) {
                     ForEach(logs) { log in
-                        RefuelRowView(
-                            log: log,
-                            distanceUnit: store.defaultDistanceUnit,
-                            volumeUnit: vehicle?.fuelVolumeUnit ?? VolumeFormat.liters
-                        )
+                        Button {
+                            UISelectionFeedbackGenerator().selectionChanged()
+                            selectedLog = log
+                        } label: {
+                            HStack(spacing: 10) {
+                                RefuelRowView(
+                                    log: log,
+                                    distanceUnit: store.defaultDistanceUnit,
+                                    volumeUnit: vehicle?.fuelVolumeUnit ?? VolumeFormat.liters
+                                )
+                                Image(systemName: "chevron.right")
+                                    .font(.system(size: 12, weight: .semibold))
+                                    .foregroundStyle(VS.Color.textTertiary)
+                            }
+                        }
+                        .buttonStyle(.plain)
+
                         if log.id != logs.last?.id {
                             Divider().overlay(VS.Color.divider)
                         }
@@ -152,65 +190,124 @@ struct HeroCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: VS.Spacing.stack) {
-            tonePill(emoji: vibe.emoji, text: vibe.label, tone: vibe.tone)
-
-            Text(vehicle.nickname)
-                .font(VS.Typography.heading(22, weight: .bold))
-                .foregroundStyle(VS.Color.textPrimary)
-
-            Text("\(vehicle.make) \(vehicle.model)")
-                .font(VS.Typography.body(13))
-                .foregroundStyle(VS.Color.textTertiary)
-
-            HStack(spacing: 12) {
-                metricTile(
-                    icon: .gauge,
-                    label: "Efficiency",
-                    value: efficiency.map { String(format: "%.1f" , $0) } ?? "—",
-                    unit: "L/100km"
-                )
-                metricTile(
-                    icon: .car,
-                    label: "Odometer",
-                    value: DistanceFormat.formatOdometer(vehicle.currentOdometer, unit: distanceUnit),
-                    unit: nil
-                )
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(vehicle.nickname)
+                        .font(VS.Typography.heading(18, weight: .bold))
+                        .foregroundStyle(VS.Color.textPrimary)
+                    Text("\(vehicle.make) \(vehicle.model)")
+                        .font(VS.Typography.body(12))
+                        .foregroundStyle(VS.Color.textTertiary)
+                }
+                Spacer(minLength: 12)
+                tonePill(emoji: vibe.emoji, text: vibe.label, tone: vibe.tone)
             }
 
-            tonePill(emoji: nil, text: status.text, tone: status.tone)
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    Text(efficiency.map { String(format: "%.1f", $0) } ?? "–.–")
+                        .font(VS.Typography.heading(46, weight: .bold))
+                        .foregroundStyle(efficiency == nil ? VS.Color.textTertiary : VS.Color.textPrimary)
+                        .contentTransition(.numericText())
+                    Text("L/100km")
+                        .font(VS.Typography.body(14, weight: .semibold))
+                        .foregroundStyle(VS.Color.textTertiary)
+                }
+                Text(status.text)
+                    .font(VS.Typography.body(13, weight: .medium))
+                    .foregroundStyle(toneColors(status.tone).text)
+            }
 
-            if refuelCount < 3 && efficiency == nil {
+            if let efficiency, let manufacturerStandard, manufacturerStandard > 0 {
+                brochureGauge(current: efficiency, standard: manufacturerStandard)
+            } else if efficiency == nil {
                 Text("A few fills and this car’s personality shows up.")
                     .font(VS.Typography.body(13))
                     .foregroundStyle(VS.Color.textTertiary)
+            }
+
+            Divider().overlay(VS.Color.divider)
+
+            HStack(spacing: 18) {
+                footerStat(
+                    icon: .car,
+                    text: DistanceFormat.formatOdometer(vehicle.currentOdometer, unit: distanceUnit)
+                )
+                footerStat(
+                    icon: .gasPump,
+                    text: refuelCount == 0
+                        ? "No full tanks yet"
+                        : "\(refuelCount) tank\(refuelCount == 1 ? "" : "s") measured"
+                )
+                Spacer(minLength: 0)
             }
         }
         .padding(VS.Spacing.card)
         .glassCard(elevated: true)
     }
 
-    private func metricTile(icon: VSIconName, label: String, value: String, unit: String?) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 6) {
-                VSIcon(icon: icon, size: 12, weight: .regular, tint: VS.Color.textTertiary)
-                Text(label.uppercased())
+    /// Lower L/100km is better and sits left of the brochure tick — the fill
+    /// stretches from the tick toward your reading, lime when you're beating spec.
+    private func brochureGauge(current: Double, standard: Double) -> some View {
+        let lower = standard * 0.6
+        let upper = standard * 1.4
+        let clamped = min(max(current, lower), upper)
+        let fraction = (clamped - lower) / (upper - lower)
+        let better = current <= standard
+        let color = better ? VS.Color.accent : VS.Color.warning
+
+        return VStack(alignment: .leading, spacing: 8) {
+            GeometryReader { geo in
+                let width = geo.size.width
+                let markerX = width * fraction
+                let specX = width * 0.5
+
+                ZStack(alignment: .leading) {
+                    Capsule()
+                        .fill(Color.white.opacity(0.08))
+                        .frame(height: 8)
+
+                    Capsule()
+                        .fill(color.opacity(0.85))
+                        .frame(width: max(abs(markerX - specX), 8), height: 8)
+                        .offset(x: min(markerX, specX))
+
+                    Rectangle()
+                        .fill(Color.white.opacity(0.45))
+                        .frame(width: 2, height: 16)
+                        .offset(x: specX - 1)
+
+                    Circle()
+                        .fill(color)
+                        .frame(width: 15, height: 15)
+                        .overlay(Circle().stroke(VS.Color.bgSecondary, lineWidth: 3))
+                        .offset(x: min(max(markerX - 7.5, 0), width - 15))
+                        .shadow(color: color.opacity(0.5), radius: 5)
+                }
+                .frame(height: 16)
+            }
+            .frame(height: 16)
+
+            HStack {
+                Text(String(format: "You %.1f", current))
+                    .font(VS.Typography.body(11, weight: .semibold))
+                    .foregroundStyle(color)
+                Spacer()
+                Text(String(format: "Brochure %.1f", standard))
                     .font(VS.Typography.body(11, weight: .medium))
                     .foregroundStyle(VS.Color.textTertiary)
             }
-            HStack(alignment: .firstTextBaseline, spacing: 4) {
-                Text(value)
-                    .font(VS.Typography.heading(28, weight: .bold))
-                    .foregroundStyle(VS.Color.textPrimary)
-                if let unit {
-                    Text(unit)
-                        .font(VS.Typography.body(13, weight: .semibold))
-                        .foregroundStyle(VS.Color.textTertiary)
-                }
-            }
         }
-        .padding(12)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .metricInset()
+    }
+
+    private func footerStat(icon: VSIconName, text: String) -> some View {
+        HStack(spacing: 7) {
+            VSIcon(icon: icon, size: 13, weight: .fill, tint: VS.Color.textTertiary)
+            Text(text)
+                .font(VS.Typography.body(12, weight: .medium))
+                .foregroundStyle(VS.Color.textSecondary)
+                .lineLimit(1)
+        }
     }
 
     private func tonePill(emoji: String?, text: String, tone: EfficiencyVibe.Tone) -> some View {

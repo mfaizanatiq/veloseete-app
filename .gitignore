@@ -16,3 +16,5 @@ build/
 Pods/
 GoogleService-Info.plist
 work/
+.venv/
+serviceAccountKey*.json

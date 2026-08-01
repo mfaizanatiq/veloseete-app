@@ -124,6 +124,9 @@ final class DataStore: ObservableObject {
             }
             applyVehicleLists(allVehicles)
             print("[DataStore] vehicles: \(vehicles.count) active, \(archivedVehicles.count) archived")
+            // Vehicles loaded for real — safe to drop review drives whose car
+            // was archived or deleted (possibly on another device).
+            TripRecordingService.shared.prunePendingSaves(activeVehicleIds: activeVehicleIds)
         } catch {
             loadWarnings.append("Vehicles: \(error.localizedDescription)")
             print("[DataStore] vehicles fetch failed: \(error)")
@@ -383,6 +386,8 @@ final class DataStore: ObservableObject {
         archived.archivedAt = Date()
         vehicles.removeAll { $0.id == vehicleId }
         archivedVehicles.insert(archived, at: 0)
+        // An archived car shouldn't keep nagging for drive reviews.
+        TripRecordingService.shared.prunePendingSaves(activeVehicleIds: activeVehicleIds)
         publishCarPlayWidgetState()
     }
 
@@ -467,6 +472,76 @@ final class DataStore: ObservableObject {
         }
         publishCarPlayWidgetState()
         VehicleInsightScheduler.shared.refresh(using: self)
+    }
+
+    func updateFuelLog(_ log: FuelLog) async throws {
+        guard let userId = AuthService.shared.userId else {
+            throw NSError(domain: "Veloseete", code: 401, userInfo: [NSLocalizedDescriptionKey: "Not signed in"])
+        }
+
+        var updated = log
+        updated.pricePerUnit = log.fuelVolume > 0 ? log.totalCost / log.fuelVolume : 0
+
+        let input = FirestoreRepository.NewFuelLogInput(
+            vehicleId: updated.vehicleId,
+            odometerReading: updated.odometerReading,
+            fuelVolume: updated.fuelVolume,
+            pricePerUnit: updated.pricePerUnit,
+            totalCost: updated.totalCost,
+            currency: updated.currency,
+            isFullTank: updated.isFullTank,
+            timestamp: updated.timestamp,
+            stationName: updated.stationName,
+            stationLatitude: updated.stationLatitude,
+            stationLongitude: updated.stationLongitude
+        )
+        try await FirestoreRepository.shared.updateFuelLog(logId: updated.id, userId: userId, input: input)
+
+        if let index = fuelLogs.firstIndex(where: { $0.id == updated.id }) {
+            fuelLogs[index] = updated
+        }
+        fuelLogs.sort { $0.timestamp > $1.timestamp }
+
+        await syncVehicleOdometerWithLogs(vehicleId: updated.vehicleId)
+        publishCarPlayWidgetState()
+        VehicleInsightScheduler.shared.refresh(using: self)
+    }
+
+    func deleteFuelLog(_ log: FuelLog) async throws {
+        guard let userId = AuthService.shared.userId else {
+            throw NSError(domain: "Veloseete", code: 401, userInfo: [NSLocalizedDescriptionKey: "Not signed in"])
+        }
+        try await FirestoreRepository.shared.deleteFuelLog(logId: log.id, userId: userId)
+        fuelLogs.removeAll { $0.id == log.id }
+
+        await syncVehicleOdometerWithLogs(vehicleId: log.vehicleId)
+        publishCarPlayWidgetState()
+        VehicleInsightScheduler.shared.refresh(using: self)
+    }
+
+    /// After an edit/delete, re-anchor the vehicle odometer to the most recent fuel log
+    /// so a corrected reading propagates (fills are the strongest odometer anchors).
+    private func syncVehicleOdometerWithLogs(vehicleId: String) async {
+        guard let vehicle = vehicles.first(where: { $0.id == vehicleId }) else { return }
+        guard let latest = fuelLogs
+            .filter({ $0.vehicleId == vehicleId })
+            .max(by: { $0.timestamp < $1.timestamp }) else { return }
+        guard latest.odometerReading > 0, latest.odometerReading != vehicle.currentOdometer else { return }
+
+        do {
+            try await FirestoreRepository.shared.updateVehicleOdometer(
+                vehicleId: vehicleId,
+                odometer: latest.odometerReading
+            )
+            vehicles = vehicles.map { v in
+                guard v.id == vehicleId else { return v }
+                var updated = v
+                updated.currentOdometer = latest.odometerReading
+                return updated
+            }
+        } catch {
+            print("[DataStore] odometer re-sync failed: \(error)")
+        }
     }
 
     func saveServiceLog(id: String?, input: FirestoreRepository.ServiceLogInput) async throws {
@@ -558,6 +633,8 @@ final class DataStore: ObservableObject {
         )
         trips.insert(trip, at: 0)
         publishCarPlayWidgetState()
+        // Driven km change the fuel-range picture, so re-evaluate reminders.
+        VehicleInsightScheduler.shared.refresh(using: self)
         return trip
     }
 

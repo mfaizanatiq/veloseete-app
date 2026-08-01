@@ -104,7 +104,7 @@ struct EfficiencyMetrics {
 }
 
 enum MetricsCalculator {
-    static func compute(vehicle: Vehicle, logs: [FuelLog]) -> EfficiencyMetrics {
+    static func compute(vehicle: Vehicle, logs: [FuelLog], now: Date = Date()) -> EfficiencyMetrics {
         let vehicleLogs = logs
             .filter { $0.vehicleId == vehicle.id }
             .sorted { $0.timestamp < $1.timestamp }
@@ -118,7 +118,6 @@ enum MetricsCalculator {
         let current = recentDistance > 0 ? (recentFuel / recentDistance) * 100 : nil
 
         let cal = Calendar.current
-        let now = Date()
         let startOfMonth = cal.date(from: cal.dateComponents([.year, .month], from: now)) ?? now
         let startOfLastMonth = cal.date(byAdding: .month, value: -1, to: startOfMonth) ?? now
         let endOfLastMonth = cal.date(byAdding: .day, value: -1, to: startOfMonth) ?? now

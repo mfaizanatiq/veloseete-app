@@ -7,11 +7,16 @@ enum DriveSort: String, CaseIterable, Identifiable {
 
     var label: String {
         switch self {
-        case .recent: return "Recent"
-        case .oldest: return "Oldest"
-        case .fastest: return "Fastest"
-        case .longest: return "Longest"
+        case .recent: return "Latest"
+        case .oldest: return "First drives"
+        case .fastest: return "Top speed"
+        case .longest: return "By distance"
         }
+    }
+
+    /// Chronological sorts group nicely by day; ranked sorts read as a flat leaderboard.
+    var isChronological: Bool {
+        self == .recent || self == .oldest
     }
 }
 
@@ -25,14 +30,6 @@ private enum DriveDrawerGestureOwner {
     case handle
     case content
     case scrolling
-}
-
-private struct DriveListTopPreferenceKey: PreferenceKey {
-    static var defaultValue: CGFloat = 0
-
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
-        value = nextValue()
-    }
 }
 
 struct TripsView: View {
@@ -52,11 +49,12 @@ struct TripsView: View {
     @State private var driveDrawerExpanded = false
     @State private var driveDrawerDragOffset: CGFloat = 0
     @State private var driveDrawerGestureOwner: DriveDrawerGestureOwner?
-    @State private var driveListIsAtTop = true
     let onProfile: () -> Void
 
     private var filteredTrips: [Trip] {
-        var list = store.trips
+        // Active garage only — archived cars keep their history, but it
+        // doesn't clutter My Drives (their cars aren't in the filter either).
+        var list = store.tripsForActiveVehicles
         if let selectedVehicleId {
             list = list.filter { $0.vehicleId == selectedVehicleId }
         }
@@ -76,9 +74,17 @@ struct TripsView: View {
     }
 
     private var filteredPendingTrips: [PendingTripSave] {
-        recorder.pendingSaves
+        let activeIds = store.activeVehicleIds
+        return recorder.pendingSaves
+            .filter { activeIds.contains($0.vehicleId) }
             .filter { selectedVehicleId == nil || $0.vehicleId == selectedVehicleId }
             .sorted { $0.endedAt > $1.endedAt }
+    }
+
+    /// Whole review queue for active cars, ignoring the car filter — drives the tab badge.
+    private var reviewBadgeCount: Int {
+        let activeIds = store.activeVehicleIds
+        return recorder.pendingSaves.count { activeIds.contains($0.vehicleId) }
     }
 
     /// Saves every visible pending drive with its suggested odometer — same flow
@@ -98,6 +104,70 @@ struct TripsView: View {
         }
         UINotificationFeedbackGenerator().notificationOccurred(.success)
         isConfirmingAll = false
+    }
+
+    private struct DriveDayGroup: Identifiable {
+        let id: Date
+        let title: String
+        let totalKm: Double
+        let trips: [Trip]
+    }
+
+    private var groupedTrips: [DriveDayGroup] {
+        let calendar = Calendar.current
+        let byDay = Dictionary(grouping: filteredTrips) { calendar.startOfDay(for: $0.startedAt) }
+        let orderedDays = sort == .oldest ? byDay.keys.sorted() : byDay.keys.sorted(by: >)
+        return orderedDays.map { day in
+            let trips = byDay[day] ?? []
+            return DriveDayGroup(
+                id: day,
+                title: dayGroupTitle(day),
+                totalKm: trips.reduce(0) { $0 + $1.distanceKm },
+                trips: trips
+            )
+        }
+    }
+
+    private func dayGroupTitle(_ day: Date) -> String {
+        if Calendar.current.isDateInToday(day) { return "Today" }
+        if Calendar.current.isDateInYesterday(day) { return "Yesterday" }
+        let formatter = DateFormatter()
+        formatter.dateFormat = "EEE, MMM d"
+        return formatter.string(from: day)
+    }
+
+    private var driveRollupLine: String {
+        guard !filteredTrips.isEmpty else { return "Tap a drive to explore its route" }
+        let totalKm = filteredTrips.reduce(0) { $0 + $1.distanceKm }
+        let topKmh = filteredTrips.map(\.maxSpeedKmh).max() ?? 0
+        let distance = DistanceFormat.formatDistance(totalKm, unit: store.defaultDistanceUnit)
+        let speed = store.defaultDistanceUnit == "mi"
+            ? String(format: "%.0f mph top", topKmh * 0.621371)
+            : String(format: "%.0f km/h top", topKmh)
+        let drives = filteredTrips.count == 1 ? "1 drive" : "\(filteredTrips.count) drives"
+        return "\(distance) · \(drives) · \(speed)"
+    }
+
+    @ViewBuilder
+    private func driveRow(_ trip: Trip, showsDay: Bool) -> some View {
+        Button {
+            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            withAnimation(.snappy(duration: 0.3)) {
+                selectedTripId = trip.id
+                if let region = drawerAwareRegion(for: trip) {
+                    mapPosition = .region(region)
+                }
+            }
+            detailTrip = trip
+        } label: {
+            DriveRowView(
+                trip: trip,
+                unit: store.defaultDistanceUnit,
+                showsDay: showsDay
+            )
+        }
+        .buttonStyle(.plain)
+        Divider().overlay(VS.Color.divider)
     }
 
     private var driveMapCoordinates: [TripCoordinate] {
@@ -306,8 +376,8 @@ struct TripsView: View {
                         )
                         Text(item.rawValue)
                             .font(VS.Typography.heading(13))
-                        if item == .drives, !recorder.pendingSaves.isEmpty {
-                            Text("\(recorder.pendingSaves.count)")
+                        if item == .drives, reviewBadgeCount > 0 {
+                            Text("\(reviewBadgeCount)")
                                 .font(VS.Typography.body(10, weight: .bold))
                                 .foregroundStyle(VS.Color.navPill)
                                 .frame(minWidth: 19, minHeight: 19)
@@ -368,9 +438,9 @@ struct TripsView: View {
                             .font(VS.Typography.heading(25, weight: .bold))
                             .foregroundStyle(VS.Color.textPrimary)
                         Text(filteredPendingTrips.isEmpty
-                             ? "Tap a drive to explore its route"
+                             ? driveRollupLine
                              : "\(filteredPendingTrips.count) awaiting your review")
-                            .font(VS.Typography.body(11))
+                            .font(VS.Typography.body(11, weight: .medium))
                             .foregroundStyle(VS.Color.textTertiary)
                     }
                     Spacer()
@@ -454,45 +524,36 @@ struct TripsView: View {
                             }
                         }
 
-                        ForEach(filteredTrips) { trip in
-                            Button {
-                                UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                                withAnimation(.snappy(duration: 0.3)) {
-                                    selectedTripId = trip.id
-                                    if let region = drawerAwareRegion(for: trip) {
-                                        mapPosition = .region(region)
-                                    }
+                        if sort.isChronological {
+                            ForEach(groupedTrips) { group in
+                                HStack {
+                                    Text(group.title.uppercased())
+                                        .font(VS.Typography.body(11, weight: .bold))
+                                        .foregroundStyle(VS.Color.textTertiary)
+                                    Spacer()
+                                    Text(DistanceFormat.formatDistance(group.totalKm, unit: store.defaultDistanceUnit))
+                                        .font(VS.Typography.body(11, weight: .bold))
+                                        .foregroundStyle(VS.Color.textTertiary)
                                 }
-                                detailTrip = trip
-                            } label: {
-                                DriveRowView(
-                                    trip: trip,
-                                    unit: store.defaultDistanceUnit,
-                                    isSelected: selectedTrip?.id == trip.id
-                                )
+                                .padding(.top, 14)
+                                .padding(.bottom, 2)
+
+                                ForEach(group.trips) { trip in
+                                    driveRow(trip, showsDay: false)
+                                }
                             }
-                            .buttonStyle(.plain)
-                            Divider().overlay(VS.Color.divider)
+                        } else {
+                            ForEach(filteredTrips) { trip in
+                                driveRow(trip, showsDay: true)
+                            }
                         }
                     }
                     .padding(.horizontal, 16)
                     .padding(.bottom, 110)
-                    .background {
-                        GeometryReader { proxy in
-                            Color.clear.preference(
-                                key: DriveListTopPreferenceKey.self,
-                                value: proxy.frame(in: .named("driveListScroll")).minY
-                            )
-                        }
-                    }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .coordinateSpace(name: "driveListScroll")
                 .scrollDisabled(!driveDrawerExpanded)
                 .simultaneousGesture(driveDrawerGesture(from: .content))
-                .onPreferenceChange(DriveListTopPreferenceKey.self) { top in
-                    driveListIsAtTop = top >= -1
-                }
             }
         }
         .frame(height: driveDrawerExpandedHeight)
@@ -563,8 +624,10 @@ struct TripsView: View {
         initialTranslation: CGFloat
     ) -> DriveDrawerGestureOwner {
         if source == .handle { return .handle }
+        // Collapsed: any content drag moves the drawer (scroll is disabled anyway).
+        // Expanded: content gestures always scroll — only the handle/header collapses,
+        // so list scrolling can never accidentally slide the drawer down.
         if !driveDrawerExpanded { return .content }
-        if driveListIsAtTop, initialTranslation > 0 { return .content }
         return .scrolling
     }
 
@@ -867,21 +930,31 @@ struct TripsView: View {
                     .background(VS.Color.chip, in: Capsule())
                 }
 
-                ForEach(DriveSort.allCases) { option in
-                    Button {
-                        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
-                            sort = option
+                Menu {
+                    ForEach(DriveSort.allCases) { option in
+                        Button {
+                            withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                                sort = option
+                            }
+                        } label: {
+                            if sort == option {
+                                Label(option.label, systemImage: "checkmark")
+                            } else {
+                                Text(option.label)
+                            }
                         }
-                    } label: {
-                        Text(option.label)
-                            .font(VS.Typography.body(13, weight: .semibold))
-                            .foregroundStyle(sort == option ? VS.Color.navPill : VS.Color.textSecondary)
-                            .padding(.horizontal, 14)
-                            .padding(.vertical, 8)
-                            .background(
-                                Capsule().fill(sort == option ? VS.Color.accent : VS.Color.chip)
-                            )
                     }
+                } label: {
+                    HStack(spacing: 6) {
+                        VSIcon(icon: .chartLine, size: 12, weight: .bold, tint: VS.Color.navPill)
+                        Text(sort.label)
+                            .font(VS.Typography.body(13, weight: .semibold))
+                        VSIcon(icon: .caretDown, size: 10, weight: .bold, tint: VS.Color.navPill)
+                    }
+                    .foregroundStyle(VS.Color.navPill)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .background(VS.Color.accent, in: Capsule())
                 }
             }
         }
@@ -1258,15 +1331,12 @@ struct PendingDriveRowView: View {
 
     var body: some View {
         HStack(spacing: 14) {
-            MiniRoutePreview(route: pending.route)
-                .frame(width: 52, height: 52)
-
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 7) {
-                    Text(dayTitle)
-                        .font(VS.Typography.heading(16))
+                    Text(DistanceFormat.formatDistance(pending.distanceKm, unit: unit))
+                        .font(VS.Typography.heading(21, weight: .bold))
                         .foregroundStyle(VS.Color.textPrimary)
-                    Text("REVIEW REQUIRED")
+                    Text("REVIEW")
                         .font(VS.Typography.body(8, weight: .bold))
                         .foregroundStyle(Color.black)
                         .padding(.horizontal, 7)
@@ -1274,16 +1344,19 @@ struct PendingDriveRowView: View {
                         .background(VS.Color.warning, in: Capsule())
                 }
 
-                Text("\(pending.startedAt.formatted(date: .omitted, time: .shortened)) – \(pending.endedAt.formatted(date: .omitted, time: .shortened))")
+                Text("\(dayTitle) · \(pending.startedAt.formatted(date: .omitted, time: .shortened)) – \(pending.endedAt.formatted(date: .omitted, time: .shortened))")
                     .font(VS.Typography.body(12))
                     .foregroundStyle(VS.Color.textTertiary)
 
-                Text("\(DistanceFormat.formatDistance(pending.distanceKm, unit: unit)) · \(durationFormatted)")
+                Text(durationFormatted)
                     .font(VS.Typography.body(12, weight: .medium))
                     .foregroundStyle(VS.Color.textSecondary)
             }
 
             Spacer(minLength: 6)
+
+            MiniRoutePreview(route: pending.route)
+                .frame(width: 48, height: 48)
 
             VSIcon(icon: .caretLeft, size: 15, weight: .bold, tint: VS.Color.warning)
                 .rotationEffect(.degrees(180))
@@ -1300,7 +1373,7 @@ struct PendingDriveRowView: View {
 struct DriveRowView: View {
     let trip: Trip
     let unit: String
-    var isSelected: Bool = false
+    var showsDay: Bool = true
 
     private var dayTitle: String {
         let f = DateFormatter()
@@ -1308,49 +1381,56 @@ struct DriveRowView: View {
         return f.string(from: trip.startedAt)
     }
 
+    private var distanceValue: String {
+        let km = trip.distanceKm
+        if unit == "mi" {
+            let mi = km * 0.621371
+            return String(format: mi >= 100 ? "%.0f" : "%.1f", mi)
+        }
+        return String(format: km >= 100 ? "%.0f" : "%.1f", km)
+    }
+
+    private var timeLine: String {
+        let range = "\(trip.startedAt.formatted(date: .omitted, time: .shortened)) – \(trip.endedAt.formatted(date: .omitted, time: .shortened))"
+        return showsDay ? "\(dayTitle) · \(range)" : range
+    }
+
+    private var speedLine: String {
+        let speed = unit == "mi"
+            ? String(format: "%.0f mph", trip.maxSpeedKmh * 0.621371)
+            : String(format: "%.0f km/h", trip.maxSpeedKmh)
+        return "\(trip.durationFormatted) · \(speed) top"
+    }
+
     var body: some View {
         HStack(spacing: 14) {
-            MiniRoutePreview(route: trip.route)
-                .frame(width: 52, height: 52)
-
             VStack(alignment: .leading, spacing: 4) {
-                Text(dayTitle)
-                    .font(VS.Typography.heading(16))
-                    .foregroundStyle(VS.Color.textPrimary)
+                HStack(alignment: .lastTextBaseline, spacing: 4) {
+                    Text(distanceValue)
+                        .font(VS.Typography.heading(21, weight: .bold))
+                        .foregroundStyle(VS.Color.textPrimary)
+                    Text(unit == "mi" ? "mi" : "km")
+                        .font(VS.Typography.body(11, weight: .medium))
+                        .foregroundStyle(VS.Color.textTertiary)
+                }
 
-                Text("\(trip.startedAt.formatted(date: .omitted, time: .shortened)) – \(trip.endedAt.formatted(date: .omitted, time: .shortened))")
+                Text(timeLine)
                     .font(VS.Typography.body(12))
                     .foregroundStyle(VS.Color.textTertiary)
 
-                Text("\(DistanceFormat.formatDistance(trip.distanceKm, unit: unit)) · \(trip.durationFormatted)")
+                Text(speedLine)
                     .font(VS.Typography.body(12, weight: .medium))
                     .foregroundStyle(VS.Color.textSecondary)
             }
 
             Spacer(minLength: 8)
 
-            VStack(alignment: .trailing, spacing: 2) {
-                Text(speedLabel)
-                    .font(VS.Typography.heading(22, weight: .bold))
-                    .foregroundStyle(VS.Color.accent)
-                Text(unit == "mi" ? "mph" : "km/h")
-                    .font(VS.Typography.body(10, weight: .medium))
-                    .foregroundStyle(VS.Color.textTertiary)
-            }
+            MiniRoutePreview(route: trip.route)
+                .frame(width: 48, height: 48)
         }
         .padding(.vertical, 14)
         .padding(.horizontal, 4)
-        .background(
-            RoundedRectangle(cornerRadius: 12)
-                .fill(isSelected ? VS.Color.accent.opacity(0.08) : .clear)
-        )
-    }
-
-    private var speedLabel: String {
-        if unit == "mi" {
-            return String(format: "%.0f", trip.maxSpeedKmh * 0.621371)
-        }
-        return String(format: "%.0f", trip.maxSpeedKmh)
+        .contentShape(Rectangle())
     }
 }
 

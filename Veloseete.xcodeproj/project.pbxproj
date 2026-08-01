@@ -59,6 +59,8 @@
 		F983209FA5BCEA0169A62034 /* TripLiveActivityWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2DC6CBCD403057F0E42E9DE2 /* TripLiveActivityWidget.swift */; };
 		F9F060079AC13AC8A73A9539 /* GarageView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1594DF57756A4459A585537A /* GarageView.swift */; };
 		FAA097877C34864C14669E4D /* DashboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 222F2B40313306BAE406CD4B /* DashboardView.swift */; };
+		FD00000000000000000000A2 /* FillDetailSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = FD00000000000000000000A1 /* FillDetailSheet.swift */; };
+		FD00000000000000000000B2 /* FuelHistoryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FD00000000000000000000B1 /* FuelHistoryView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -103,6 +105,8 @@
 		1594DF57756A4459A585537A /* GarageView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GarageView.swift; sourceTree = "<group>"; };
 		1D6A64AC85316ED1FB1F193A /* AuthView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthView.swift; sourceTree = "<group>"; };
 		222F2B40313306BAE406CD4B /* DashboardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashboardView.swift; sourceTree = "<group>"; };
+		FD00000000000000000000A1 /* FillDetailSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FillDetailSheet.swift; sourceTree = "<group>"; };
+		FD00000000000000000000B1 /* FuelHistoryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FuelHistoryView.swift; sourceTree = "<group>"; };
 		256658471BD7508658CD944C /* Veloseete.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = Veloseete.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		2DC6CBCD403057F0E42E9DE2 /* TripLiveActivityWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TripLiveActivityWidget.swift; sourceTree = "<group>"; };
 		3CB688049B7786554F370E64 /* FirestoreRepository.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FirestoreRepository.swift; sourceTree = "<group>"; };
@@ -294,6 +298,8 @@
 			isa = PBXGroup;
 			children = (
 				222F2B40313306BAE406CD4B /* DashboardView.swift */,
+				FD00000000000000000000A1 /* FillDetailSheet.swift */,
+				FD00000000000000000000B1 /* FuelHistoryView.swift */,
 			);
 			path = Dashboard;
 			sourceTree = "<group>";
@@ -606,6 +612,8 @@
 				BC566CBB50ED4FC839E3301F /* BottomNavChrome.swift in Sources */,
 				FAA097877C34864C14669E4D /* DashboardView.swift in Sources */,
 				B3763817EE58A8BABBD8B09F /* DataStore.swift in Sources */,
+				FD00000000000000000000A2 /* FillDetailSheet.swift in Sources */,
+				FD00000000000000000000B2 /* FuelHistoryView.swift in Sources */,
 				81B2F8DA22FF3F54A9CFC19B /* FirebaseBootstrap.swift in Sources */,
 				08DFE3397E7CE2D442F38B41 /* FirestoreRepository.swift in Sources */,
 				42D402FF910A17B280189C8B /* FluentEmoji.swift in Sources */,

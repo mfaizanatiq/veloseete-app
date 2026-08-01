@@ -220,6 +220,47 @@ final class FirestoreRepository {
         return ref.documentID
     }
 
+    func updateFuelLog(logId: String, userId: String, input: NewFuelLogInput) async throws {
+        let ref = db.collection("fuelLogs").document(logId)
+        let snapshot = try await ref.getDocument()
+        guard snapshot.data()?["userId"] as? String == userId else {
+            throw NSError(domain: "Veloseete", code: 403, userInfo: [NSLocalizedDescriptionKey: "This fuel record does not belong to your account."])
+        }
+        var data: [String: Any] = [
+            "vehicle_id": input.vehicleId,
+            "odometer_reading": input.odometerReading,
+            "fuel_volume": input.fuelVolume,
+            "price_per_unit": input.pricePerUnit,
+            "total_cost": input.totalCost,
+            "currency": input.currency,
+            "is_full_tank": input.isFullTank,
+            "timestamp": Timestamp(date: input.timestamp),
+            "updatedAt": FieldValue.serverTimestamp()
+        ]
+        if let stationName = input.stationName, !stationName.isEmpty {
+            data["station_name"] = stationName
+        } else {
+            data["station_name"] = FieldValue.delete()
+        }
+        if let lat = input.stationLatitude, let lng = input.stationLongitude {
+            data["station_lat"] = lat
+            data["station_lng"] = lng
+        } else {
+            data["station_lat"] = FieldValue.delete()
+            data["station_lng"] = FieldValue.delete()
+        }
+        try await ref.setData(data, merge: true)
+    }
+
+    func deleteFuelLog(logId: String, userId: String) async throws {
+        let ref = db.collection("fuelLogs").document(logId)
+        let snapshot = try await ref.getDocument()
+        guard snapshot.data()?["userId"] as? String == userId else {
+            throw NSError(domain: "Veloseete", code: 403, userInfo: [NSLocalizedDescriptionKey: "This fuel record does not belong to your account."])
+        }
+        try await ref.delete()
+    }
+
     // MARK: - Service logs
 
     func fetchServiceLogs(userId: String) async throws -> [ServiceLog] {
@@ -378,24 +419,83 @@ final class FirestoreRepository {
               !normalizedModel.isEmpty,
               normalizedMake.lowercased() != "unknown",
               normalizedModel.lowercased() != "unknown" else { return nil }
-        let snap = try await db.collection("manufacturerStandards")
-            .whereField("manufacturer", isEqualTo: normalizedMake)
-            .limit(to: 25)
-            .getDocuments()
 
-        let match = snap.documents.first { doc in
-            let data = doc.data()
-            let m = (data["model"] as? String ?? "").lowercased()
-            guard !m.isEmpty else { return false }
-            let requested = normalizedModel.lowercased()
-            return m == requested || m.contains(requested) || requested.contains(m)
+        let makeKey = Self.standardsKey(normalizedMake)
+        let modelKey = Self.standardsKey(normalizedModel)
+
+        // Seeded docs (tools/manufacturer-standards) use "<makeKey>__<modelKey>"
+        // IDs — an exact vehicle resolves with a single direct read.
+        let direct = try await db.collection("manufacturerStandards")
+            .document("\(makeKey)__\(modelKey)")
+            .getDocument()
+        if direct.exists, let value = Self.standardValue(direct.data() ?? [:]) {
+            return value
         }
 
-        guard let data = match?.data() else { return nil }
+        var docsData = try await db.collection("manufacturerStandards")
+            .whereField("manufacturerKey", isEqualTo: makeKey)
+            .limit(to: 400)
+            .getDocuments()
+            .documents.map { $0.data() }
+
+        // Legacy documents predate the key fields.
+        if docsData.isEmpty {
+            docsData = try await db.collection("manufacturerStandards")
+                .whereField("manufacturer", isEqualTo: normalizedMake)
+                .limit(to: 100)
+                .getDocuments()
+                .documents.map { $0.data() }
+        }
+
+        let requested = normalizedModel.lowercased()
+        let candidates = docsData.compactMap { data -> (model: String, value: Double)? in
+            let m = (data["model"] as? String ?? "").lowercased()
+            guard !m.isEmpty, let value = Self.standardValue(data) else { return nil }
+            guard m == requested || m.contains(requested) || requested.contains(m) else { return nil }
+            return (m, value)
+        }
+
+        if let exact = candidates.first(where: { $0.model == requested }) {
+            return exact.value
+        }
+        // Deterministic fuzzy pick: the candidate closest in length to the
+        // requested name, ties broken alphabetically — so "Corolla" prefers
+        // "Corolla" over "Corolla Cross Hybrid" regardless of query order.
+        return candidates
+            .sorted { lhs, rhs in
+                let lhsDelta = abs(lhs.model.count - requested.count)
+                let rhsDelta = abs(rhs.model.count - requested.count)
+                return lhsDelta == rhsDelta ? lhs.model < rhs.model : lhsDelta < rhsDelta
+            }
+            .first?.value
+    }
+
+    /// Mirrors the key normalization in tools/manufacturer-standards:
+    /// lowercase, non-alphanumeric runs collapse to a single "-".
+    private static func standardsKey(_ text: String) -> String {
+        var result = ""
+        var previousWasDash = true
+        for character in text.lowercased() {
+            if character.isASCII, character.isLetter || character.isNumber {
+                result.append(character)
+                previousWasDash = false
+            } else if !previousWasDash {
+                result.append("-")
+                previousWasDash = true
+            }
+        }
+        if result.hasSuffix("-") { result.removeLast() }
+        return result
+    }
+
+    private static func standardValue(_ data: [String: Any]) -> Double? {
         if let avg = FirestoreDecode.optionalDouble(data["avgFuelConsumptionL100km"]), avg > 0 {
             return avg
         }
-        return FirestoreDecode.optionalDouble(data["fuelConsumptionL100km"])
+        if let fallback = FirestoreDecode.optionalDouble(data["fuelConsumptionL100km"]), fallback > 0 {
+            return fallback
+        }
+        return nil
     }
 
     // MARK: - Account deletion

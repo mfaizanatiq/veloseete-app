@@ -287,6 +287,17 @@ final class TripRecordingService: NSObject, ObservableObject {
         persistPendingSaves()
     }
 
+    /// Drops queued review drives for cars no longer in the active garage
+    /// (archived or deleted), so they can't sit in My Drives forever.
+    /// Persisting also clears their review reminders and the widget badge.
+    func prunePendingSaves(activeVehicleIds: Set<String>) {
+        let before = pendingSaves.count
+        pendingSaves.removeAll { !activeVehicleIds.contains($0.vehicleId) }
+        guard pendingSaves.count != before else { return }
+        print("[TripQueue] Pruned \(before - pendingSaves.count) pending drive(s) for archived/removed cars")
+        persistPendingSaves()
+    }
+
     func clearError() {
         lastError = nil
     }

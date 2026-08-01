@@ -196,8 +196,9 @@ struct BottomNavBar: View {
                 .shadow(color: .black.opacity(0.4), radius: isCompact ? 12 : 16, y: 4)
         )
         .padding(.horizontal, horizontalInset)
-        // Sit just above the home indicator — extra lift made it float higher than a system tab bar.
-        .padding(.bottom, isCompact ? 4 : 8)
+        // Native floating tab bars dip into the bottom safe area and hug the home
+        // indicator; staying fully above it left a visible dead strip under the pill.
+        .offset(y: isCompact ? 14 : 18)
     }
 }
 

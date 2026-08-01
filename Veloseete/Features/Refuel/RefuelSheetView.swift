@@ -6,6 +6,8 @@ struct RefuelSheetView: View {
 
     let vehicleId: String
     let carPlayDraft: CarPlayRefuelDraft?
+    /// When set, the sheet edits this log in place instead of creating a new one.
+    let existingLog: FuelLog?
 
     @State private var totalCost = ""
     @State private var liters = ""
@@ -28,17 +30,39 @@ struct RefuelSheetView: View {
     private var resolvedStationForSave: (name: String, latitude: Double?, longitude: Double?)? {
         if stationSkipped { return nil }
         guard let station else { return nil }
+        // A station carried over from an edited log may have no stored coordinates.
+        if station.latitude == 0, station.longitude == 0 {
+            return (station.name, nil, nil)
+        }
         return (station.name, station.latitude, station.longitude)
     }
 
-    init(vehicleId: String, carPlayDraft: CarPlayRefuelDraft? = nil) {
+    init(vehicleId: String, carPlayDraft: CarPlayRefuelDraft? = nil, editing log: FuelLog? = nil) {
         self.vehicleId = vehicleId
         self.carPlayDraft = carPlayDraft
-        _selectedDate = State(initialValue: carPlayDraft?.createdAt ?? Date())
-        _odometer = State(
-            initialValue: carPlayDraft.map { String(format: "%.0f", $0.estimatedOdometer) } ?? ""
-        )
+        self.existingLog = log
+
+        if let log {
+            _selectedDate = State(initialValue: log.timestamp)
+            _odometer = State(initialValue: String(format: "%.0f", log.odometerReading))
+            _totalCost = State(initialValue: String(format: "%.2f", log.totalCost))
+            _isFullTank = State(initialValue: log.isFullTank)
+            if let name = log.stationName, !name.isEmpty {
+                _station = State(initialValue: StationLookup.Station(
+                    name: name,
+                    latitude: log.stationLatitude ?? 0,
+                    longitude: log.stationLongitude ?? 0
+                ))
+            }
+        } else {
+            _selectedDate = State(initialValue: carPlayDraft?.createdAt ?? Date())
+            _odometer = State(
+                initialValue: carPlayDraft.map { String(format: "%.0f", $0.estimatedOdometer) } ?? ""
+            )
+        }
     }
+
+    private var isEditing: Bool { existingLog != nil }
 
     private var vehicle: Vehicle? {
         store.vehicles.first { $0.id == vehicleId }
@@ -77,7 +101,9 @@ struct RefuelSheetView: View {
 
     private var canSubmit: Bool {
         guard let cost = Double(totalCost), let vol = Double(liters), let enteredOdometer else { return false }
-        return cost > 0 && vol > 0 && enteredOdometer >= lastOdometer
+        // Editing an older fill legitimately carries an odometer below the latest reading.
+        let odometerOK = isEditing ? enteredOdometer > 0 : enteredOdometer >= lastOdometer
+        return cost > 0 && vol > 0 && odometerOK
     }
 
     var body: some View {
@@ -119,7 +145,7 @@ struct RefuelSheetView: View {
                     VStack(alignment: .leading, spacing: 12) {
                         odometerSection
 
-                        if let entered = Double(odometer), entered < lastOdometer {
+                        if !isEditing, let entered = Double(odometer), entered < lastOdometer {
                             Text("Below last reading (\(DistanceFormat.formatOdometer(lastOdometer, unit: "km")))")
                                 .font(VS.Typography.body(12))
                                 .foregroundStyle(VS.Color.warning)
@@ -162,7 +188,7 @@ struct RefuelSheetView: View {
                 .padding(.bottom, 28)
             }
             .veloseetePage()
-            .navigationTitle("Add Refuel")
+            .navigationTitle(isEditing ? "Edit Refuel" : "Add Refuel")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
@@ -172,7 +198,7 @@ struct RefuelSheetView: View {
             }
             .safeAreaInset(edge: .bottom) {
                 PrimaryCTAButton(
-                    title: "Save refuel",
+                    title: isEditing ? "Save changes" : "Save refuel",
                     icon: .gasPump,
                     isLoading: isSubmitting,
                     isEnabled: canSubmit
@@ -183,11 +209,19 @@ struct RefuelSheetView: View {
                 .background(VS.Color.bgPrimary.opacity(0.96))
             }
             .onAppear {
-                selectedCurrency = defaultCurrency
-                if odometer.isEmpty, let estimate {
-                    odometer = String(format: "%.0f", estimate.estimatedKm)
-                } else if odometer.isEmpty, lastOdometer > 0 {
-                    odometer = String(format: "%.0f", lastOdometer)
+                if let existingLog {
+                    selectedCurrency = existingLog.currency
+                    if liters.isEmpty {
+                        let display = VolumeFormat.toDisplay(existingLog.fuelVolume, unit: volumeUnit)
+                        liters = String(format: "%.2f", display)
+                    }
+                } else {
+                    selectedCurrency = defaultCurrency
+                    if odometer.isEmpty, let estimate {
+                        odometer = String(format: "%.0f", estimate.estimatedKm)
+                    } else if odometer.isEmpty, lastOdometer > 0 {
+                        odometer = String(format: "%.0f", lastOdometer)
+                    }
                 }
             }
             .task {
@@ -226,7 +260,7 @@ struct RefuelSheetView: View {
                     ProgressView()
                         .controlSize(.small)
                         .tint(VS.Color.accent)
-                } else if let station, !stationSkipped {
+                } else if let station, !stationSkipped, station.distanceMeters > 0 {
                     Text(distanceLabel(for: station))
                         .font(VS.Typography.body(12))
                         .foregroundStyle(VS.Color.textTertiary)
@@ -238,6 +272,19 @@ struct RefuelSheetView: View {
                     .font(VS.Typography.heading(15))
                     .foregroundStyle(VS.Color.textPrimary)
                     .lineLimit(1)
+            }
+
+            if stationLookupFailed, station == nil, !isResolvingStation {
+                HStack(spacing: 10) {
+                    Text("Couldn’t find stations nearby.")
+                        .font(VS.Typography.body(12))
+                        .foregroundStyle(VS.Color.textTertiary)
+                    Button("Retry") {
+                        Task { await resolveStation(forceRefresh: true) }
+                    }
+                    .font(VS.Typography.body(12, weight: .semibold))
+                    .foregroundStyle(VS.Color.accent)
+                }
             }
 
             if !nearbyStations.isEmpty {
@@ -314,6 +361,9 @@ struct RefuelSheetView: View {
         if forceRefresh {
             stationSkipped = false
         }
+
+        // Editing an old fill from wherever the user is now — never overwrite its station.
+        if isEditing { return }
 
         if let auto = found.first(where: { $0.distanceMeters <= StationLookup.autoSelectMaxMeters }) {
             if forceRefresh || station == nil {
@@ -452,29 +502,44 @@ struct RefuelSheetView: View {
 
         do {
             var stamp = selectedDate
-            let now = Date()
             let cal = Calendar.current
+            // Keep the original fill time when editing; stamp new fills with the current time.
+            let timeSource = existingLog?.timestamp ?? Date()
             stamp = cal.date(
-                bySettingHour: cal.component(.hour, from: now),
-                minute: cal.component(.minute, from: now),
+                bySettingHour: cal.component(.hour, from: timeSource),
+                minute: cal.component(.minute, from: timeSource),
                 second: 0,
                 of: stamp
             ) ?? stamp
 
             let resolved = resolvedStationForSave
             let volumeLiters = VolumeFormat.toLiters(vol, unit: volumeUnit)
-            try await store.addFuelLog(
-                vehicleId: vehicleId,
-                odometerReading: odo,
-                fuelVolume: volumeLiters,
-                totalCost: cost,
-                currency: selectedCurrency,
-                isFullTank: isFullTank,
-                timestamp: stamp,
-                stationName: resolved?.name,
-                stationLatitude: resolved?.latitude,
-                stationLongitude: resolved?.longitude
-            )
+            if let existingLog {
+                var updated = existingLog
+                updated.timestamp = stamp
+                updated.odometerReading = odo
+                updated.fuelVolume = volumeLiters
+                updated.totalCost = cost
+                updated.currency = selectedCurrency
+                updated.isFullTank = isFullTank
+                updated.stationName = resolved?.name
+                updated.stationLatitude = resolved?.latitude
+                updated.stationLongitude = resolved?.longitude
+                try await store.updateFuelLog(updated)
+            } else {
+                try await store.addFuelLog(
+                    vehicleId: vehicleId,
+                    odometerReading: odo,
+                    fuelVolume: volumeLiters,
+                    totalCost: cost,
+                    currency: selectedCurrency,
+                    isFullTank: isFullTank,
+                    timestamp: stamp,
+                    stationName: resolved?.name,
+                    stationLatitude: resolved?.latitude,
+                    stationLongitude: resolved?.longitude
+                )
+            }
             UINotificationFeedbackGenerator().notificationOccurred(.success)
             showSuccess = true
             try? await Task.sleep(nanoseconds: 800_000_000)

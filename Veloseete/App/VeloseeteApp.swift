@@ -102,6 +102,12 @@ struct VeloseeteApp: App {
                 VehicleInsightScheduler.shared.refresh(using: dataStore)
                 dataStore.refreshHomeWidgets()
             }
+            // The review queue changing (drive finished, confirmed, or
+            // discarded) shifts the fuel-range picture too.
+            .onChange(of: tripRecorder.pendingSaves) { _, _ in
+                guard dataStore.isLoaded else { return }
+                VehicleInsightScheduler.shared.refresh(using: dataStore)
+            }
             .onChange(of: dataStore.currentVehicle?.id) { _, _ in
                 guard let vehicle = dataStore.currentVehicle else { return }
                 tripRecorder.configure(

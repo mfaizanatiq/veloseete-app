@@ -76,11 +76,14 @@ final class TripTrackingLogicTests: XCTestCase {
     }
 
     func testDashboardEfficiencyUsesClosingFuelOnly() {
+        // Fixed mid-month reference so "2 days ago" can't slip into last month
+        // (the monthly stats legitimately reset at the month boundary).
+        let reference = Calendar.current.date(from: DateComponents(year: 2026, month: 6, day: 15, hour: 12))!
         let logs = [
-            fuelLog(id: "1", odometer: 10_000, liters: 40, full: true, daysAgo: 10),
-            fuelLog(id: "2", odometer: 10_500, liters: 35, full: true, daysAgo: 2)
+            fuelLog(id: "1", odometer: 10_000, liters: 40, full: true, daysAgo: 10, from: reference),
+            fuelLog(id: "2", odometer: 10_500, liters: 35, full: true, daysAgo: 2, from: reference)
         ]
-        let metrics = MetricsCalculator.compute(vehicle: testVehicle, logs: logs)
+        let metrics = MetricsCalculator.compute(vehicle: testVehicle, logs: logs, now: reference)
         XCTAssertEqual(metrics.current ?? 0, 7, accuracy: 0.001)
         XCTAssertEqual(metrics.avgEfficiency ?? 0, 7, accuracy: 0.001)
         XCTAssertEqual(metrics.totalDistance, 500, accuracy: 0.001)
@@ -158,6 +161,56 @@ final class TripTrackingLogicTests: XCTestCase {
         XCTAssertLessThanOrEqual(prediction?.daysRemaining ?? 99, 11)
     }
 
+    func testFuelPredictionExtendsWhenBarelyDriving() {
+        // Usual pattern: 400 km / 10 days per tank. But 4 days into this tank
+        // only 40 km were driven — the reminder must move out, not fire on cadence.
+        let logs = [
+            fuelLog(id: "1", odometer: 10_000, liters: 40, full: true, daysAgo: 24),
+            fuelLog(id: "2", odometer: 10_400, liters: 40, full: true, daysAgo: 14),
+            fuelLog(id: "3", odometer: 10_800, liters: 40, full: true, daysAgo: 4)
+        ]
+        let prediction = FuelInsightLogic.predictNextFill(
+            logs: logs,
+            estimatedOdometer: 10_840,
+            now: Date()
+        )
+        XCTAssertNotNil(prediction)
+        XCTAssertGreaterThan(prediction?.daysRemaining ?? 0, 15)
+    }
+
+    func testFuelPredictionFiresEarlyWhenDrivingHard() {
+        // Same history, but 350 of the ~400 km tank burned in 4 days.
+        let logs = [
+            fuelLog(id: "1", odometer: 10_000, liters: 40, full: true, daysAgo: 24),
+            fuelLog(id: "2", odometer: 10_400, liters: 40, full: true, daysAgo: 14),
+            fuelLog(id: "3", odometer: 10_800, liters: 40, full: true, daysAgo: 4)
+        ]
+        let prediction = FuelInsightLogic.predictNextFill(
+            logs: logs,
+            estimatedOdometer: 11_150,
+            now: Date()
+        )
+        XCTAssertNotNil(prediction)
+        XCTAssertLessThanOrEqual(prediction?.daysRemaining ?? 99, 1)
+        XCTAssertEqual(prediction?.kmRemaining ?? -1, 50, accuracy: 0.1)
+    }
+
+    func testFuelPredictionShrinksBudgetForPartialFill() {
+        // Last fill was only 10 L — the reminder shouldn't assume a full tank's range.
+        let logs = [
+            fuelLog(id: "1", odometer: 10_000, liters: 40, full: true, daysAgo: 20),
+            fuelLog(id: "2", odometer: 10_400, liters: 40, full: true, daysAgo: 10),
+            fuelLog(id: "3", odometer: 10_800, liters: 10, full: false, daysAgo: 0)
+        ]
+        let prediction = FuelInsightLogic.predictNextFill(
+            logs: logs,
+            estimatedOdometer: 10_800,
+            now: Date()
+        )
+        XCTAssertNotNil(prediction)
+        XCTAssertLessThanOrEqual(prediction?.daysRemaining ?? 99, 5)
+    }
+
     func testServicePredictionHonorsDueDate() {
         let due = Calendar.current.date(byAdding: .day, value: 5, to: Date())!
         let log = ServiceLog(
@@ -184,8 +237,8 @@ final class TripTrackingLogicTests: XCTestCase {
         Vehicle(id: "car", nickname: "Test", make: "Test", model: "Car", fuelType: "petrol", currentOdometer: 10_500, fuelTankCapacity: 50, currency: "QAR", fuelVolumeUnit: "L", icon: nil, createdAt: Date(), isArchived: false, archivedAt: nil)
     }
 
-    private func fuelLog(id: String, vehicleId: String = "car", odometer: Double, liters: Double, full: Bool, daysAgo: Int) -> FuelLog {
-        FuelLog(id: id, vehicleId: vehicleId, timestamp: Calendar.current.date(byAdding: .day, value: -daysAgo, to: Date())!, odometerReading: odometer, fuelVolume: liters, pricePerUnit: 2, totalCost: liters * 2, currency: "QAR", isFullTank: full)
+    private func fuelLog(id: String, vehicleId: String = "car", odometer: Double, liters: Double, full: Bool, daysAgo: Int, from reference: Date = Date()) -> FuelLog {
+        FuelLog(id: id, vehicleId: vehicleId, timestamp: Calendar.current.date(byAdding: .day, value: -daysAgo, to: reference)!, odometerReading: odometer, fuelVolume: liters, pricePerUnit: 2, totalCost: liters * 2, currency: "QAR", isFullTank: full)
     }
 
     private func location(latitude: Double, longitude: Double, seconds: TimeInterval) -> CLLocation {
