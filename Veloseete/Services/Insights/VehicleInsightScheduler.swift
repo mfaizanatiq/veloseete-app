@@ -39,17 +39,22 @@ final class VehicleInsightScheduler {
         let estimate = store.odometerEstimate(vehicleId: vehicle.id)
         let services = store.serviceLogs.filter { $0.vehicleId == vehicle.id }
 
-        // Drives still waiting for review in My Drives are real driving the
-        // confirmed-trip estimate can't see yet. Count them toward the fuel
-        // range so a backlog of unreviewed trips doesn't silently delay the
-        // reminder past an empty tank.
+        // Drives still waiting for review are real driving the confirmed
+        // estimate can't see — but discount them slightly so a backlog of
+        // noisy pending trips can't falsely declare the tank empty.
         let anchorDate = estimate?.verifiedAt ?? .distantPast
         let unreviewedKm = TripRecordingService.shared.pendingSaves
             .filter { $0.vehicleId == vehicle.id && $0.endedAt > anchorDate }
             .reduce(0) { $0 + $1.distanceKm }
-        let estimatedOdometer = (estimate?.estimatedKm).map { $0 + unreviewedKm }
+        let creditedUnreviewed = unreviewedKm * 0.85
+        let estimatedOdometer = (estimate?.estimatedKm).map { $0 + creditedUnreviewed }
 
-        if let fuel = FuelInsightLogic.predictNextFill(logs: logs, estimatedOdometer: estimatedOdometer) {
+        if let fuel = FuelInsightLogic.predictNextFill(
+            logs: logs,
+            estimatedOdometer: estimatedOdometer,
+            tankCapacityLiters: vehicle.fuelTankCapacity,
+            brochureL100km: store.manufacturerStandard
+        ), fuel.shouldNotify {
             await scheduleFuel(fuel, vehicleName: vehicleName, driverName: driverName, center: center)
         }
 
@@ -75,13 +80,24 @@ final class VehicleInsightScheduler {
         driverName: String,
         center: UNUserNotificationCenter
     ) async {
-        let fireDate = prediction.fireDate
+        let decision = FuelNotifyCooldown.decision(
+            vehicleId: prediction.vehicleScopedId,
+            fillId: prediction.fillId,
+            urgency: prediction.urgency,
+            proposedFireDate: prediction.fireDate
+        )
+        guard case let .schedule(fireDate) = decision else {
+            print("[Insights] fuel ping suppressed (already delivered for this fill/\(prediction.urgency))")
+            return
+        }
         guard fireDate > Date().addingTimeInterval(60) else { return }
 
         let copy = InsightNotificationCopy.fuel(
             vehicleName: vehicleName,
+            urgency: prediction.urgency,
             daysRemaining: prediction.daysRemaining,
-            kmRemaining: prediction.kmRemaining
+            kmRemaining: prediction.kmRemaining,
+            tankPercent: prediction.tankPercentRemaining
         )
         let content = UNMutableNotificationContent()
         content.title = personalized(copy.title, driverName: driverName)
@@ -96,7 +112,13 @@ final class VehicleInsightScheduler {
         let trigger = UNCalendarNotificationTrigger(dateMatching: components, repeats: false)
         let id = fuelPrefix + prediction.vehicleScopedId
         try? await center.add(UNNotificationRequest(identifier: id, content: content, trigger: trigger))
-        print("[Insights] fuel ping for \(vehicleName) at \(fireDate)")
+        FuelNotifyCooldown.markScheduled(
+            vehicleId: prediction.vehicleScopedId,
+            fillId: prediction.fillId,
+            urgency: prediction.urgency,
+            fireDate: fireDate
+        )
+        print("[Insights] fuel ping for \(vehicleName) at \(fireDate) urgency=\(prediction.urgency) kmLeft=\(prediction.kmRemaining.map { String(format: "%.0f", $0) } ?? "?") conf=\(String(format: "%.2f", prediction.confidence))")
     }
 
     private func scheduleService(
@@ -140,11 +162,41 @@ final class VehicleInsightScheduler {
 }
 
 enum FuelInsightLogic {
+    enum FuelUrgency: String, Comparable {
+        case none
+        case watch
+        case low
+        case empty
+
+        private var rank: Int {
+            switch self {
+            case .none: return 0
+            case .watch: return 1
+            case .low: return 2
+            case .empty: return 3
+            }
+        }
+
+        static func < (lhs: FuelUrgency, rhs: FuelUrgency) -> Bool {
+            lhs.rank < rhs.rank
+        }
+    }
+
     struct FuelPrediction: Equatable {
         var vehicleScopedId: String
+        var fillId: String
         var daysRemaining: Int
         var kmRemaining: Double?
+        var tankPercentRemaining: Double?
+        var confidence: Double
+        var urgency: FuelUrgency
         var fireDate: Date
+
+        /// Only schedule a notification when the tank is actually low/empty
+        /// with enough evidence — no early "heads up in 5 days" spam.
+        var shouldNotify: Bool {
+            confidence >= 0.55 && (urgency == .low || urgency == .empty)
+        }
     }
 
     struct ServicePrediction: Equatable {
@@ -155,92 +207,273 @@ enum FuelInsightLogic {
         var fireDate: Date
     }
 
-    /// Range-based next-fill prediction. The tank is modeled in kilometers:
-    /// how far the last fill should carry the car, how much of that has
-    /// actually been driven (fuel/service entries anchor the odometer, GPS
-    /// trips advance it), and the driver's *current* pace. Barely driving
-    /// pushes the reminder out; a road-trip week pulls it in. Fill cadence
-    /// is only a fallback when there's no usable km signal.
+    /// Multi-signal low-fuel detector.
+    ///
+    /// Combines:
+    /// - fill-to-fill km pattern (full tanks preferred)
+    /// - liters put in × measured L/100km → range budget
+    /// - tank capacity when known
+    /// - brochure L/100km as a soft prior when history is thin
+    /// - km actually driven since the last fill (odometer + trips)
+    ///
+    /// Calendar cadence alone never triggers a notification — without a km
+    /// signal we refuse to cry wolf.
     static func predictNextFill(
         logs: [FuelLog],
         estimatedOdometer: Double?,
+        tankCapacityLiters: Double? = nil,
+        brochureL100km: Double? = nil,
         now: Date = Date(),
         calendar: Calendar = .current
     ) -> FuelPrediction? {
         let sorted = logs.sorted { $0.timestamp < $1.timestamp }
         guard sorted.count >= 2, let last = sorted.last else { return nil }
-
-        var dayGaps: [Double] = []
-        var kmGaps: [Double] = []
-        let window = min(sorted.count - 1, 7)
-        for index in (sorted.count - window)..<(sorted.count) where index > 0 {
-            let newer = sorted[index]
-            let older = sorted[index - 1]
-            let days = newer.timestamp.timeIntervalSince(older.timestamp) / 86_400
-            if days > 0.5 { dayGaps.append(days) }
-            let km = newer.odometerReading - older.odometerReading
-            if km > 5 { kmGaps.append(km) }
+        guard let odometer = estimatedOdometer else {
+            // No odometer picture at all → we cannot know the tank state.
+            return nil
         }
-        guard let typicalDays = median(dayGaps), typicalDays > 0.5 else { return nil }
 
-        let daysSince = now.timeIntervalSince(last.timestamp) / 86_400
+        let kmSince = max(0, odometer - last.odometerReading)
+        let daysSince = max(now.timeIntervalSince(last.timestamp) / 86_400, 0.01)
+
+        let pattern = fillPattern(from: sorted)
+        let efficiency = measuredLitersPer100km(from: sorted)
+            ?? brochureL100km
+            ?? defaultEfficiencyFallback
+
+        // Range this fill should cover.
+        let budget = rangeBudget(
+            lastFill: last,
+            pattern: pattern,
+            litersPer100km: efficiency,
+            tankCapacityLiters: tankCapacityLiters
+        )
+        guard budget.km > 30 else { return nil }
+
+        let kmLeft = budget.km - kmSince
+        let fractionLeft = max(0, min(1, kmLeft / budget.km))
+        let tankPercent = fractionLeft * 100
+
+        // Pace: trust observed driving more as this tank ages.
+        let historicalPace = max(pattern.typicalDailyKm ?? (budget.km / max(pattern.typicalDays ?? 7, 1)), 5)
+        let actualPace = kmSince / daysSince
+        let paceConfidence = min(daysSince / 2.5, 1)
+        let dailyKm = max(actualPace * paceConfidence + historicalPace * (1 - paceConfidence), 3)
+
         let daysRemaining: Int
-        var kmRemaining: Double?
-
-        if let typicalKm = median(kmGaps), typicalKm > 10, let odometer = estimatedOdometer {
-            let kmSince = max(0, odometer - last.odometerReading)
-
-            // How far the last fill should carry the car: full tanks get the
-            // typical fill-to-fill distance, partial fills only a
-            // volume-proportional slice of it.
-            var kmBudget = typicalKm
-            if !last.isFullTank,
-               let litersPer100 = overallLitersPer100km(sorted), litersPer100 > 0 {
-                kmBudget = min(typicalKm, last.fuelVolume / litersPer100 * 100)
-            }
-
-            let reserve = max(kmBudget * 0.1, 15)
-            let kmLeft = kmBudget - kmSince
-            kmRemaining = max(kmLeft, 0)
-
-            if kmLeft <= reserve {
-                daysRemaining = 0
-            } else {
-                // Trust the observed pace since the fill more the longer
-                // we've watched it; fall back to the historical pace early on.
-                let historicalPace = typicalKm / typicalDays
-                var dailyKm = historicalPace
-                if daysSince >= 1 {
-                    let actualPace = kmSince / daysSince
-                    let confidence = min(daysSince / 3, 1)
-                    dailyKm = actualPace * confidence + historicalPace * (1 - confidence)
-                }
-                dailyKm = max(dailyKm, 1)
-                let daysUntilReserve = min((kmLeft - reserve) / dailyKm, 45)
-                daysRemaining = max(Int(daysUntilReserve.rounded()), 0)
-            }
+        if kmLeft <= 0 {
+            daysRemaining = 0
         } else {
-            // No odometer/km signal at all — cadence is the only guess left.
-            daysRemaining = max(Int((typicalDays - daysSince).rounded()), 0)
+            daysRemaining = max(Int((kmLeft / dailyKm).rounded()), 0)
         }
 
-        let fireDate = fireDate(forDaysRemaining: daysRemaining, now: now, calendar: calendar)
+        let urgency = classifyUrgency(
+            fractionLeft: fractionLeft,
+            kmLeft: kmLeft,
+            confidence: budget.confidence
+        )
+
+        let fire = notificationFireDate(
+            urgency: urgency,
+            daysRemaining: daysRemaining,
+            now: now,
+            calendar: calendar
+        )
+
         return FuelPrediction(
             vehicleScopedId: last.vehicleId,
+            fillId: last.id,
             daysRemaining: daysRemaining,
-            kmRemaining: kmRemaining,
-            fireDate: fireDate
+            kmRemaining: max(kmLeft, 0),
+            tankPercentRemaining: tankPercent,
+            confidence: budget.confidence,
+            urgency: urgency,
+            fireDate: fire
         )
     }
 
-    /// Rough whole-history consumption used to size partial fills.
-    private static func overallLitersPer100km(_ sorted: [FuelLog]) -> Double? {
-        guard let first = sorted.first, let last = sorted.last else { return nil }
-        let km = last.odometerReading - first.odometerReading
-        guard km > 50 else { return nil }
-        let liters = sorted.dropFirst().reduce(0) { $0 + $1.fuelVolume }
-        guard liters > 0 else { return nil }
-        return liters / km * 100
+    // MARK: - Pattern & budget
+
+    private struct FillPattern {
+        var typicalRangeKm: Double?
+        var typicalDays: Double?
+        var typicalDailyKm: Double?
+        var sampleCount: Int
+    }
+
+    private struct RangeBudget {
+        var km: Double
+        var confidence: Double
+    }
+
+    private static let defaultEfficiencyFallback = 8.5
+
+    /// Prefer full→full intervals; fall back to any fill-to-fill gaps.
+    private static func fillPattern(from sorted: [FuelLog]) -> FillPattern {
+        var fullKm: [Double] = []
+        var fullDays: [Double] = []
+        var anyKm: [Double] = []
+        var anyDays: [Double] = []
+
+        var lastFull: FuelLog?
+        for log in sorted {
+            if let prev = lastFull, log.isFullTank {
+                let km = log.odometerReading - prev.odometerReading
+                let days = log.timestamp.timeIntervalSince(prev.timestamp) / 86_400
+                if km > 30 { fullKm.append(km) }
+                if days > 0.5 { fullDays.append(days) }
+            }
+            if log.isFullTank { lastFull = log }
+        }
+
+        let windowStart = max(sorted.count - 8, 1)
+        for index in windowStart..<sorted.count {
+            let newer = sorted[index]
+            let older = sorted[index - 1]
+            let km = newer.odometerReading - older.odometerReading
+            let days = newer.timestamp.timeIntervalSince(older.timestamp) / 86_400
+            if km > 20 { anyKm.append(km) }
+            if days > 0.5 { anyDays.append(days) }
+        }
+
+        let rangeSamples = fullKm.count >= 2 ? fullKm : anyKm
+        let daySamples = fullDays.count >= 2 ? fullDays : anyDays
+        let typicalRange = median(rangeSamples)
+        let typicalDays = median(daySamples)
+        let daily: Double? = {
+            guard let r = typicalRange, let d = typicalDays, d > 0 else { return nil }
+            return r / d
+        }()
+
+        return FillPattern(
+            typicalRangeKm: typicalRange,
+            typicalDays: typicalDays,
+            typicalDailyKm: daily,
+            sampleCount: rangeSamples.count
+        )
+    }
+
+    private static func measuredLitersPer100km(from sorted: [FuelLog]) -> Double? {
+        // Distance-weighted over recent full-tank closed intervals.
+        var distances: [Double] = []
+        var fuels: [Double] = []
+        var anchor: FuelLog?
+        var fuelSince = 0.0
+
+        for log in sorted {
+            guard log.fuelVolume > 0 else { continue }
+            guard let current = anchor else {
+                if log.isFullTank { anchor = log }
+                continue
+            }
+            fuelSince += log.fuelVolume
+            guard log.isFullTank else { continue }
+            let distance = log.odometerReading - current.odometerReading
+            if distance > 40 {
+                distances.append(distance)
+                fuels.append(fuelSince)
+            }
+            anchor = log
+            fuelSince = 0
+        }
+
+        let recent = zip(distances, fuels).suffix(5)
+        let totalKm = recent.reduce(0.0) { $0 + $1.0 }
+        let totalFuel = recent.reduce(0.0) { $0 + $1.1 }
+        guard totalKm > 80, totalFuel > 0 else { return nil }
+        return totalFuel / totalKm * 100
+    }
+
+    private static func rangeBudget(
+        lastFill: FuelLog,
+        pattern: FillPattern,
+        litersPer100km: Double,
+        tankCapacityLiters: Double?
+    ) -> RangeBudget {
+        let volumeRange = lastFill.fuelVolume / max(litersPer100km, 1) * 100
+        var candidates: [(km: Double, weight: Double)] = []
+        var confidence = 0.35
+
+        if let typical = pattern.typicalRangeKm, typical > 30 {
+            if lastFill.isFullTank {
+                candidates.append((typical, 1.0))
+                confidence = pattern.sampleCount >= 3 ? 0.85 : 0.65
+            } else {
+                // Partial: only claim the liters you actually put in.
+                candidates.append((min(typical, volumeRange), 1.0))
+                confidence = pattern.sampleCount >= 3 ? 0.7 : 0.55
+            }
+        } else {
+            candidates.append((volumeRange, 0.8))
+            confidence = 0.45
+        }
+
+        // Tank capacity caps a full fill's range (you can't go farther than a full tank).
+        if lastFill.isFullTank, let tank = tankCapacityLiters, tank > 5 {
+            let tankRange = tank / max(litersPer100km, 1) * 100
+            candidates.append((tankRange, 0.7))
+            confidence = max(confidence, 0.7)
+        } else if !lastFill.isFullTank, let tank = tankCapacityLiters, tank > 5 {
+            // Partial into unknown prior level — trust volume more than "typical tank".
+            let capped = min(volumeRange, tank / max(litersPer100km, 1) * 100)
+            candidates.append((capped, 1.0))
+        }
+
+        // Always consider the literal liters→km conversion.
+        candidates.append((volumeRange, lastFill.isFullTank ? 0.5 : 1.0))
+
+        let weighted = candidates.reduce(0.0) { $0 + $1.km * $1.weight }
+        let weightSum = candidates.reduce(0.0) { $0 + $1.weight }
+        let km = weightSum > 0 ? weighted / weightSum : volumeRange
+
+        // Fresh fill with almost no driving history on this car stays low-confidence.
+        if pattern.sampleCount < 2 { confidence = min(confidence, 0.5) }
+
+        return RangeBudget(km: max(km, 20), confidence: confidence)
+    }
+
+    private static func classifyUrgency(
+        fractionLeft: Double,
+        kmLeft: Double,
+        confidence: Double
+    ) -> FuelUrgency {
+        // Need real evidence before declaring low/empty.
+        guard confidence >= 0.55 else { return .none }
+
+        if kmLeft <= 15 || fractionLeft <= 0.05 {
+            return .empty
+        }
+        if kmLeft <= 45 || fractionLeft <= 0.15 {
+            return .low
+        }
+        if kmLeft <= 80 || fractionLeft <= 0.25 {
+            return .watch
+        }
+        return .none
+    }
+
+    /// Only schedule when urgency is low/empty — no multi-day advance pings.
+    private static func notificationFireDate(
+        urgency: FuelUrgency,
+        daysRemaining: Int,
+        now: Date,
+        calendar: Calendar
+    ) -> Date {
+        switch urgency {
+        case .empty:
+            // Soon, but not immediately on every refresh (cooldown handles repeats).
+            return now.addingTimeInterval(15 * 60)
+        case .low:
+            if daysRemaining <= 0 {
+                return now.addingTimeInterval(30 * 60)
+            }
+            // Next calm morning if there's still a day of range left.
+            let tomorrow = calendar.date(byAdding: .day, value: 1, to: now) ?? now
+            return morning(of: tomorrow, calendar: calendar)
+        case .watch, .none:
+            // Won't be scheduled (shouldNotify == false); placeholder only.
+            return now.addingTimeInterval(86_400 * 30)
+        }
     }
 
     static func predictServiceDue(
@@ -314,7 +547,7 @@ enum FuelInsightLogic {
         return candidates.min(by: { $0.fireDate < $1.fireDate })
     }
 
-    /// Morning-ish local ping; sooner when already due.
+    /// Morning-ish local ping; sooner when already due. (Service reminders.)
     static func fireDate(forDaysRemaining days: Int, now: Date = Date(), calendar: Calendar = .current) -> Date {
         if days <= 0 {
             return now.addingTimeInterval(2 * 60 * 60)
@@ -322,7 +555,6 @@ enum FuelInsightLogic {
         if days == 1 {
             return morning(of: calendar.date(byAdding: .day, value: 1, to: now) ?? now, calendar: calendar)
         }
-        // Nudge a day early so you're not surprised at empty.
         let targetDay = calendar.date(byAdding: .day, value: max(days - 1, 1), to: now) ?? now
         return morning(of: targetDay, calendar: calendar)
     }
@@ -345,30 +577,117 @@ enum FuelInsightLogic {
     }
 }
 
+/// Remembers the last fuel alert we scheduled so the same fill cycle
+/// can't re-spam every time the app foregrounds — while still restoring
+/// a pending alert that refresh cancelled.
+enum FuelNotifyCooldown {
+    private static let prefix = "veloseete.fuelNotify."
+
+    enum Decision: Equatable {
+        case schedule(Date)
+        case skip
+    }
+
+    private struct Record: Codable {
+        var fillId: String
+        var urgency: String
+        var fireEpoch: TimeInterval
+    }
+
+    static func decision(
+        vehicleId: String,
+        fillId: String,
+        urgency: FuelInsightLogic.FuelUrgency,
+        proposedFireDate: Date,
+        now: Date = Date()
+    ) -> Decision {
+        guard let data = UserDefaults.standard.data(forKey: prefix + vehicleId),
+              let record = try? JSONDecoder().decode(Record.self, from: data),
+              let previous = FuelInsightLogic.FuelUrgency(rawValue: record.urgency) else {
+            return .schedule(proposedFireDate)
+        }
+
+        let storedFire = Date(timeIntervalSince1970: record.fireEpoch)
+
+        // New fill → fresh cycle.
+        if record.fillId != fillId {
+            return .schedule(proposedFireDate)
+        }
+
+        // Same fill, same urgency: restore pending if it hasn't fired yet;
+        // otherwise stay quiet (stops the empty-spam loop).
+        if urgency == previous {
+            if storedFire > now.addingTimeInterval(60) {
+                return .schedule(storedFire)
+            }
+            return .skip
+        }
+
+        // Escalation only (e.g. low → empty).
+        if urgency > previous {
+            return .schedule(proposedFireDate)
+        }
+
+        return .skip
+    }
+
+    static func markScheduled(
+        vehicleId: String,
+        fillId: String,
+        urgency: FuelInsightLogic.FuelUrgency,
+        fireDate: Date
+    ) {
+        let record = Record(
+            fillId: fillId,
+            urgency: urgency.rawValue,
+            fireEpoch: fireDate.timeIntervalSince1970
+        )
+        if let data = try? JSONEncoder().encode(record) {
+            UserDefaults.standard.set(data, forKey: prefix + vehicleId)
+        }
+    }
+}
+
 private enum InsightNotificationCopy {
     struct Line {
         let title: String
         let body: String
     }
 
-    static func fuel(vehicleName: String, daysRemaining: Int, kmRemaining: Double? = nil) -> Line {
-        let rangeNote = kmRemaining.map { String(format: " Roughly %.0f km left in the tank.", max($0, 0)) } ?? ""
-        if daysRemaining <= 0 {
+    static func fuel(
+        vehicleName: String,
+        urgency: FuelInsightLogic.FuelUrgency,
+        daysRemaining: Int,
+        kmRemaining: Double?,
+        tankPercent: Double?
+    ) -> Line {
+        let rangeNote: String = {
+            if let km = kmRemaining, let pct = tankPercent {
+                return String(format: " About %.0f km left (~%.0f%% of the tank).", max(km, 0), max(pct, 0))
+            }
+            if let km = kmRemaining {
+                return String(format: " Roughly %.0f km left in the tank.", max(km, 0))
+            }
+            return ""
+        }()
+
+        switch urgency {
+        case .empty:
             return pick([
-                Line(title: "\(vehicleName) is THIRSTY 😰", body: "The tank is due a fill. Right now. This is not a drill." + rangeNote),
-                Line(title: "Uh oh.", body: "\(vehicleName) needed fuel, like, yesterday.\(rangeNote) Please don't test how far 'empty' goes."),
+                Line(title: "\(vehicleName) is running on fumes", body: "Your driving pattern says the tank is essentially empty.\(rangeNote) Fill up before you push it."),
+                Line(title: "Fuel now — not later", body: "\(vehicleName) has almost nothing left based on km since your last fill.\(rangeNote)"),
             ])
-        }
-        if daysRemaining == 1 {
+        case .low:
             return pick([
-                Line(title: "Tomorrow. Fuel. Don't forget.", body: "\(vehicleName) is almost running on hopes and dreams.\(rangeNote) Plan a pit stop."),
-                Line(title: "One day left ⛽", body: "\(vehicleName) will want a drink tomorrow.\(rangeNote) I'll remember if you forget. I always remember."),
+                Line(title: "Low fuel on \(vehicleName)", body: "Based on your fill history and km driven, you're in the low zone.\(rangeNote) Plan a stop soon."),
+                Line(title: "Tank's getting light ⛽", body: "\(vehicleName) is down to the last stretch of this fill.\(rangeNote)"),
             ])
+        case .watch, .none:
+            return Line(
+                title: "Fuel check",
+                body: "\(vehicleName) still has range.\(rangeNote)"
+            )
         }
-        return pick([
-            Line(title: "Fuel check in \(daysRemaining) days!", body: "At your current pace, \(vehicleName) will want a top-up in about \(daysRemaining) days.\(rangeNote)"),
-            Line(title: "Heads up! ⛽", body: "\(vehicleName) should be good for about \(daysRemaining) more days the way you're driving.\(rangeNote)"),
-        ])
     }
 
     static func service(

@@ -11,8 +11,15 @@ final class TripLiveActivityController {
         ActivityAuthorizationInfo().areActivitiesEnabled
     }
 
-    func start(vehicleName: String, startedAt: Date) {
-        guard ActivityAuthorizationInfo().areActivitiesEnabled else { return }
+    func start(
+        vehicleName: String,
+        startedAt: Date,
+        baselineL100: Double = 8.0
+    ) {
+        guard ActivityAuthorizationInfo().areActivitiesEnabled else {
+            print("[LiveActivity] skipped — enable Live Activities in Settings → Veloseete")
+            return
+        }
 
         // A new recording owns a fresh activity. Remove anything stale first.
         for existing in Activity<TripActivityAttributes>.activities {
@@ -28,15 +35,21 @@ final class TripLiveActivityController {
             currentSpeedKmh: 0,
             maxSpeedKmh: 0,
             isPaused: false,
-            statusLabel: "Recording"
+            statusLabel: "Smooth",
+            driveScore: 78,
+            estL100: baselineL100,
+            moodRaw: "smooth",
+            lastEvent: "Ready when you roll",
+            thirst: 0.22
         )
 
         do {
             activity = try Activity.request(
                 attributes: attributes,
-                content: .init(state: state, staleDate: nil),
+                content: .init(state: state, staleDate: Date().addingTimeInterval(60 * 8)),
                 pushType: nil
             )
+            print("[LiveActivity] started for \(vehicleName)")
         } catch {
             print("[LiveActivity] start failed: \(error)")
         }
@@ -47,7 +60,8 @@ final class TripLiveActivityController {
         durationSec: Double,
         currentSpeedKmh: Double,
         maxSpeedKmh: Double,
-        isPaused: Bool
+        isPaused: Bool,
+        mood: DriveMoodLogic.Snapshot
     ) {
         guard let activity = activity ?? Activity<TripActivityAttributes>.activities.first else { return }
         self.activity = activity
@@ -57,14 +71,26 @@ final class TripLiveActivityController {
             currentSpeedKmh: currentSpeedKmh,
             maxSpeedKmh: maxSpeedKmh,
             isPaused: isPaused,
-            statusLabel: isPaused ? "Paused" : "Recording"
+            statusLabel: mood.statusLabel,
+            driveScore: mood.driveScore,
+            estL100: mood.estL100,
+            moodRaw: mood.moodRaw,
+            lastEvent: mood.lastEvent,
+            thirst: mood.thirst
         )
         Task {
-            await activity.update(.init(state: state, staleDate: nil))
+            await activity.update(
+                .init(state: state, staleDate: Date().addingTimeInterval(60 * 8))
+            )
         }
     }
 
-    func end(finalDistanceKm: Double, durationSec: Double, maxSpeedKmh: Double) {
+    func end(
+        finalDistanceKm: Double,
+        durationSec: Double,
+        maxSpeedKmh: Double,
+        mood: DriveMoodLogic.Snapshot
+    ) {
         guard let activity = activity ?? Activity<TripActivityAttributes>.activities.first else { return }
         self.activity = activity
         let state = TripActivityAttributes.ContentState(
@@ -73,10 +99,19 @@ final class TripLiveActivityController {
             currentSpeedKmh: 0,
             maxSpeedKmh: maxSpeedKmh,
             isPaused: false,
-            statusLabel: "Saved"
+            statusLabel: mood.statusLabel,
+            driveScore: mood.driveScore,
+            estL100: mood.estL100,
+            moodRaw: mood.moodRaw,
+            lastEvent: mood.lastEvent,
+            thirst: mood.thirst
         )
         Task {
-            await activity.end(.init(state: state, staleDate: nil), dismissalPolicy: .immediate)
+            // Hold the trip summary briefly — Apple Fitness style, not a flash.
+            await activity.end(
+                .init(state: state, staleDate: nil),
+                dismissalPolicy: .after(Date().addingTimeInterval(50))
+            )
         }
         self.activity = nil
     }

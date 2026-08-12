@@ -145,6 +145,7 @@ final class TripTrackingLogicTests: XCTestCase {
     }
 
     func testFuelPredictionUsesFillCadence() {
+        // Just filled a full tank — must NOT notify; plenty of range left.
         let logs = [
             fuelLog(id: "1", odometer: 10_000, liters: 40, full: true, daysAgo: 20),
             fuelLog(id: "2", odometer: 10_400, liters: 40, full: true, daysAgo: 10),
@@ -153,17 +154,18 @@ final class TripTrackingLogicTests: XCTestCase {
         let prediction = FuelInsightLogic.predictNextFill(
             logs: logs,
             estimatedOdometer: 10_800,
+            tankCapacityLiters: 45,
             now: Date()
         )
         XCTAssertNotNil(prediction)
-        // ~10 day cadence just filled → about 9–10 days remaining (with early lean).
         XCTAssertGreaterThanOrEqual(prediction?.daysRemaining ?? -1, 7)
-        XCTAssertLessThanOrEqual(prediction?.daysRemaining ?? 99, 11)
+        XCTAssertFalse(prediction?.shouldNotify ?? true)
+        XCTAssertEqual(prediction?.urgency, FuelInsightLogic.FuelUrgency.none)
     }
 
     func testFuelPredictionExtendsWhenBarelyDriving() {
         // Usual pattern: 400 km / 10 days per tank. But 4 days into this tank
-        // only 40 km were driven — the reminder must move out, not fire on cadence.
+        // only 40 km were driven — must not declare low fuel.
         let logs = [
             fuelLog(id: "1", odometer: 10_000, liters: 40, full: true, daysAgo: 24),
             fuelLog(id: "2", odometer: 10_400, liters: 40, full: true, daysAgo: 14),
@@ -172,14 +174,16 @@ final class TripTrackingLogicTests: XCTestCase {
         let prediction = FuelInsightLogic.predictNextFill(
             logs: logs,
             estimatedOdometer: 10_840,
+            tankCapacityLiters: 45,
             now: Date()
         )
         XCTAssertNotNil(prediction)
         XCTAssertGreaterThan(prediction?.daysRemaining ?? 0, 15)
+        XCTAssertFalse(prediction?.shouldNotify ?? true)
     }
 
-    func testFuelPredictionFiresEarlyWhenDrivingHard() {
-        // Same history, but 350 of the ~400 km tank burned in 4 days.
+    func testFuelPredictionFiresWhenTankActuallyLow() {
+        // Same history, but ~360 of the ~400 km tank burned — low, should notify.
         let logs = [
             fuelLog(id: "1", odometer: 10_000, liters: 40, full: true, daysAgo: 24),
             fuelLog(id: "2", odometer: 10_400, liters: 40, full: true, daysAgo: 14),
@@ -187,16 +191,48 @@ final class TripTrackingLogicTests: XCTestCase {
         ]
         let prediction = FuelInsightLogic.predictNextFill(
             logs: logs,
-            estimatedOdometer: 11_150,
+            estimatedOdometer: 11_160,
+            tankCapacityLiters: 45,
             now: Date()
         )
         XCTAssertNotNil(prediction)
-        XCTAssertLessThanOrEqual(prediction?.daysRemaining ?? 99, 1)
-        XCTAssertEqual(prediction?.kmRemaining ?? -1, 50, accuracy: 0.1)
+        XCTAssertTrue(prediction?.shouldNotify ?? false)
+        XCTAssertTrue((prediction?.urgency ?? .none) >= .low)
+        XCTAssertLessThanOrEqual(prediction?.kmRemaining ?? 999, 60)
+    }
+
+    func testFuelPredictionDeclaresEmptyNearZeroRange() {
+        let logs = [
+            fuelLog(id: "1", odometer: 10_000, liters: 40, full: true, daysAgo: 24),
+            fuelLog(id: "2", odometer: 10_400, liters: 40, full: true, daysAgo: 14),
+            fuelLog(id: "3", odometer: 10_800, liters: 40, full: true, daysAgo: 4)
+        ]
+        let prediction = FuelInsightLogic.predictNextFill(
+            logs: logs,
+            estimatedOdometer: 11_200,
+            tankCapacityLiters: 45,
+            now: Date()
+        )
+        XCTAssertEqual(prediction?.urgency, .empty)
+        XCTAssertTrue(prediction?.shouldNotify ?? false)
+    }
+
+    func testFuelPredictionIgnoresCalendarWithoutOdometer() {
+        let logs = [
+            fuelLog(id: "1", odometer: 10_000, liters: 40, full: true, daysAgo: 20),
+            fuelLog(id: "2", odometer: 10_400, liters: 40, full: true, daysAgo: 10),
+            fuelLog(id: "3", odometer: 10_800, liters: 40, full: true, daysAgo: 5)
+        ]
+        let prediction = FuelInsightLogic.predictNextFill(
+            logs: logs,
+            estimatedOdometer: nil,
+            now: Date()
+        )
+        XCTAssertNil(prediction)
     }
 
     func testFuelPredictionShrinksBudgetForPartialFill() {
-        // Last fill was only 10 L — the reminder shouldn't assume a full tank's range.
+        // Last fill was only 10 L — range budget must shrink; still full-ish of that slice so no notify yet at 0 km.
         let logs = [
             fuelLog(id: "1", odometer: 10_000, liters: 40, full: true, daysAgo: 20),
             fuelLog(id: "2", odometer: 10_400, liters: 40, full: true, daysAgo: 10),
@@ -205,10 +241,57 @@ final class TripTrackingLogicTests: XCTestCase {
         let prediction = FuelInsightLogic.predictNextFill(
             logs: logs,
             estimatedOdometer: 10_800,
+            tankCapacityLiters: 45,
             now: Date()
         )
         XCTAssertNotNil(prediction)
-        XCTAssertLessThanOrEqual(prediction?.daysRemaining ?? 99, 5)
+        XCTAssertLessThan(prediction?.kmRemaining ?? 999, 200)
+        XCTAssertFalse(prediction?.shouldNotify ?? true)
+    }
+
+    func testFuelCooldownBlocksRepeatEmptySpam() {
+        let vehicleId = "car-cooldown"
+        let fillId = "fill-1"
+        UserDefaults.standard.removeObject(forKey: "veloseete.fuelNotify." + vehicleId)
+        let now = Date()
+
+        let first = FuelNotifyCooldown.decision(
+            vehicleId: vehicleId,
+            fillId: fillId,
+            urgency: .empty,
+            proposedFireDate: now.addingTimeInterval(900),
+            now: now
+        )
+        guard case let .schedule(fire) = first else {
+            return XCTFail("expected first schedule")
+        }
+        FuelNotifyCooldown.markScheduled(vehicleId: vehicleId, fillId: fillId, urgency: .empty, fireDate: fire)
+
+        // Same urgency after the scheduled fire already passed → skip (no spam).
+        FuelNotifyCooldown.markScheduled(
+            vehicleId: vehicleId,
+            fillId: fillId,
+            urgency: .empty,
+            fireDate: now.addingTimeInterval(-120)
+        )
+        let second = FuelNotifyCooldown.decision(
+            vehicleId: vehicleId,
+            fillId: fillId,
+            urgency: .empty,
+            proposedFireDate: now.addingTimeInterval(900),
+            now: now
+        )
+        XCTAssertEqual(second, .skip)
+
+        // New fill resets.
+        let third = FuelNotifyCooldown.decision(
+            vehicleId: vehicleId,
+            fillId: "fill-2",
+            urgency: .low,
+            proposedFireDate: now.addingTimeInterval(3_600),
+            now: now
+        )
+        XCTAssertNotEqual(third, .skip)
     }
 
     func testServicePredictionHonorsDueDate() {

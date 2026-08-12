@@ -68,14 +68,26 @@ struct MainTabShell: View {
             RefuelSheetView(vehicleId: draft.vehicleID, carPlayDraft: draft)
         }
         .onAppear {
+            applyPortfolioTabOverrideIfNeeded()
             presentPendingCarPlayRefuel()
         }
         .onChange(of: scenePhase) { _, phase in
             guard phase == .active else { return }
+            applyPortfolioTabOverrideIfNeeded()
             presentPendingCarPlayRefuel()
         }
         .onReceive(NotificationCenter.default.publisher(for: CarPlayRefuelHandoff.draftCreated)) { _ in
             presentPendingCarPlayRefuel()
+        }
+    }
+
+    /// Debug/portfolio helper: `defaults write com.veloseete.app portfolio.forceTab fuel`
+    /// then foreground the app. Values: trips | fuel | service | details | driver
+    private func applyPortfolioTabOverrideIfNeeded() {
+        guard let raw = UserDefaults.standard.string(forKey: "portfolio.forceTab"),
+              let forced = AppTab(rawValue: raw) else { return }
+        if tab != forced {
+            tab = forced
         }
     }
 

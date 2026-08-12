@@ -70,7 +70,7 @@ final class TripPermissionsManager: NSObject, ObservableObject {
     override init() {
         super.init()
         locationManager.delegate = self
-        locationManager.desiredAccuracy = kCLLocationAccuracyBest
+        locationManager.desiredAccuracy = kCLLocationAccuracyHundredMeters
         locationManager.activityType = .automotiveNavigation
         locationManager.allowsBackgroundLocationUpdates = false
         refreshStatuses()

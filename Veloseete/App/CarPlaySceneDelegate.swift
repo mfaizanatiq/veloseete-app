@@ -150,7 +150,12 @@ final class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegat
             vehicleId: vehicle.id,
             vehicleName: vehicle.nickname,
             currentOdometer: vehicle.currentOdometer,
-            driverName: store.userName
+            driverName: store.userName,
+            baselineL100: DriveMoodBaseline.resolve(
+                vehicle: vehicle,
+                logs: store.fuelLogs,
+                manufacturerStandard: store.manufacturerStandard
+            )
         )
     }
 
@@ -258,7 +263,7 @@ final class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegat
             symbol = "checkmark.circle.fill"
         }
 
-        let image = recorder.snapshot.flatMap { routeThumbnail(points: $0.route) }
+        let image = routeThumbnail(points: recorder.liveRoute)
             ?? UIImage(systemName: symbol)
         return CPListItem(
             text: text,

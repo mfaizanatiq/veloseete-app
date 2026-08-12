@@ -100,21 +100,36 @@ final class DataStore: ObservableObject {
         isLoading = true
         loadError = nil
         loadWarnings = []
+
+        print("[DataStore] Loading for user \(userId)")
+
+        // Instant hydrate from the on-device Firestore cache. This is what
+        // keeps the app usable on a VPN / flaky network — we don't wait for
+        // Google before painting the garage.
+        let hadCache = await hydrateFromLocalCache(userId: userId)
+        if hadCache {
+            isLoading = false
+            isLoaded = true
+            await reconcileCurrentVehicleIfNeeded(userId: userId)
+            publishCarPlayWidgetState()
+            VehicleInsightScheduler.shared.refresh(using: self)
+            print("[DataStore] Opened from local cache — refreshing from server in background")
+        }
+
         defer {
             isLoading = false
             isLoaded = true
         }
 
-        print("[DataStore] Loading for user \(userId)")
-
-        // Load independently so one failed collection doesn't wipe everything.
-        // Hard timeouts keep VPN / dead routes from freezing launch on a black loader.
+        // Server refresh. Failures only warn — never wipe the cache-hydrated state.
         do {
             userDocument = try await fetchWithTimeout {
                 try await FirestoreRepository.shared.fetchUser(userId: userId)
             }
         } catch {
-            loadWarnings.append("Profile: \(error.localizedDescription)")
+            if !hadCache {
+                loadWarnings.append("Profile: \(error.localizedDescription)")
+            }
             print("[DataStore] user fetch failed: \(error)")
         }
 
@@ -124,11 +139,11 @@ final class DataStore: ObservableObject {
             }
             applyVehicleLists(allVehicles)
             print("[DataStore] vehicles: \(vehicles.count) active, \(archivedVehicles.count) archived")
-            // Vehicles loaded for real — safe to drop review drives whose car
-            // was archived or deleted (possibly on another device).
             TripRecordingService.shared.prunePendingSaves(activeVehicleIds: activeVehicleIds)
         } catch {
-            loadWarnings.append("Vehicles: \(error.localizedDescription)")
+            if !hadCache {
+                loadWarnings.append("Vehicles: \(error.localizedDescription)")
+            }
             print("[DataStore] vehicles fetch failed: \(error)")
         }
 
@@ -138,7 +153,9 @@ final class DataStore: ObservableObject {
             }
             print("[DataStore] fuelLogs: \(fuelLogs.count)")
         } catch {
-            loadWarnings.append("Fuel logs: \(error.localizedDescription)")
+            if !hadCache {
+                loadWarnings.append("Fuel logs: \(error.localizedDescription)")
+            }
             print("[DataStore] fuelLogs fetch failed: \(error)")
         }
 
@@ -148,9 +165,8 @@ final class DataStore: ObservableObject {
             }
             print("[DataStore] serviceLogs: \(serviceLogs.count)")
         } catch {
-            // Soft — don't surface as red banner; fuel is primary
             print("[DataStore] serviceLogs fetch failed: \(error)")
-            serviceLogs = []
+            if !hadCache { serviceLogs = [] }
         }
 
         do {
@@ -160,14 +176,13 @@ final class DataStore: ObservableObject {
             print("[DataStore] trips: \(trips.count)")
         } catch {
             print("[DataStore] trips fetch failed: \(error)")
-            trips = []
+            if !hadCache { trips = [] }
         }
 
         if vehicles.isEmpty && fuelLogs.isEmpty && !loadWarnings.isEmpty {
             loadError = loadWarnings.joined(separator: "\n")
         }
 
-        // If currentVehicleId points at an archived/missing car, point at an active one.
         await reconcileCurrentVehicleIfNeeded(userId: userId)
 
         if let vehicle = currentVehicle {
@@ -175,6 +190,39 @@ final class DataStore: ObservableObject {
         }
         publishCarPlayWidgetState()
         VehicleInsightScheduler.shared.refresh(using: self)
+    }
+
+    /// Pull last-known data from Firestore's on-device cache. Returns true if
+    /// enough data was found to unlock the UI without waiting on the network.
+    private func hydrateFromLocalCache(userId: String) async -> Bool {
+        var found = false
+
+        if let user = try? await FirestoreRepository.shared.fetchUser(userId: userId, source: .cache) {
+            userDocument = user
+            found = true
+        }
+
+        if let cachedVehicles = try? await FirestoreRepository.shared.fetchVehicles(userId: userId, source: .cache),
+           !cachedVehicles.isEmpty {
+            applyVehicleLists(cachedVehicles)
+            TripRecordingService.shared.prunePendingSaves(activeVehicleIds: activeVehicleIds)
+            found = true
+        }
+
+        if let cachedFuel = try? await FirestoreRepository.shared.fetchFuelLogs(userId: userId, source: .cache) {
+            fuelLogs = cachedFuel
+            if !cachedFuel.isEmpty { found = true }
+        }
+
+        if let cachedServices = try? await FirestoreRepository.shared.fetchServiceLogs(userId: userId, source: .cache) {
+            serviceLogs = cachedServices
+        }
+
+        if let cachedTrips = try? await FirestoreRepository.shared.fetchTrips(userId: userId, source: .cache) {
+            trips = cachedTrips
+        }
+
+        return found
     }
 
     private func fetchWithTimeout<T: Sendable>(

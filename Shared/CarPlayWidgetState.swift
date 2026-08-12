@@ -356,8 +356,9 @@ enum CarPlayWidgetStateStore {
             print("[WidgetStore] snapshot encode failed")
             return
         }
+        // UserDefaults already flushes asynchronously — synchronize() was
+        // forcing main-thread I/O on every drive tick.
         defaults.set(data, forKey: snapshotKey)
-        defaults.synchronize()
         if reloadTimeline {
             reloadAllTimelines()
         }

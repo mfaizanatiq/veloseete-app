@@ -18,3 +18,8 @@ GoogleService-Info.plist
 work/
 .venv/
 serviceAccountKey*.json
+
+# Portfolio tooling
+portfolio/node_modules/
+portfolio/package-lock.json
+

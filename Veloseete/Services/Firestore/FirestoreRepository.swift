@@ -28,8 +28,8 @@ final class FirestoreRepository {
         try await db.collection("users").document(userId).setData(data, merge: true)
     }
 
-    func fetchUser(userId: String) async throws -> UserDocument? {
-        let snap = try await db.collection("users").document(userId).getDocument()
+    func fetchUser(userId: String, source: FirestoreSource = .default) async throws -> UserDocument? {
+        let snap = try await db.collection("users").document(userId).getDocument(source: source)
         guard let data = snap.data() else { return nil }
         return UserDocument.from(userId: userId, data: data)
     }
@@ -67,18 +67,18 @@ final class FirestoreRepository {
 
     // MARK: - Vehicles
 
-    func fetchVehicles(userId: String) async throws -> [Vehicle] {
+    func fetchVehicles(userId: String, source: FirestoreSource = .default) async throws -> [Vehicle] {
         do {
             let snap = try await db.collection("vehicles")
                 .whereField("userId", isEqualTo: userId)
                 .order(by: "createdAt", descending: true)
-                .getDocuments()
+                .getDocuments(source: source)
             return snap.documents.map { Vehicle.from(document: $0.documentID, data: $0.data()) }
         } catch {
             print("[Firestore] vehicles ordered query failed, falling back: \(error)")
             let snap = try await db.collection("vehicles")
                 .whereField("userId", isEqualTo: userId)
-                .getDocuments()
+                .getDocuments(source: source)
             return snap.documents
                 .map { Vehicle.from(document: $0.documentID, data: $0.data()) }
                 .sorted { $0.createdAt > $1.createdAt }
@@ -162,18 +162,18 @@ final class FirestoreRepository {
 
     // MARK: - Fuel logs
 
-    func fetchFuelLogs(userId: String) async throws -> [FuelLog] {
+    func fetchFuelLogs(userId: String, source: FirestoreSource = .default) async throws -> [FuelLog] {
         do {
             let snap = try await db.collection("fuelLogs")
                 .whereField("userId", isEqualTo: userId)
                 .order(by: "timestamp", descending: true)
-                .getDocuments()
+                .getDocuments(source: source)
             return snap.documents.map { FuelLog.from(document: $0.documentID, data: $0.data()) }
         } catch {
             print("[Firestore] fuelLogs ordered query failed, falling back: \(error)")
             let snap = try await db.collection("fuelLogs")
                 .whereField("userId", isEqualTo: userId)
-                .getDocuments()
+                .getDocuments(source: source)
             return snap.documents
                 .map { FuelLog.from(document: $0.documentID, data: $0.data()) }
                 .sorted { $0.timestamp > $1.timestamp }
@@ -263,12 +263,12 @@ final class FirestoreRepository {
 
     // MARK: - Service logs
 
-    func fetchServiceLogs(userId: String) async throws -> [ServiceLog] {
+    func fetchServiceLogs(userId: String, source: FirestoreSource = .default) async throws -> [ServiceLog] {
         do {
             let snap = try await db.collection("serviceLogs")
                 .whereField("userId", isEqualTo: userId)
                 .order(by: "timestamp", descending: true)
-                .getDocuments()
+                .getDocuments(source: source)
             return snap.documents.map { ServiceLog.from(document: $0.documentID, data: $0.data()) }
         } catch {
             print("[Firestore] serviceLogs ordered query failed, falling back: \(error)")
@@ -276,7 +276,7 @@ final class FirestoreRepository {
             do {
                 let snap = try await db.collection("serviceLogs")
                     .whereField("userId", isEqualTo: userId)
-                    .getDocuments()
+                    .getDocuments(source: source)
                 return snap.documents
                     .map { ServiceLog.from(document: $0.documentID, data: $0.data()) }
                     .sorted { $0.timestamp > $1.timestamp }
@@ -387,19 +387,19 @@ final class FirestoreRepository {
         return ref.documentID
     }
 
-    func fetchTrips(userId: String) async throws -> [Trip] {
+    func fetchTrips(userId: String, source: FirestoreSource = .default) async throws -> [Trip] {
         do {
             let snap = try await db.collection("trips")
                 .whereField("userId", isEqualTo: userId)
                 .order(by: "startedAt", descending: true)
-                .getDocuments()
+                .getDocuments(source: source)
             return snap.documents.map { Trip.from(document: $0.documentID, data: $0.data()) }
         } catch {
             print("[Firestore] trips ordered query failed, falling back: \(error)")
             do {
                 let snap = try await db.collection("trips")
                     .whereField("userId", isEqualTo: userId)
-                    .getDocuments()
+                    .getDocuments(source: source)
                 return snap.documents
                     .map { Trip.from(document: $0.documentID, data: $0.data()) }
                     .sorted { $0.startedAt > $1.startedAt }

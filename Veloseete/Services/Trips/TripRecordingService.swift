@@ -24,7 +24,6 @@ struct ActiveTripSnapshot: Equatable {
     var source: String
     var vehicleId: String
     var vehicleName: String
-    var route: [TripCoordinate]
 }
 
 struct PendingTripSave: Codable, Equatable, Identifiable {
@@ -51,6 +50,7 @@ final class TripRecordingService: NSObject, ObservableObject {
     @Published private(set) var phase: TripRecordingPhase = .idle
     @Published private(set) var autoTrackingEnabled = false
     @Published private(set) var snapshot: ActiveTripSnapshot?
+    /// Downsampled polyline for the Tracking map — published on a throttle, not every GPS tick.
     @Published private(set) var liveRoute: [TripCoordinate] = []
     @Published private(set) var lastLocationAccuracy: Double?
     /// Latest usable fix for the tracking map camera (watching or recording).
@@ -90,6 +90,25 @@ final class TripRecordingService: NSObject, ObservableObject {
     private var stationarySince: Date?
     private var lastLiveActivityUpdate = Date.distantPast
     private var lastWidgetTrackingUpdate = Date.distantPast
+    private var lastLiveRoutePublish = Date.distantPast
+    private var lastWidgetWriteState: CarPlayWidgetTrackingState?
+    private var lastWidgetWriteDistanceKm = -1.0
+    private var lastWidgetWriteDurationSec = -1.0
+    private var driveMoodState = DriveMoodLogic.State()
+    /// Typical tank L/100 used to scale the live efficiency estimate.
+    private var baselineL100: Double = 8.0
+    /// Full-fidelity route buffer for save — not published to SwiftUI.
+    private var recordedRoute: [TripCoordinate] = []
+    /// Continuous GPS while watching — only after motion/speed hints a drive.
+    private var watchingGPSEscalated = false
+    private var watchingIdleSince: Date?
+
+    private let liveRoutePublishInterval: TimeInterval = 2.5
+    private let liveRouteDisplayMax = 180
+    private let recordedRouteSoftCap = 2_500
+    private let recordedRouteCompacted = 1_200
+    /// After this long below driving speed, drop continuous GPS back to coarse watch.
+    private let watchingDeescalateHold: TimeInterval = 90
 
     /// Auto-start once automotive / speed holds for this long.
     private let autoStartHold: TimeInterval = 18
@@ -122,6 +141,10 @@ final class TripRecordingService: NSObject, ObservableObject {
         startWatchingIfNeeded()
     }
 
+    /// Minimum unconfirmed drives before we schedule neglect nudges.
+    /// One pending drive stays quiet in My Drives — no push until it piles up.
+    private static let pendingReviewNudgeThreshold = 2
+
     /// Keeps (or clears) nudges for trips waiting in My Drives.
     /// Pass `forceReschedule` when the pending queue itself changed.
     func refreshPendingReviewReminders(forceReschedule: Bool = false) {
@@ -132,7 +155,8 @@ final class TripRecordingService: NSObject, ObservableObject {
                 .map(\.identifier)
                 .filter { $0.hasPrefix(Self.pendingReviewPrefix) }
 
-            if count == 0 {
+            // Quiet until the queue looks neglected (2+ waiting).
+            guard count >= Self.pendingReviewNudgeThreshold else {
                 if !existing.isEmpty {
                     center.removePendingNotificationRequests(withIdentifiers: existing)
                 }
@@ -154,9 +178,9 @@ final class TripRecordingService: NSObject, ObservableObject {
                 let body = copy.body
                 center.getNotificationSettings { settings in
                     let deliver: () -> Void = {
+                        // Fewer, later nudges — not a 1-hour guilt trip.
                         let intervals: [(id: String, seconds: TimeInterval)] = [
-                            ("soon", 60 * 60),
-                            ("later", 6 * 60 * 60),
+                            ("later", 4 * 60 * 60),
                             ("day", 24 * 60 * 60),
                         ]
                         for slot in intervals {
@@ -196,6 +220,10 @@ final class TripRecordingService: NSObject, ObservableObject {
         }
     }
 
+    /// True while Tracking map owns continuous GPS/heading (idle / confirming only).
+    /// Watching and recording own their own location session separately.
+    private var mapFollowOwnedUpdates = false
+
     /// Centers the Tracking map even when idle / waiting for the first fix.
     /// Seeds from Core Location's last known position, then requests a fresh update.
     func ensureMapFollowUpdates() {
@@ -203,8 +231,11 @@ final class TripRecordingService: NSObject, ObservableObject {
 
         switch phase {
         case .watching, .recording:
+            // Session already owns GPS — nudge a fresh fix for the camera only.
+            mapFollowOwnedUpdates = false
             locationManager.requestLocation()
         case .idle, .confirming:
+            mapFollowOwnedUpdates = true
             locationManager.desiredAccuracy = kCLLocationAccuracyNearestTenMeters
             locationManager.distanceFilter = 25
             locationManager.pausesLocationUpdatesAutomatically = true
@@ -215,6 +246,16 @@ final class TripRecordingService: NSObject, ObservableObject {
         }
     }
 
+    /// Stops map-only GPS/heading when leaving Tracking.
+    /// Never interrupts an active watching or recording session.
+    func stopMapFollowUpdates() {
+        guard mapFollowOwnedUpdates else { return }
+        mapFollowOwnedUpdates = false
+        guard phase == .idle || phase == .confirming else { return }
+        locationManager.stopUpdatingLocation()
+        locationManager.stopUpdatingHeading()
+    }
+
     private enum Keys {
         static let autoTracking = "tripRecording.autoTrackingEnabled"
         static let pendingSaves = "tripRecording.pendingSaves.v1"
@@ -222,11 +263,20 @@ final class TripRecordingService: NSObject, ObservableObject {
 
     // MARK: - Public API
 
-    func configure(vehicleId: String, vehicleName: String, currentOdometer: Double, driverName: String = "") {
+    func configure(
+        vehicleId: String,
+        vehicleName: String,
+        currentOdometer: Double,
+        driverName: String = "",
+        baselineL100: Double? = nil
+    ) {
         self.vehicleId = vehicleId
         self.vehicleName = vehicleName
         self.baseOdometer = currentOdometer
         self.driverName = driverName.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let baselineL100, baselineL100 > 0 {
+            self.baselineL100 = baselineL100
+        }
         if phase == .watching {
             // Keep watching with new vehicle context
         }
@@ -308,15 +358,22 @@ final class TripRecordingService: NSObject, ObservableObject {
         persistPendingSaves()
         snapshot = nil
         liveRoute = []
-        if phase == .recording {
-            tickTimer?.invalidate()
-            tickTimer = nil
-            stopLocationUpdates()
-            stopMotionUpdates()
-            TripLiveActivityController.shared.cancel()
-        }
+        recordedRoute = []
+
+        // Always tear down hardware first. Watching and recording both leave
+        // GPS/motion running; setting phase to .idle before setAutoTracking(false)
+        // used to skip stopWatching() and leak location updates after sign-out.
+        mapFollowOwnedUpdates = false
+        tickTimer?.invalidate()
+        tickTimer = nil
+        stopLocationUpdates()
+        stopMotionUpdates()
+        TripLiveActivityController.shared.cancel()
+
+        autoTrackingEnabled = false
+        UserDefaults.standard.set(false, forKey: Keys.autoTracking)
         phase = .idle
-        setAutoTracking(false)
+
         followLatitude = nil
         followLongitude = nil
         followCourseDegrees = -1
@@ -333,6 +390,8 @@ final class TripRecordingService: NSObject, ObservableObject {
     private func startWatchingIfNeeded() {
         guard autoTrackingEnabled else { return }
         guard phase == .idle || phase == .watching else { return }
+        // Session takes over GPS ownership from the map.
+        mapFollowOwnedUpdates = false
         phase = .watching
         beginLocationUpdates(background: true)
         beginMotionUpdates()
@@ -354,12 +413,16 @@ final class TripRecordingService: NSObject, ObservableObject {
             return
         }
         self.source = source
+        // Recording owns GPS — map follow must not think it still owns updates.
+        mapFollowOwnedUpdates = false
         startedAt = Date()
         pausedAccumulated = 0
         pauseStartedAt = nil
         isPaused = false
         lastLocation = nil
         liveRoute = []
+        recordedRoute = []
+        lastLiveRoutePublish = .distantPast
         lastLocationAccuracy = nil
         distanceMeters = 0
         maxSpeedMps = 0
@@ -372,7 +435,12 @@ final class TripRecordingService: NSObject, ObservableObject {
         startTickTimer()
 
         let start = startedAt ?? Date()
-        TripLiveActivityController.shared.start(vehicleName: vehicleName, startedAt: start)
+        driveMoodState = DriveMoodLogic.State()
+        TripLiveActivityController.shared.start(
+            vehicleName: vehicleName,
+            startedAt: start,
+            baselineL100: baselineL100
+        )
         let startCopy = DriveNotificationCopy.start(vehicleName: vehicleName)
         scheduleDriveNotification(
             title: personalized(startCopy.title),
@@ -401,10 +469,16 @@ final class TripRecordingService: NSObject, ObservableObject {
         stopLocationUpdates()
         stopMotionUpdates()
 
+        let mood = DriveMoodLogic.finalSnapshot(
+            state: driveMoodState,
+            baselineL100: baselineL100,
+            saved: distanceKm >= minSaveDistanceKm
+        )
         TripLiveActivityController.shared.end(
             finalDistanceKm: distanceKm,
             durationSec: duration,
-            maxSpeedKmh: maxSpeed
+            maxSpeedKmh: maxSpeed,
+            mood: mood
         )
 
         guard distanceKm >= minSaveDistanceKm else {
@@ -419,12 +493,15 @@ final class TripRecordingService: NSObject, ObservableObject {
                 title: personalized(shortCopy.title),
                 body: shortCopy.body
             )
+            liveRoute = []
+            recordedRoute = []
             resetSession()
             phase = autoTrackingEnabled ? .watching : .idle
             if autoTrackingEnabled { startWatchingIfNeeded() }
             return
         }
 
+        let routeForSave = downsample(recordedRoute)
         let pending = PendingTripSave(
             id: UUID(),
             vehicleId: vehicleId ?? "",
@@ -435,9 +512,9 @@ final class TripRecordingService: NSObject, ObservableObject {
             durationSec: duration,
             avgSpeedKmh: avgSpeed,
             maxSpeedKmh: maxSpeed,
-            startCoordinate: liveRoute.first,
-            endCoordinate: liveRoute.last,
-            route: downsample(liveRoute),
+            startCoordinate: recordedRoute.first,
+            endCoordinate: recordedRoute.last,
+            route: routeForSave,
             source: source,
             suggestedOdometer: baseOdometer + distanceKm
         )
@@ -446,6 +523,7 @@ final class TripRecordingService: NSObject, ObservableObject {
         phase = autoTrackingEnabled ? .watching : .idle
         snapshot = nil
         liveRoute = []
+        recordedRoute = []
         resetSession()
 
         if autoTrackingEnabled { startWatchingIfNeeded() }
@@ -497,30 +575,89 @@ final class TripRecordingService: NSObject, ObservableObject {
     }
 
     private func beginLocationUpdates(background: Bool) {
-        // Never let the system pause GPS while auto-detect is armed — paused
-        // updates were a common reason long highway drives were never started
-        // when the app had been killed or sitting in the background.
-        locationManager.pausesLocationUpdatesAutomatically = false
+        let status = locationManager.authorizationStatus
+        locationManager.allowsBackgroundLocationUpdates = background
+            && (status == .authorizedAlways || status == .authorizedWhenInUse)
+        locationManager.activityType = .automotiveNavigation
+
         if phase == .recording {
-            locationManager.desiredAccuracy = kCLLocationAccuracyBestForNavigation
-            locationManager.distanceFilter = 8
+            watchingGPSEscalated = false
+            watchingIdleSince = nil
+            applyRecordingGPSProfile()
+            locationManager.startUpdatingLocation()
+            startHeadingUpdatesIfAvailable()
+            if status == .authorizedAlways {
+                locationManager.startMonitoringSignificantLocationChanges()
+            }
+            return
+        }
+
+        // Watching: significant-change + motion are the primary arm.
+        // Continuous GPS only after escalateWatchingGPSIfNeeded().
+        watchingGPSEscalated = false
+        watchingIdleSince = nil
+        applyWatchingGPSProfile(escalated: false)
+
+        if status == .authorizedAlways {
+            locationManager.startMonitoringSignificantLocationChanges()
+            // Stay on significant-change until motion/speed escalates — saves battery overnight.
+            locationManager.stopUpdatingLocation()
+            locationManager.stopUpdatingHeading()
         } else {
-            // Dense enough to catch highway merge / border runs without
-            // turn-by-turn drain; significant-change monitoring covers cold starts.
+            // When-In-Use can't rely on significant-change as reliably — coarse
+            // continuous GPS with system pause allowed.
+            locationManager.startUpdatingLocation()
+        }
+    }
+
+    private func applyRecordingGPSProfile() {
+        locationManager.pausesLocationUpdatesAutomatically = false
+        locationManager.desiredAccuracy = kCLLocationAccuracyBestForNavigation
+        locationManager.distanceFilter = 8
+    }
+
+    private func applyWatchingGPSProfile(escalated: Bool) {
+        if escalated {
+            // Dense enough to catch the auto-start hold without turn-by-turn drain.
+            locationManager.pausesLocationUpdatesAutomatically = false
             locationManager.desiredAccuracy = kCLLocationAccuracyNearestTenMeters
             locationManager.distanceFilter = 40
+        } else {
+            locationManager.pausesLocationUpdatesAutomatically = true
+            locationManager.desiredAccuracy = kCLLocationAccuracyHundredMeters
+            locationManager.distanceFilter = 100
         }
-        locationManager.allowsBackgroundLocationUpdates = background
-            && (locationManager.authorizationStatus == .authorizedAlways
-                || locationManager.authorizationStatus == .authorizedWhenInUse)
+    }
+
+    /// Turn on continuous GPS while watching after a drive hint (motion / speed / cell handoff).
+    private func escalateWatchingGPSIfNeeded() {
+        guard phase == .watching, !watchingGPSEscalated else { return }
+        watchingGPSEscalated = true
+        watchingIdleSince = nil
+        applyWatchingGPSProfile(escalated: true)
         locationManager.startUpdatingLocation()
-        startHeadingUpdatesIfAvailable()
+    }
+
+    /// Drop continuous GPS after sitting still while still armed for auto-detect.
+    private func deescalateWatchingGPSIfNeeded() {
+        guard phase == .watching, watchingGPSEscalated else { return }
+        watchingGPSEscalated = false
+        watchingIdleSince = nil
+        applyWatchingGPSProfile(escalated: false)
+        locationManager.stopUpdatingLocation()
+        locationManager.stopUpdatingHeading()
+        // Keep significant-change monitoring when Always-authorized.
         if locationManager.authorizationStatus == .authorizedAlways {
             locationManager.startMonitoringSignificantLocationChanges()
+        } else {
+            // When-In-Use: resume coarse continuous with pause allowed.
+            locationManager.startUpdatingLocation()
         }
     }
 
     private func stopLocationUpdates() {
+        watchingGPSEscalated = false
+        watchingIdleSince = nil
         locationManager.stopUpdatingLocation()
         locationManager.stopUpdatingHeading()
         locationManager.stopMonitoringSignificantLocationChanges()
@@ -562,10 +699,13 @@ final class TripRecordingService: NSObject, ObservableObject {
         if activity.automotive {
             if automotiveSince == nil { automotiveSince = now }
             stationarySince = nil
-            if phase == .watching,
-               let since = automotiveSince,
-               now.timeIntervalSince(since) >= autoStartHold {
-                beginRecording(source: "auto")
+            watchingIdleSince = nil
+            if phase == .watching {
+                escalateWatchingGPSIfNeeded()
+                if let since = automotiveSince,
+                   now.timeIntervalSince(since) >= autoStartHold {
+                    beginRecording(source: "auto")
+                }
             }
         } else if activity.stationary || activity.walking || activity.running {
             automotiveSince = nil
@@ -574,27 +714,25 @@ final class TripRecordingService: NSObject, ObservableObject {
                 if let since = stationarySince, now.timeIntervalSince(since) >= autoEndHold {
                     finishRecording(autoEnded: true)
                 }
+            } else if phase == .watching, watchingGPSEscalated {
+                if watchingIdleSince == nil { watchingIdleSince = now }
+                if let since = watchingIdleSince,
+                   now.timeIntervalSince(since) >= watchingDeescalateHold {
+                    deescalateWatchingGPSIfNeeded()
+                }
             }
         }
     }
 
     private func ingest(_ location: CLLocation) {
+        if phase == .watching {
+            ingestWatching(location)
+            return
+        }
+
         guard TripTrackingLogic.accepts(horizontalAccuracy: location.horizontalAccuracy) else { return }
         lastLocationAccuracy = location.horizontalAccuracy
         publishFollow(from: location)
-
-        if phase == .watching {
-            let speedKmh = max(0, location.speed) * 3.6
-            if speedKmh >= drivingSpeedKmh {
-                if automotiveSince == nil { automotiveSince = Date() }
-                if let since = automotiveSince, Date().timeIntervalSince(since) >= autoStartHold {
-                    beginRecording(source: "auto")
-                }
-            } else if speedKmh < stationarySpeedKmh {
-                automotiveSince = nil
-            }
-            return
-        }
 
         guard phase == .recording, !isPaused else { return }
 
@@ -625,18 +763,68 @@ final class TripRecordingService: NSObject, ObservableObject {
         let point = TripCoordinate(latitude: location.coordinate.latitude, longitude: location.coordinate.longitude)
         // Keep the route and its distance calculation on the same acceptance path.
         // Previously rejected GPS jumps still appeared as sharp spikes on the map.
-        let shouldAppendRoutePoint = liveRoute.isEmpty || acceptedSegment > 0
-        let updatedRoute = shouldAppendRoutePoint
-            ? TripTrackingLogic.appending(point, to: liveRoute)
-            : liveRoute
-        if updatedRoute.count != liveRoute.count {
-            liveRoute = updatedRoute
-            print("[TripRoute] accepted point \(liveRoute.count), accuracy \(Int(location.horizontalAccuracy))m")
+        let shouldAppendRoutePoint = recordedRoute.isEmpty || acceptedSegment > 0
+        if shouldAppendRoutePoint {
+            recordedRoute = TripTrackingLogic.appending(point, to: recordedRoute)
+            if recordedRoute.count > recordedRouteSoftCap {
+                recordedRoute = TripTrackingLogic.downsample(
+                    recordedRoute,
+                    maximum: recordedRouteCompacted
+                )
+            }
+            publishLiveRouteIfNeeded(force: false)
         }
         publishSnapshot()
         updateLiveActivity(force: false)
     }
 
+    /// Watching accepts coarser fixes (significant-change is often >45m).
+    private func ingestWatching(_ location: CLLocation) {
+        guard location.horizontalAccuracy >= 0, location.horizontalAccuracy <= 500 else { return }
+        lastLocationAccuracy = location.horizontalAccuracy
+        if location.horizontalAccuracy <= 80 {
+            publishFollow(from: location)
+        }
+
+        let hasSpeed = location.speed >= 0
+        let speedKmh = hasSpeed ? location.speed * 3.6 : 0
+
+        if hasSpeed, speedKmh >= drivingSpeedKmh {
+            escalateWatchingGPSIfNeeded()
+            watchingIdleSince = nil
+            if automotiveSince == nil { automotiveSince = Date() }
+            if let since = automotiveSince, Date().timeIntervalSince(since) >= autoStartHold {
+                beginRecording(source: "auto")
+            }
+        } else if !hasSpeed {
+            // Significant-change / coarse fix without speed — escalate to measure.
+            escalateWatchingGPSIfNeeded()
+        } else if speedKmh < stationarySpeedKmh {
+            automotiveSince = nil
+            if watchingGPSEscalated {
+                if watchingIdleSince == nil { watchingIdleSince = Date() }
+                if let since = watchingIdleSince,
+                   Date().timeIntervalSince(since) >= watchingDeescalateHold {
+                    deescalateWatchingGPSIfNeeded()
+                }
+            }
+        } else {
+            watchingIdleSince = nil
+        }
+    }
+
+    /// Publishes a thinned polyline for the map at a low rate so SwiftUI/MapKit
+    /// are not invalidated on every GPS fix.
+    private func publishLiveRouteIfNeeded(force: Bool) {
+        let now = Date()
+        guard force || now.timeIntervalSince(lastLiveRoutePublish) >= liveRoutePublishInterval else {
+            return
+        }
+        lastLiveRoutePublish = now
+        let display = TripTrackingLogic.downsample(recordedRoute, maximum: liveRouteDisplayMax)
+        guard display != liveRoute else { return }
+        liveRoute = display
+    }
     private func seedFollowFromLastKnownIfPossible() {
         guard let location = locationManager.location else { return }
         // Looser than trip acceptance — map center can use a coarser last-known fix.
@@ -693,12 +881,11 @@ final class TripRecordingService: NSObject, ObservableObject {
             currentSpeedKmh: max(0, (lastLocation?.speed ?? 0) * 3.6),
             maxSpeedKmh: maxSpeedMps * 3.6,
             avgSpeedKmh: avg,
-            routePointCount: liveRoute.count,
+            routePointCount: recordedRoute.count,
             isPaused: isPaused,
             source: source,
             vehicleId: vehicleId ?? "",
-            vehicleName: vehicleName,
-            route: liveRoute
+            vehicleName: vehicleName
         )
         syncWidgetTracking(force: false)
     }
@@ -714,7 +901,17 @@ final class TripRecordingService: NSObject, ObservableObject {
 
         let now = Date()
         let shouldReload = force || now.timeIntervalSince(lastWidgetTrackingUpdate) >= 30
-        guard force || shouldReload || phase == .recording else { return }
+        let distanceKm = snapshot?.distanceKm ?? 0
+        let durationSec = snapshot?.durationSec ?? 0
+        let meaningfulDelta =
+            lastWidgetWriteState != state
+            || abs(distanceKm - lastWidgetWriteDistanceKm) >= 0.1
+            || abs(durationSec - lastWidgetWriteDurationSec) >= 5
+
+        // Previously wrote + synchronized UserDefaults on every 1 Hz tick while
+        // recording. Only persist on phase/pause changes, distance/time deltas,
+        // forced sync, or the 30s widget timeline reload cadence.
+        guard force || shouldReload || meaningfulDelta else { return }
 
         if phase == .recording, let snapshot {
             CarPlayWidgetStateStore.updateTracking(
@@ -733,6 +930,10 @@ final class TripRecordingService: NSObject, ObservableObject {
                 reloadTimeline: shouldReload
             )
         }
+
+        lastWidgetWriteState = state
+        lastWidgetWriteDistanceKm = distanceKm
+        lastWidgetWriteDurationSec = durationSec
         if shouldReload {
             lastWidgetTrackingUpdate = now
         }
@@ -741,14 +942,22 @@ final class TripRecordingService: NSObject, ObservableObject {
     private func updateLiveActivity(force: Bool) {
         guard let snapshot else { return }
         let now = Date()
-        guard force || now.timeIntervalSince(lastLiveActivityUpdate) >= 2.5 else { return }
+        guard force || now.timeIntervalSince(lastLiveActivityUpdate) >= 4.0 else { return }
         lastLiveActivityUpdate = now
+        let mood = DriveMoodLogic.ingest(
+            state: &driveMoodState,
+            speedKmh: snapshot.currentSpeedKmh,
+            at: now,
+            isPaused: snapshot.isPaused,
+            baselineL100: baselineL100
+        )
         TripLiveActivityController.shared.update(
             distanceKm: snapshot.distanceKm,
             durationSec: snapshot.durationSec,
             currentSpeedKmh: snapshot.currentSpeedKmh,
             maxSpeedKmh: snapshot.maxSpeedKmh,
-            isPaused: snapshot.isPaused
+            isPaused: snapshot.isPaused,
+            mood: mood
         )
     }
 
@@ -833,25 +1042,24 @@ private enum DriveNotificationCopy {
     static func ready(distanceKm: Double, duration: String) -> Line {
         let stats = String(format: "%.1f km in %@", distanceKm, duration)
         return pick([
-            Line(title: "Drive complete! 🎉", body: "\(stats). Now confirm it in My Drives. You wouldn't leave it hanging... right?"),
-            Line(title: "Look at you go!", body: "\(stats). One tap in My Drives makes it official. Just one. Tiny. Tap."),
-            Line(title: "You did it!", body: "\(stats). It's waiting in My Drives. Waiting. Patiently. For now."),
-            Line(title: "Nailed it!", body: "\(stats). Confirm it in My Drives before I start sending sad notifications."),
+            Line(title: "Drive complete! 🎉", body: "\(stats). Saved to My Drives whenever you're ready."),
+            Line(title: "Look at you go!", body: "\(stats). Nice one — review it in My Drives when you have a sec."),
+            Line(title: "You did it!", body: "\(stats). It's in My Drives. No rush."),
+            Line(title: "Nailed it!", body: "\(stats). Logged and waiting quietly in My Drives."),
         ])
     }
 
     static func pendingReview(count: Int) -> Line {
         if count == 1 {
             return pick([
-                Line(title: "Your drive misses you 🥺", body: "It's been sitting in My Drives all alone. One tap. That's all it wants."),
-                Line(title: "Still there. Still waiting.", body: "That drive isn't going to confirm itself. Believe me, I checked."),
-                Line(title: "Knock knock.", body: "It's your unconfirmed drive. It knows you saw this notification."),
+                Line(title: "One drive still open", body: "Whenever you're free, confirm it in My Drives."),
+                Line(title: "Quick reminder", body: "There's a drive in My Drives ready when you are."),
             ])
         }
         return pick([
-            Line(title: "\(count) drives are crying 😢", body: "They just want to be confirmed. Are you really going to ignore them?"),
-            Line(title: "This is getting awkward.", body: "\(count) drives in My Drives, still unconfirmed. I can't keep covering for you."),
-            Line(title: "Fine. I'll say it.", body: "\(count) drives are waiting and you've been ignoring them. Tap My Drives. Do the right thing."),
+            Line(title: "\(count) drives to confirm", body: "No rush — just a heads-up they're waiting in My Drives."),
+            Line(title: "A few drives piled up", body: "\(count) in My Drives. Confirm when you get a chance."),
+            Line(title: "My Drives needs a minute", body: "\(count) unconfirmed drives. Tap when you're ready."),
         ])
     }
 

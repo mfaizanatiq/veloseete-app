@@ -9,6 +9,8 @@
 /* Begin PBXBuildFile section */
 		AA0000000000000000000001 /* TripTrackingLogic.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000002 /* TripTrackingLogic.swift */; };
 		AA0000000000000000000003 /* TripTrackingLogicTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000004 /* TripTrackingLogicTests.swift */; };
+		DM0000000000000000000001 /* DriveMoodLogic.swift in Sources */ = {isa = PBXBuildFile; fileRef = DM0000000000000000000002 /* DriveMoodLogic.swift */; };
+		DM0000000000000000000003 /* DriveMoodLogicTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DM0000000000000000000004 /* DriveMoodLogicTests.swift */; };
 		08DFE3397E7CE2D442F38B41 /* FirestoreRepository.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3CB688049B7786554F370E64 /* FirestoreRepository.swift */; };
 		0AAA22F6732EBCAE28AA5BAD /* AuthView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1D6A64AC85316ED1FB1F193A /* AuthView.swift */; };
 		0ADF9E69E2BBC958D25B91B4 /* FirebaseFirestore in Frameworks */ = {isa = PBXBuildFile; productRef = 32C989AA668D64C69595D10D /* FirebaseFirestore */; };
@@ -97,6 +99,8 @@
 /* Begin PBXFileReference section */
 		AA0000000000000000000002 /* TripTrackingLogic.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TripTrackingLogic.swift; sourceTree = "<group>"; };
 		AA0000000000000000000004 /* TripTrackingLogicTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TripTrackingLogicTests.swift; sourceTree = "<group>"; };
+		DM0000000000000000000002 /* DriveMoodLogic.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DriveMoodLogic.swift; sourceTree = "<group>"; };
+		DM0000000000000000000004 /* DriveMoodLogicTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DriveMoodLogicTests.swift; sourceTree = "<group>"; };
 		AA0000000000000000000006 /* VeloseeteTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = VeloseeteTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		032D9685E63E087090A2889A /* DataStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DataStore.swift; sourceTree = "<group>"; };
 		03E2E1E23C22D331E66874CF /* Fonts */ = {isa = PBXFileReference; lastKnownFileType = folder; name = Fonts; path = Veloseete/Resources/Fonts; sourceTree = SOURCE_ROOT; };
@@ -273,6 +277,7 @@
 				CAB93337EF3889E8516FA493 /* TripLiveActivityController.swift */,
 				B70FF38C17A056E74CA59B04 /* TripRecordingService.swift */,
 				AA0000000000000000000002 /* TripTrackingLogic.swift */,
+				DM0000000000000000000002 /* DriveMoodLogic.swift */,
 			);
 			path = Trips;
 			sourceTree = "<group>";
@@ -391,6 +396,7 @@
 			isa = PBXGroup;
 			children = (
 				AA0000000000000000000004 /* TripTrackingLogicTests.swift */,
+				DM0000000000000000000004 /* DriveMoodLogicTests.swift */,
 			);
 			path = VeloseeteTests;
 			sourceTree = "<group>";
@@ -598,6 +604,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				AA0000000000000000000003 /* TripTrackingLogicTests.swift in Sources */,
+				DM0000000000000000000003 /* DriveMoodLogicTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -638,6 +645,7 @@
 				E56B5D4761318FAF61ED9EF5 /* TripPermissionsStore.swift in Sources */,
 				39F11C8082D17B4AF96E17E7 /* TripRecordingService.swift in Sources */,
 				AA0000000000000000000001 /* TripTrackingLogic.swift in Sources */,
+				DM0000000000000000000001 /* DriveMoodLogic.swift in Sources */,
 				63B8235E9A940B210302F60E /* TripsView.swift in Sources */,
 				AB69738B2377CB8010930622 /* VSIcon.swift in Sources */,
 				33EF7235CAC444208BD0316C /* VeloseeteApp.swift in Sources */,

@@ -114,7 +114,12 @@ struct VeloseeteApp: App {
                     vehicleId: vehicle.id,
                     vehicleName: vehicle.nickname,
                     currentOdometer: vehicle.currentOdometer,
-                    driverName: dataStore.userName
+                    driverName: dataStore.userName,
+                    baselineL100: DriveMoodBaseline.resolve(
+                        vehicle: vehicle,
+                        logs: dataStore.fuelLogs,
+                        manufacturerStandard: dataStore.manufacturerStandard
+                    )
                 )
                 tripRecorder.resumeBackgroundWatchingIfNeeded()
                 VehicleInsightScheduler.shared.refresh(using: dataStore)

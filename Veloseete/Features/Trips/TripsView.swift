@@ -275,6 +275,10 @@ struct TripsView: View {
         }
         .background(VS.Color.bgPrimary)
         .onAppear {
+            if let raw = UserDefaults.standard.string(forKey: "portfolio.forceTripsMode"),
+               let forced = TripsMode(rawValue: raw) {
+                mode = forced
+            }
             if selectedVehicleId == nil {
                 selectedVehicleId = store.currentVehicle?.id
             }
@@ -284,8 +288,12 @@ struct TripsView: View {
                 recorder.ensureMapFollowUpdates()
                 focusTrackingLocation()
             } else {
+                recorder.stopMapFollowUpdates()
                 focusMap()
             }
+        }
+        .onDisappear {
+            recorder.stopMapFollowUpdates()
         }
         .sheet(isPresented: $showTripPermissions) {
             TripPermissionsOnboardingView {
@@ -360,6 +368,7 @@ struct TripsView: View {
                     withAnimation(.snappy(duration: 0.34, extraBounce: 0.06)) {
                         mode = item
                         if item == .drives {
+                            recorder.stopMapFollowUpdates()
                             focusMap()
                         } else {
                             recorder.ensureMapFollowUpdates()
@@ -680,7 +689,12 @@ struct TripsView: View {
             vehicleId: vehicle.id,
             vehicleName: vehicle.nickname,
             currentOdometer: vehicle.currentOdometer,
-            driverName: store.userName
+            driverName: store.userName,
+            baselineL100: DriveMoodBaseline.resolve(
+                vehicle: vehicle,
+                logs: store.fuelLogs,
+                manufacturerStandard: store.manufacturerStandard
+            )
         )
         if recorder.autoTrackingEnabled, recorder.phase == .idle {
             recorder.setAutoTracking(true)

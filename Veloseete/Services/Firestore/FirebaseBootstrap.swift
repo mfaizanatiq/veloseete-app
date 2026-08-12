@@ -1,5 +1,6 @@
 import Foundation
 import FirebaseCore
+import FirebaseFirestore
 
 enum FirebaseBootstrap {
     /// Prefer `GoogleService-Info.plist` when present (register iOS app in Firebase Console).
@@ -10,6 +11,7 @@ enum FirebaseBootstrap {
            let options = FirebaseOptions(contentsOfFile: path) {
             FirebaseApp.configure(options: options)
             print("[Firebase] Configured from GoogleService-Info.plist — project \(options.projectID ?? "?")")
+            enablePersistentCache()
             return
         }
 
@@ -27,9 +29,20 @@ enum FirebaseBootstrap {
 
         FirebaseApp.configure(options: options)
         print("[Firebase] Configured programmatic DEBUG fallback — project \(options.projectID ?? "?")")
+        enablePersistentCache()
         #else
         assertionFailure("GoogleService-Info.plist missing from Release bundle")
         print("[Firebase] FATAL: GoogleService-Info.plist is required for Release")
         #endif
+    }
+
+    /// Keep a local Firestore disk cache so the app can open from last-known
+    /// data even when Google endpoints are slow (VPNs, flaky networks).
+    /// Must run before any other Firestore call.
+    private static func enablePersistentCache() {
+        let settings = Firestore.firestore().settings
+        settings.cacheSettings = PersistentCacheSettings()
+        Firestore.firestore().settings = settings
+        print("[Firebase] Persistent Firestore cache enabled")
     }
 }

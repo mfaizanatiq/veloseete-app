@@ -14,10 +14,21 @@ struct VeloseeteTripWidgetBundle: WidgetBundle {
 }
 
 private enum TripActivityStyle {
-    static let accent = Color(red: 0.84, green: 0.98, blue: 0.31)
-    static let paused = Color(red: 1.00, green: 0.72, blue: 0.24)
-    static let background = Color(red: 0.035, green: 0.045, blue: 0.038)
-    static let secondary = Color.white.opacity(0.58)
+    static let lime = Color(red: 0.85, green: 0.99, blue: 0.33)
+    static let amber = Color(red: 1.00, green: 0.72, blue: 0.24)
+    static let coral = Color(red: 1.00, green: 0.42, blue: 0.38)
+    static let background = Color(red: 0.04, green: 0.05, blue: 0.045)
+    static let secondary = Color.white.opacity(0.55)
+    static let track = Color.white.opacity(0.14)
+
+    static func mood(_ mood: DriveMood) -> Color {
+        switch mood {
+        case .smooth, .saved: return lime
+        case .watch: return amber
+        case .heavy: return coral
+        case .paused: return amber
+        }
+    }
 }
 
 struct TripLiveActivityWidget: Widget {
@@ -25,84 +36,79 @@ struct TripLiveActivityWidget: Widget {
         ActivityConfiguration(for: TripActivityAttributes.self) { context in
             TripActivityContent(context: context)
                 .activityBackgroundTint(TripActivityStyle.background)
-                .activitySystemActionForegroundColor(TripActivityStyle.accent)
+                .activitySystemActionForegroundColor(TripActivityStyle.mood(context.state.mood))
         } dynamicIsland: { context in
             DynamicIsland {
                 DynamicIslandExpandedRegion(.leading) {
-                    HStack(spacing: 7) {
-                        Image(systemName: context.state.isPaused ? "pause.fill" : "car.fill")
+                    Label {
+                        Text(context.state.mood.title)
                             .font(.caption.weight(.bold))
-                            .foregroundStyle(context.state.isPaused ? TripActivityStyle.paused : TripActivityStyle.accent)
-                        StatusLabel(state: context.state)
+                    } icon: {
+                        Image(systemName: context.state.mood.symbolName)
                     }
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(TripActivityStyle.mood(context.state.mood))
+                    .labelStyle(.titleAndIcon)
                 }
 
                 DynamicIslandExpandedRegion(.trailing) {
-                    VStack(alignment: .trailing, spacing: 1) {
-                        Text(formatDuration(context.state.durationSec))
-                            .font(.headline.monospacedDigit().weight(.semibold))
-                        Text("ELAPSED")
-                            .font(.system(size: 9, weight: .semibold))
-                            .foregroundStyle(TripActivityStyle.secondary)
-                    }
+                    Text(formatDuration(context.state.durationSec))
+                        .font(.headline.monospacedDigit().weight(.semibold))
+                        .foregroundStyle(.white)
+                        .contentTransition(.numericText())
                 }
 
                 DynamicIslandExpandedRegion(.bottom) {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text(context.attributes.vehicleName)
-                            .font(.caption.weight(.medium))
-                            .foregroundStyle(.white.opacity(0.64))
-                            .lineLimit(1)
-
-                        HStack(alignment: .lastTextBaseline, spacing: 14) {
-                            VStack(alignment: .leading, spacing: 0) {
-                                Text(String(format: "%.1f", context.state.distanceKm))
-                                    .font(.system(size: 30, weight: .bold, design: .rounded).monospacedDigit())
-                                Text("DISTANCE · KM")
-                                    .font(.system(size: 9, weight: .semibold))
-                                    .foregroundStyle(TripActivityStyle.secondary)
-                            }
-
-                            Spacer(minLength: 6)
-
-                            SmallMetric(
-                                value: String(format: "%.0f", context.state.currentSpeedKmh),
-                                label: "KM/H",
-                                icon: "speedometer"
+                    VStack(spacing: 8) {
+                        HStack(alignment: .firstTextBaseline, spacing: 12) {
+                            MetricCell(
+                                value: "\(context.state.driveScore)",
+                                label: "SCORE",
+                                tint: TripActivityStyle.mood(context.state.mood),
+                                emphasis: true
                             )
-                            SmallMetric(
-                                value: String(format: "%.0f", context.state.maxSpeedKmh),
-                                label: "MAX",
-                                icon: "gauge.with.dots.needle.67percent"
+                            MetricCell(
+                                value: String(format: "%.1f", context.state.estL100),
+                                label: "L/100",
+                                tint: .white,
+                                emphasis: true
+                            )
+                            MetricCell(
+                                value: String(format: "%.1f", context.state.distanceKm),
+                                label: "KM",
+                                tint: .white,
+                                emphasis: true
                             )
                         }
+
+                        StableTrack(
+                            thirst: context.state.thirst,
+                            tint: TripActivityStyle.mood(context.state.mood)
+                        )
+
+                        Text(footerLine(for: context.state))
+                            .font(.caption2.weight(.semibold))
+                            .foregroundStyle(TripActivityStyle.secondary)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .lineLimit(1)
                     }
-                    .padding(.top, 2)
                 }
             } compactLeading: {
-                HStack(spacing: 4) {
-                    Circle()
-                        .fill(context.state.isPaused ? TripActivityStyle.paused : TripActivityStyle.accent)
-                        .frame(width: 6, height: 6)
-                    Image(systemName: context.state.isPaused ? "pause.fill" : "car.fill")
-                        .font(.caption2.weight(.bold))
-                        .foregroundStyle(context.state.isPaused ? TripActivityStyle.paused : TripActivityStyle.accent)
-                }
+                Image(systemName: context.state.mood.symbolName)
+                    .font(.body.weight(.bold))
+                    .foregroundStyle(TripActivityStyle.mood(context.state.mood))
             } compactTrailing: {
-                HStack(alignment: .firstTextBaseline, spacing: 2) {
-                    Text(String(format: "%.1f", context.state.distanceKm))
-                        .font(.caption.monospacedDigit().weight(.bold))
-                    Text("km")
-                        .font(.system(size: 9, weight: .semibold))
-                        .foregroundStyle(.white.opacity(0.6))
-                }
-                .foregroundStyle(.white)
+                Text("\(context.state.driveScore)")
+                    .font(.caption.monospacedDigit().weight(.bold))
+                    .foregroundStyle(TripActivityStyle.mood(context.state.mood))
+                    .contentTransition(.numericText())
+                    .frame(minWidth: 22, alignment: .trailing)
             } minimal: {
-                Image(systemName: context.state.isPaused ? "pause.fill" : "car.fill")
+                Image(systemName: context.state.mood.symbolName)
                     .font(.caption2.weight(.bold))
-                    .foregroundStyle(context.state.isPaused ? TripActivityStyle.paused : TripActivityStyle.accent)
+                    .foregroundStyle(TripActivityStyle.mood(context.state.mood))
             }
-            .keylineTint(context.state.isPaused ? TripActivityStyle.paused : TripActivityStyle.accent)
+            .keylineTint(TripActivityStyle.mood(context.state.mood))
         }
     }
 }
@@ -138,53 +144,39 @@ private struct CarPlayTripActivityView: View {
     let context: ActivityViewContext<TripActivityAttributes>
 
     var body: some View {
+        let tint = TripActivityStyle.mood(context.state.mood)
+
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 6) {
-                Image(systemName: context.state.isPaused ? "pause.fill" : "car.fill")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(context.state.isPaused ? TripActivityStyle.paused : TripActivityStyle.accent)
-                Text(context.attributes.vehicleName)
-                    .font(.caption.weight(.semibold))
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.85)
-                Spacer(minLength: 4)
-                Text(context.state.isPaused ? "PAUSED" : "LIVE")
-                    .font(.system(size: 9, weight: .bold))
-                    .foregroundStyle(context.state.isPaused ? TripActivityStyle.paused : TripActivityStyle.accent)
+                Image(systemName: context.state.mood.symbolName)
+                    .foregroundStyle(tint)
+                Text(context.state.mood.title)
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(tint)
+                Spacer(minLength: 0)
+                Text("\(context.state.driveScore)")
+                    .font(.caption.monospacedDigit().weight(.bold))
+                    .foregroundStyle(tint)
+                    .contentTransition(.numericText())
             }
 
             Spacer(minLength: 0)
 
-            HStack(alignment: .lastTextBaseline, spacing: 4) {
-                Text(context.state.distanceKm, format: .number.precision(.fractionLength(1)))
-                    .font(.system(size: 28, weight: .bold, design: .rounded).monospacedDigit())
-                    .minimumScaleFactor(0.7)
-                    .lineLimit(1)
-                Text("km")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(TripActivityStyle.secondary)
-                Spacer(minLength: 0)
-            }
+            Text(String(format: "%.1f L/100", context.state.estL100))
+                .font(.title2.weight(.bold).monospacedDigit())
+                .foregroundStyle(.white)
+                .contentTransition(.numericText())
+                .minimumScaleFactor(0.8)
+                .lineLimit(1)
 
-            HStack(spacing: 6) {
-                Label(formatDuration(context.state.durationSec), systemImage: "clock.fill")
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.8)
-                Spacer(minLength: 4)
-                Text("\(Int(context.state.currentSpeedKmh.rounded())) km/h")
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.8)
-            }
-            .font(.caption2.weight(.semibold))
-            .foregroundStyle(TripActivityStyle.secondary)
+            Text(String(format: "%.1f km · %@", context.state.distanceKm, formatDuration(context.state.durationSec)))
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(TripActivityStyle.secondary)
+                .lineLimit(1)
         }
         .padding(12)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
-        .foregroundStyle(.white)
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel(
-            "\(context.state.statusLabel), \(context.state.distanceKm, format: .number.precision(.fractionLength(1))) kilometers"
-        )
+        .transaction { $0.animation = nil }
     }
 }
 
@@ -192,19 +184,19 @@ private struct TripLockScreenView: View {
     let context: ActivityViewContext<TripActivityAttributes>
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 10) {
-                ZStack {
-                    Circle()
-                        .fill(statusColor.opacity(0.14))
-                    Image(systemName: context.state.isPaused ? "pause.fill" : "location.north.fill")
-                        .font(.caption.weight(.bold))
-                        .foregroundStyle(statusColor)
-                }
-                .frame(width: 30, height: 30)
+        let mood = context.state.mood
+        let tint = TripActivityStyle.mood(mood)
+
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 8) {
+                Image(systemName: mood.symbolName)
+                    .font(.body.weight(.bold))
+                    .foregroundStyle(tint)
+                    .frame(width: 28, height: 28)
+                    .background(tint.opacity(0.14), in: Circle())
 
                 VStack(alignment: .leading, spacing: 1) {
-                    Text(context.state.isPaused ? "Trip paused" : "Trip in progress")
+                    Text(mood.lockHeadline)
                         .font(.subheadline.weight(.semibold))
                         .foregroundStyle(.white)
                         .lineLimit(1)
@@ -212,116 +204,123 @@ private struct TripLockScreenView: View {
                         .font(.caption)
                         .foregroundStyle(TripActivityStyle.secondary)
                         .lineLimit(1)
-                        .minimumScaleFactor(0.85)
                 }
 
                 Spacer(minLength: 4)
 
-                Text(context.state.isPaused ? "PAUSED" : "LIVE")
-                    .font(.system(size: 10, weight: .bold))
-                    .foregroundStyle(statusColor)
+                Text(mood.title)
+                    .font(.caption2.weight(.bold))
+                    .foregroundStyle(tint)
                     .padding(.horizontal, 8)
                     .padding(.vertical, 4)
-                    .background(statusColor.opacity(0.12), in: Capsule())
+                    .background(tint.opacity(0.14), in: Capsule())
             }
 
-            HStack(alignment: .lastTextBaseline, spacing: 6) {
-                Text(String(format: "%.1f", context.state.distanceKm))
-                    .font(.system(size: 36, weight: .bold, design: .rounded).monospacedDigit())
-                    .foregroundStyle(.white)
-                    .minimumScaleFactor(0.7)
-                    .lineLimit(1)
-                Text("km")
-                    .font(.headline.weight(.semibold))
-                    .foregroundStyle(TripActivityStyle.secondary)
-                Spacer(minLength: 0)
-            }
-
+            // Equal columns — same type size so digits don't reflow.
             HStack(spacing: 0) {
-                metric(formatDuration(context.state.durationSec), "Elapsed")
-                divider
-                metric(String(format: "%.0f km/h", context.state.currentSpeedKmh), "Current speed")
-                divider
-                metric(String(format: "%.0f km/h", context.state.maxSpeedKmh), "Top speed")
+                MetricCell(
+                    value: "\(context.state.driveScore)",
+                    label: "SCORE",
+                    tint: tint,
+                    emphasis: true
+                )
+                MetricCell(
+                    value: String(format: "%.1f", context.state.estL100),
+                    label: "L/100",
+                    tint: .white,
+                    emphasis: true
+                )
+                MetricCell(
+                    value: String(format: "%.1f", context.state.distanceKm),
+                    label: "KM",
+                    tint: .white,
+                    emphasis: true
+                )
             }
+
+            StableTrack(thirst: context.state.thirst, tint: tint)
+
+            // Always the same structure — no if/else swap that jumps layout.
+            Text(footerLine(for: context.state))
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(TripActivityStyle.secondary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .lineLimit(1)
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 14)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+        .transaction { $0.animation = nil }
         .accessibilityElement(children: .combine)
-        .accessibilityLabel(accessibilitySummary)
+        .accessibilityLabel(
+            "\(mood.lockHeadline), score \(context.state.driveScore), "
+                + String(format: "%.1f L/100, %.1f km", context.state.estL100, context.state.distanceKm)
+        )
     }
+}
 
-    private var statusColor: Color {
-        context.state.isPaused ? TripActivityStyle.paused : TripActivityStyle.accent
-    }
+// MARK: - Stable primitives (no GeometryReader / offsets)
 
-    private var divider: some View {
-        Rectangle()
-            .fill(Color.white.opacity(0.12))
-            .frame(width: 1, height: 30)
-            .padding(.horizontal, 12)
-    }
+private struct MetricCell: View {
+    let value: String
+    let label: String
+    let tint: Color
+    var emphasis: Bool = false
 
-    private func metric(_ value: String, _ label: String) -> some View {
+    var body: some View {
         VStack(alignment: .leading, spacing: 2) {
             Text(value)
-                .font(.subheadline.monospacedDigit().weight(.semibold))
-                .foregroundStyle(.white)
+                .font(.system(size: emphasis ? 26 : 15, weight: .bold, design: .rounded).monospacedDigit())
+                .foregroundStyle(tint)
+                .contentTransition(.numericText())
                 .lineLimit(1)
                 .minimumScaleFactor(0.75)
             Text(label)
-                .font(.caption2)
+                .font(.system(size: 9, weight: .bold))
                 .foregroundStyle(TripActivityStyle.secondary)
                 .lineLimit(1)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
-
-    private var accessibilitySummary: String {
-        "\(context.state.statusLabel) trip in \(context.attributes.vehicleName), "
-            + String(format: "%.1f kilometers, %@ elapsed, %.0f kilometers per hour", context.state.distanceKm, formatDuration(context.state.durationSec), context.state.currentSpeedKmh)
-    }
 }
 
-private struct StatusLabel: View {
-    let state: TripActivityAttributes.ContentState
+/// Simple ProgressView-based bar — avoids GeometryReader offset glitches.
+private struct StableTrack: View {
+    let thirst: Double
+    let tint: Color
 
-    var body: some View {
-        HStack(spacing: 6) {
-            Circle()
-                .fill(color)
-                .frame(width: 7, height: 7)
-            Text(state.isPaused ? "PAUSED" : "RECORDING")
-                .font(.system(size: 10, weight: .bold))
-                .foregroundStyle(color)
-        }
+    /// Snap to steps so the bar doesn't jitter every GPS tick.
+    private var snapped: Double {
+        let clamped = min(max(thirst, 0), 1)
+        return (clamped * 20).rounded() / 20
     }
 
-    private var color: Color {
-        state.isPaused ? TripActivityStyle.paused : TripActivityStyle.accent
-    }
-}
-
-private struct SmallMetric: View {
-    let value: String
-    let label: String
-    let icon: String
-
     var body: some View {
-        VStack(alignment: .leading, spacing: 1) {
-            HStack(spacing: 4) {
-                Image(systemName: icon)
-                    .font(.system(size: 10))
-                    .foregroundStyle(TripActivityStyle.accent)
-                Text(value)
-                    .font(.headline.monospacedDigit().weight(.semibold))
+        VStack(alignment: .leading, spacing: 4) {
+            ProgressView(value: snapped)
+                .progressViewStyle(.linear)
+                .tint(tint)
+                .frame(height: 6)
+                .scaleEffect(x: 1, y: 1.15, anchor: .center)
+
+            HStack {
+                Text("Thrifty")
+                Spacer(minLength: 0)
+                Text("Thirsty")
             }
-            Text(label)
-                .font(.system(size: 9, weight: .semibold))
-                .foregroundStyle(TripActivityStyle.secondary)
+            .font(.system(size: 8, weight: .semibold))
+            .foregroundStyle(TripActivityStyle.secondary)
         }
     }
+}
+
+private func footerLine(for state: TripActivityAttributes.ContentState) -> String {
+    let time = formatDuration(state.durationSec)
+    let speed = String(format: "%.0f km/h", state.currentSpeedKmh)
+    if state.lastEvent.isEmpty {
+        return "\(time)  ·  \(speed)"
+    }
+    return "\(state.lastEvent)  ·  \(time)  ·  \(speed)"
 }
 
 private func formatDuration(_ seconds: Double) -> String {

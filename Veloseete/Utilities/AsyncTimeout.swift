@@ -6,13 +6,13 @@ enum AsyncTimeoutError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .timedOut(let seconds):
-            return "Timed out after \(Int(seconds))s — check your connection or VPN."
+            return "Timed out after \(Int(seconds))s — check your connection."
         }
     }
 }
 
 enum AsyncTimeout {
-    /// Races `operation` against a deadline so VPN / dead networks can't hang the UI forever.
+    /// Races `operation` against a deadline so a dead route can't hang the UI forever.
     static func run<T: Sendable>(
         seconds: TimeInterval,
         operation: @escaping @Sendable () async throws -> T

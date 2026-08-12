@@ -56,7 +56,7 @@ final class AuthService: ObservableObject {
                 self?.isCheckingAuth = false
             }
         }
-        // VPN / blocked Firebase can delay or stall the auth listener.
+        // Auth listener can delay on a slow network — don't hold the splash forever.
         Task { @MainActor [weak self] in
             try? await Task.sleep(nanoseconds: 5_000_000_000)
             guard let self, self.isCheckingAuth else { return }

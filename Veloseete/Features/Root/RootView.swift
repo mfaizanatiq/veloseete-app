@@ -12,7 +12,7 @@ struct RootView: View {
                 if auth.isCheckingAuth {
                     LoadingView(
                         message: showSlowLoadHint
-                            ? "Still signing you in…\nIf you’re on a VPN, try turning it off."
+                            ? "Still signing you in…"
                             : nil
                     )
                 } else if !auth.isAuthenticated {
@@ -20,7 +20,7 @@ struct RootView: View {
                 } else if store.isLoading && !store.isLoaded {
                     LoadingView(
                         message: showSlowLoadHint
-                            ? "Having trouble reaching Veloseete.\nVPNs often block this — try disabling yours, then retry."
+                            ? "Still reaching Veloseete.\nYou can retry if this is taking too long."
                             : nil,
                         retryTitle: showSlowLoadHint ? "Retry" : nil,
                         onRetry: showSlowLoadHint ? { Task { await reload() } } : nil
@@ -42,7 +42,7 @@ struct RootView: View {
                 } else {
                     VStack(spacing: 0) {
                         if !store.loadWarnings.isEmpty, store.vehicles.isEmpty == false,
-                           store.loadWarnings.contains(where: { $0.localizedCaseInsensitiveContains("timed out") || $0.localizedCaseInsensitiveContains("network") || $0.localizedCaseInsensitiveContains("vpn") }) {
+                           store.loadWarnings.contains(where: { $0.localizedCaseInsensitiveContains("timed out") || $0.localizedCaseInsensitiveContains("network") }) {
                             connectionBanner(
                                 store.loadWarnings.joined(separator: "\n"),
                                 retry: { Task { await reload() } }
