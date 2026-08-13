@@ -32,6 +32,8 @@
 		A190EB6572A02389EDA2EDCD /* VeloseeteTripWidget.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = DF837A0683DA1E47EF9113EE /* VeloseeteTripWidget.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		A60272E8E5614BF61717265F /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 9431519E24928BF21DD4BA7B /* Assets.xcassets */; };
 		AB69738B2377CB8010930622 /* VSIcon.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5BEBBFE3A0702FEF839CEEE5 /* VSIcon.swift */; };
+		BDGE00000000000000000001 /* DriverBadgeChrome.swift in Sources */ = {isa = PBXBuildFile; fileRef = BDGE00000000000000000002 /* DriverBadgeChrome.swift */; };
+		TRKY00000000000000000001 /* TrackyFace.swift in Sources */ = {isa = PBXBuildFile; fileRef = TRKY00000000000000000002 /* TrackyFace.swift */; };
 		AC24231325EF9C9C5C9934B4 /* TripConfirmSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 95622FAF7EEA68AF70574E03 /* TripConfirmSheet.swift */; };
 		B3763817EE58A8BABBD8B09F /* DataStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 032D9685E63E087090A2889A /* DataStore.swift */; };
 		B54A52B0BE07BAC01A98668D /* Metrics.swift in Sources */ = {isa = PBXBuildFile; fileRef = FF78BFABE392DBE393254431 /* Metrics.swift */; };
@@ -118,6 +120,8 @@
 		4E2D03F5821346DD9CB163CB /* RefuelSheetView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RefuelSheetView.swift; sourceTree = "<group>"; };
 		50AD3F71588767E33C7983BD /* RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootView.swift; sourceTree = "<group>"; };
 		5BEBBFE3A0702FEF839CEEE5 /* VSIcon.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VSIcon.swift; sourceTree = "<group>"; };
+		BDGE00000000000000000002 /* DriverBadgeChrome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DriverBadgeChrome.swift; sourceTree = "<group>"; };
+		TRKY00000000000000000002 /* TrackyFace.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackyFace.swift; sourceTree = "<group>"; };
 		5C8ECCF8B347101E05AE05BF /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
 		6D1A3E4EE9B0BEB713B1D5B0 /* TripPermissionsStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TripPermissionsStore.swift; sourceTree = "<group>"; };
 		873D378B91DBE12238CE4761 /* AuthService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthService.swift; sourceTree = "<group>"; };
@@ -374,8 +378,10 @@
 			isa = PBXGroup;
 			children = (
 				1455C6E27E977E53DE7B98E6 /* BottomNavChrome.swift */,
+				BDGE00000000000000000002 /* DriverBadgeChrome.swift */,
 				3F39C3DE6C6DA1496C373F94 /* FluentEmoji.swift */,
 				5C8ECCF8B347101E05AE05BF /* Theme.swift */,
+				TRKY00000000000000000002 /* TrackyFace.swift */,
 				5BEBBFE3A0702FEF839CEEE5 /* VSIcon.swift */,
 			);
 			path = Design;
@@ -648,6 +654,8 @@
 				DM0000000000000000000001 /* DriveMoodLogic.swift in Sources */,
 				63B8235E9A940B210302F60E /* TripsView.swift in Sources */,
 				AB69738B2377CB8010930622 /* VSIcon.swift in Sources */,
+				BDGE00000000000000000001 /* DriverBadgeChrome.swift in Sources */,
+				TRKY00000000000000000001 /* TrackyFace.swift in Sources */,
 				33EF7235CAC444208BD0316C /* VeloseeteApp.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

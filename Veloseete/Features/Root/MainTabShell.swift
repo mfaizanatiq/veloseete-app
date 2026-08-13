@@ -1037,16 +1037,13 @@ private struct AnalyticsPoint: Identifiable {
 
 private struct DriverHubStory: Identifiable {
     let id: String
-    let emoji: String
-    let eyebrow: String
+    let label: String
     let value: String
-    let title: String
     let detail: String
 }
 
 private struct DriverHubPurpose: Identifiable {
     let id: String
-    let emoji: String
     let title: String
     let value: String
     let subtitle: String
@@ -1119,16 +1116,6 @@ struct DriverProfileView: View {
 
     private var unlockedCount: Int { achievements.filter(\.unlocked).count }
 
-    /// Closest-to-done first so “what to chase next” is obvious.
-    private var questBadges: [DriverAchievement] {
-        achievements
-            .filter { !$0.unlocked }
-            .sorted { lhs, rhs in
-                if lhs.progress != rhs.progress { return lhs.progress > rhs.progress }
-                return lhs.title < rhs.title
-            }
-    }
-
     private var funInsights: [FunInsight] {
         guard let vehicle = store.currentVehicle, let metrics = vehicleMetrics else { return [] }
         return InsightGenerator.funInsights(
@@ -1173,6 +1160,7 @@ struct DriverProfileView: View {
                     )
 
                     driverHeroCard
+                    TrackyPickerCard()
                     driverHubGrid
                     badgesHubPreview
                     insightsSection
@@ -1192,37 +1180,42 @@ struct DriverProfileView: View {
 
     private var driverHeroCard: some View {
         VStack(alignment: .leading, spacing: VS.Spacing.stack) {
-            HStack(spacing: 14) {
-                ProfileAvatarView(image: avatarStore.image, size: 72)
-                    .overlay(Circle().stroke(VS.Color.accent.opacity(0.35), lineWidth: 2))
+            HStack(alignment: .center, spacing: 14) {
+                ProfileAvatarView(image: avatarStore.image, size: 64)
+                    .overlay(Circle().strokeBorder(VS.Color.hairline, lineWidth: 1))
 
-                VStack(alignment: .leading, spacing: 6) {
+                VStack(alignment: .leading, spacing: 4) {
                     Text(displayName)
-                        .font(VS.Typography.heading(24, weight: .bold))
+                        .font(VS.Typography.heading(22, weight: .bold))
                         .foregroundStyle(VS.Color.textPrimary)
                     Text(store.currentVehicle.map { "\($0.make) \($0.model)" } ?? "Add a car to personalize")
                         .font(VS.Typography.body(13))
                         .foregroundStyle(VS.Color.textTertiary)
-                    Button {
-                        showBadges = true
-                    } label: {
-                        Text("\(unlockedCount) badges unlocked")
-                            .font(VS.Typography.body(13, weight: .semibold))
-                            .foregroundStyle(VS.Color.accent)
-                    }
-                    .buttonStyle(.plain)
                 }
                 Spacer(minLength: 0)
+
+                Button {
+                    showBadges = true
+                } label: {
+                    Text("\(unlockedCount)/\(achievements.count)")
+                        .font(VS.Typography.mono(13, weight: .semibold))
+                        .foregroundStyle(VS.Color.textSecondary)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
+                        .background(VS.Color.chip, in: Capsule())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("\(unlockedCount) of \(achievements.count) badges unlocked")
             }
 
-            VStack(alignment: .leading, spacing: 8) {
-                Text("ALL-TIME ROAD")
-                    .font(VS.Typography.body(11, weight: .bold))
-                    .tracking(0.8)
+            VStack(alignment: .leading, spacing: 6) {
+                Text("All-time")
+                    .font(VS.Typography.body(12, weight: .medium))
                     .foregroundStyle(VS.Color.textTertiary)
                 Text(DistanceFormat.formatDistance(totalKm, unit: unit))
-                    .font(VS.Typography.heading(36, weight: .bold))
+                    .font(VS.Typography.heading(34, weight: .bold))
                     .foregroundStyle(VS.Color.textPrimary)
+                    .minimumScaleFactor(0.8)
             }
         }
         .padding(VS.Spacing.card)
@@ -1274,18 +1267,31 @@ struct DriverProfileView: View {
         )
 
         return VStack(alignment: .leading, spacing: VS.Spacing.stack) {
-            VSSectionHeader(title: "This month", subtitle: "Road, spend, rhythm")
+            VStack(alignment: .leading, spacing: 8) {
+                VSSectionHeader(title: "This month", subtitle: "Road, spend, rhythm")
+                Text(status.text)
+                    .font(VS.Typography.body(13))
+                    .foregroundStyle(toneColor(status.tone))
+                Text(vibe.label)
+                    .font(VS.Typography.body(12, weight: .medium))
+                    .foregroundStyle(VS.Color.textTertiary)
+            }
 
-            hubStatusBanner(vibe: vibe, status: status)
-
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 14) {
-                    ForEach(stories) { story in
-                        hubStoryCard(story)
+            // One instrument strip — no carousel of identical story cards.
+            HStack(alignment: .top, spacing: 0) {
+                ForEach(Array(stories.enumerated()), id: \.element.id) { index, story in
+                    hubMetricCell(story)
+                    if index < stories.count - 1 {
+                        Rectangle()
+                            .fill(VS.Color.divider)
+                            .frame(width: 1)
+                            .padding(.vertical, 4)
                     }
                 }
-                .padding(.vertical, 2)
             }
+            .padding(.vertical, 16)
+            .padding(.horizontal, 4)
+            .glassCard()
 
             VStack(spacing: 0) {
                 ForEach(Array(purposeRows.enumerated()), id: \.element.id) { index, row in
@@ -1331,33 +1337,25 @@ struct DriverProfileView: View {
         [
             DriverHubStory(
                 id: "road",
-                emoji: "🛣",
-                eyebrow: "ON THE ROAD",
+                label: "Driven",
                 value: monthKm > 0 ? DistanceFormat.formatDistance(monthKm, unit: unit) : "—",
-                title: "Miles that matter",
                 detail: tripCount == 0
-                    ? "No drives logged yet"
-                    : "\(tripCount) drive\(tripCount == 1 ? "" : "s") · \(roadHours < 1 ? "<1h" : String(format: "%.0fh", roadHours))"
+                    ? "No drives yet"
+                    : "\(tripCount) · \(roadHours < 1 ? "<1h" : String(format: "%.0fh", roadHours))"
             ),
             DriverHubStory(
                 id: "cost",
-                emoji: "⛽",
-                eyebrow: "COST TO MOVE",
-                value: costPerKm.map { CurrencyFormat.format($0, currency: currency) + "/\(unit)" } ?? "—",
-                title: "Every \(unit)’s price tag",
+                label: "Cost /\(unit)",
+                value: costPerKm.map { CurrencyFormat.format($0, currency: currency) } ?? "—",
                 detail: monthlySpend > 0
                     ? "\(CurrencyFormat.format(monthlySpend, currency: currency)) · \(spendTrend)"
-                    : "Log a fill to price the ride"
+                    : "Needs a fill"
             ),
             DriverHubStory(
                 id: "rhythm",
-                emoji: vibe.emoji,
-                eyebrow: "FUEL RHYTHM",
+                label: "Fill gap",
                 value: fillGapDays.map { String(format: "%.0fd", $0) } ?? "—",
-                title: "Fill-up cadence",
-                detail: fillGapDays == nil
-                    ? "A few fills unlock your pattern"
-                    : "Avg gap · \(vibe.label.lowercased())"
+                detail: fillGapDays == nil ? "Learning" : vibe.label
             )
         ]
     }
@@ -1371,30 +1369,26 @@ struct DriverProfileView: View {
         [
             DriverHubPurpose(
                 id: "efficiency",
-                emoji: "🎯",
                 title: "Efficiency",
-                value: metrics?.avgEfficiency.map { String(format: "%.1f L/100", $0) } ?? "Learning",
+                value: metrics?.avgEfficiency.map { String(format: "%.1f L/100", $0) } ?? "—",
                 subtitle: metrics?.avgEfficiency == nil
-                    ? "Two full tanks unlock the real number"
-                    : "Rolling average of recent full tanks"
+                    ? "Two full tanks unlock this"
+                    : "Recent full tanks"
             ),
             DriverHubPurpose(
                 id: "cruise",
-                emoji: "🚗",
-                title: "Typical cruise",
+                title: "Cruise",
                 value: avgCruise > 0 ? String(format: "%.0f km/h", avgCruise) : "—",
-                subtitle: avgCruise > 0 ? "Your month’s average pace" : "Track a drive to learn it"
+                subtitle: avgCruise > 0 ? "Month average" : "Track a drive"
             ),
             DriverHubPurpose(
                 id: "longest",
-                emoji: "🏆",
-                title: "Longest run",
+                title: "Longest",
                 value: longestMonth > 0 ? DistanceFormat.formatDistance(longestMonth, unit: unit) : "—",
-                subtitle: longestMonth > 0 ? "Biggest single drive this month" : "Your next haul lands here"
+                subtitle: longestMonth > 0 ? "Single drive this month" : "Waiting on a haul"
             ),
             DriverHubPurpose(
                 id: "next-fill",
-                emoji: "⚡",
                 title: "Next fill",
                 value: {
                     guard let fillGapDays, let last = lifetimeFuelLogs.last else { return "—" }
@@ -1403,97 +1397,51 @@ struct DriverProfileView: View {
                     return left == 0 ? "Soon" : "~\(left)d"
                 }(),
                 subtitle: fillGapDays == nil
-                    ? "Learns from your refill habit"
-                    : "Based on your \(String(format: "%.0f", fillGapDays!))-day cycle"
+                    ? "From your refill habit"
+                    : "\(String(format: "%.0f", fillGapDays!))-day cycle"
             )
         ]
     }
 
-    private func hubStatusBanner(
-        vibe: EfficiencyVibe,
-        status: (text: String, tone: EfficiencyVibe.Tone)
-    ) -> some View {
-        HStack(spacing: 14) {
-            FluentEmojiView(emoji: vibe.emoji, size: 36)
-                .frame(width: 56, height: 56)
-                .background(toneColor(status.tone).opacity(0.14), in: Circle())
-
-            VStack(alignment: .leading, spacing: 6) {
-                Text("DRIVER STATUS")
-                    .font(VS.Typography.body(11, weight: .bold))
-                    .tracking(0.8)
-                    .foregroundStyle(VS.Color.textTertiary)
-                Text(vibe.label)
-                    .font(VS.Typography.heading(20, weight: .bold))
-                    .foregroundStyle(VS.Color.textPrimary)
-                Text(status.text)
-                    .font(VS.Typography.body(14))
-                    .foregroundStyle(toneColor(status.tone))
-            }
-            Spacer(minLength: 0)
-        }
-        .padding(VS.Spacing.card)
-        .background(
-            RoundedRectangle(cornerRadius: VS.Radius.card, style: .continuous)
-                .fill(toneColor(status.tone).opacity(0.08))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: VS.Radius.card, style: .continuous)
-                .strokeBorder(toneColor(status.tone).opacity(0.28), lineWidth: 1)
-        )
-    }
-
-    private func hubStoryCard(_ story: DriverHubStory) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                FluentEmojiView(emoji: story.emoji, size: 22)
-                Spacer(minLength: 0)
-                Text(story.eyebrow)
-                    .font(VS.Typography.body(10, weight: .bold))
-                    .tracking(0.7)
-                    .foregroundStyle(VS.Color.textTertiary)
-            }
+    private func hubMetricCell(_ story: DriverHubStory) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(story.label)
+                .font(VS.Typography.body(11, weight: .medium))
+                .foregroundStyle(VS.Color.textTertiary)
             Text(story.value)
-                .font(VS.Typography.heading(28, weight: .bold))
+                .font(VS.Typography.heading(18, weight: .bold))
                 .foregroundStyle(VS.Color.textPrimary)
                 .lineLimit(1)
-                .minimumScaleFactor(0.7)
-            Text(story.title)
-                .font(VS.Typography.heading(15))
-                .foregroundStyle(VS.Color.textPrimary)
+                .minimumScaleFactor(0.65)
             Text(story.detail)
-                .font(VS.Typography.body(13))
+                .font(VS.Typography.body(11))
                 .foregroundStyle(VS.Color.textSecondary)
                 .lineLimit(2)
-            Spacer(minLength: 0)
+                .fixedSize(horizontal: false, vertical: true)
         }
-        .padding(VS.Spacing.card)
-        .frame(width: 228, height: 168, alignment: .topLeading)
-        .glassCard(elevated: true)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 12)
     }
 
     private func hubPurposeRow(_ row: DriverHubPurpose) -> some View {
-        HStack(spacing: 14) {
-            FluentEmojiView(emoji: row.emoji, size: 26)
-                .frame(width: 48, height: 48)
-                .background(Color.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-
-            VStack(alignment: .leading, spacing: 4) {
+        HStack(alignment: .firstTextBaseline, spacing: 16) {
+            VStack(alignment: .leading, spacing: 3) {
                 Text(row.title)
-                    .font(VS.Typography.body(12, weight: .semibold))
-                    .foregroundStyle(VS.Color.textTertiary)
-                Text(row.value)
-                    .font(VS.Typography.heading(18, weight: .bold))
+                    .font(VS.Typography.body(14, weight: .medium))
                     .foregroundStyle(VS.Color.textPrimary)
                 Text(row.subtitle)
-                    .font(VS.Typography.body(13))
-                    .foregroundStyle(VS.Color.textSecondary)
+                    .font(VS.Typography.body(12))
+                    .foregroundStyle(VS.Color.textTertiary)
                     .lineLimit(2)
             }
-            Spacer(minLength: 0)
+            Spacer(minLength: 8)
+            Text(row.value)
+                .font(VS.Typography.heading(16, weight: .bold))
+                .foregroundStyle(VS.Color.textPrimary)
+                .multilineTextAlignment(.trailing)
         }
         .padding(.horizontal, VS.Spacing.md)
-        .padding(.vertical, 18)
+        .padding(.vertical, 14)
     }
 
     private func toneColor(_ tone: EfficiencyVibe.Tone) -> Color {
@@ -1507,108 +1455,9 @@ struct DriverProfileView: View {
     }
 
     private var badgesHubPreview: some View {
-        let previewQuests = Array(questBadges.prefix(3))
-        let moreCount = max(0, achievements.count - previewQuests.count)
-
-        return VStack(alignment: .leading, spacing: VS.Spacing.stack) {
-            HStack(alignment: .firstTextBaseline) {
-                Text("Badges")
-                    .font(VS.Typography.heading(20, weight: .bold))
-                    .foregroundStyle(VS.Color.textPrimary)
-                Spacer()
-                Text("\(unlockedCount)/\(achievements.count)")
-                    .font(VS.Typography.body(13, weight: .semibold))
-                    .foregroundStyle(VS.Color.accent)
-            }
-
-            VStack(spacing: 0) {
-                if previewQuests.isEmpty {
-                    HStack(spacing: 14) {
-                        FluentEmojiView(emoji: "🏆", size: 28)
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("Board cleared")
-                                .font(VS.Typography.heading(16))
-                                .foregroundStyle(VS.Color.textPrimary)
-                            Text("Peek at every badge you’ve earned")
-                                .font(VS.Typography.body(13))
-                                .foregroundStyle(VS.Color.textSecondary)
-                        }
-                        Spacer(minLength: 0)
-                    }
-                    .padding(VS.Spacing.card)
-                } else {
-                    ForEach(Array(previewQuests.enumerated()), id: \.element.id) { index, badge in
-                        compactQuestRow(badge)
-                        if index < previewQuests.count - 1 {
-                            Divider().overlay(VS.Color.divider)
-                        }
-                    }
-                }
-
-                Button {
-                    showBadges = true
-                } label: {
-                    HStack {
-                        Text(moreCount > 0 ? "View \(moreCount) more" : "See all badges")
-                            .font(VS.Typography.body(14, weight: .semibold))
-                            .foregroundStyle(VS.Color.accent)
-                        Spacer()
-                        Image(systemName: "chevron.right")
-                            .font(.system(size: 13, weight: .semibold))
-                            .foregroundStyle(VS.Color.accent)
-                    }
-                    .padding(.horizontal, VS.Spacing.md)
-                    .padding(.vertical, 18)
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .overlay(alignment: .top) {
-                    Divider().overlay(VS.Color.divider)
-                }
-            }
-            .glassCard()
+        DriverBadgesShelfSection(achievements: achievements) {
+            showBadges = true
         }
-    }
-
-    private func compactQuestRow(_ badge: DriverAchievement) -> some View {
-        HStack(alignment: .center, spacing: 14) {
-            FluentEmojiView(emoji: badge.emoji, size: 26)
-                .opacity(0.7)
-                .saturation(0.45)
-                .frame(width: 48, height: 48)
-                .background(
-                    Color.white.opacity(0.04),
-                    in: RoundedRectangle(cornerRadius: 14, style: .continuous)
-                )
-
-            VStack(alignment: .leading, spacing: 8) {
-                Text(badge.title)
-                    .font(VS.Typography.heading(16))
-                    .foregroundStyle(VS.Color.textPrimary)
-                Text(badge.detail)
-                    .font(VS.Typography.body(13))
-                    .foregroundStyle(VS.Color.textSecondary)
-                    .lineLimit(1)
-
-                HStack(spacing: 10) {
-                    GeometryReader { geo in
-                        ZStack(alignment: .leading) {
-                            Capsule().fill(VS.Color.chip)
-                            Capsule()
-                                .fill(VS.Color.accent.opacity(0.85))
-                                .frame(width: max(4, geo.size.width * badge.progress))
-                        }
-                    }
-                    .frame(height: 6)
-                    Text(badge.progressLabel)
-                        .font(VS.Typography.body(11, weight: .semibold))
-                        .foregroundStyle(VS.Color.textTertiary)
-                        .lineLimit(1)
-                        .frame(minWidth: 56, alignment: .trailing)
-                }
-            }
-        }
-        .padding(VS.Spacing.card)
     }
 
     private var insightsSection: some View {
@@ -1617,23 +1466,27 @@ struct DriverProfileView: View {
             VSSectionHeader(title: "Nuggets")
 
             if preview.isEmpty {
-                VStack(spacing: 12) {
-                    FluentEmojiView(emoji: "✨", size: 36)
-                    Text("Drive a bit — nuggets show up")
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Nothing yet")
                         .font(VS.Typography.heading(16))
                         .foregroundStyle(VS.Color.textPrimary)
-                    Text("A few fills and tracked drives unlock the fun stuff.")
+                    Text("A few fills and tracked drives unlock notes here.")
                         .font(VS.Typography.body(13))
                         .foregroundStyle(VS.Color.textSecondary)
-                        .multilineTextAlignment(.center)
                 }
-                .frame(maxWidth: .infinity)
-                .padding(28)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(VS.Spacing.card)
                 .glassCard()
             } else {
-                ForEach(preview) { insight in
-                    funInsightCard(insight)
+                VStack(spacing: 0) {
+                    ForEach(Array(preview.enumerated()), id: \.element.id) { index, insight in
+                        funInsightCard(insight)
+                        if index < preview.count - 1 {
+                            Divider().overlay(VS.Color.divider)
+                        }
+                    }
                 }
+                .glassCard()
             }
         }
     }
@@ -1642,20 +1495,32 @@ struct DriverProfileView: View {
         VStack(alignment: .leading, spacing: VS.Spacing.stack) {
             VSSectionHeader(title: "Trends")
 
-            HStack(spacing: 8) {
+            HStack(spacing: 0) {
                 ForEach(AnalyticsPeriod.allCases, id: \.self) { option in
-                    Button(option.title) { period = option }
-                        .font(VS.Typography.body(13, weight: .semibold))
-                        .foregroundStyle(period == option ? VS.Color.navPill : VS.Color.textSecondary)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 11)
-                        .background(period == option ? VS.Color.accent : VS.Color.chip, in: Capsule())
+                    Button {
+                        period = option
+                    } label: {
+                        Text(option.title)
+                            .font(VS.Typography.body(13, weight: period == option ? .semibold : .medium))
+                            .foregroundStyle(period == option ? VS.Color.textPrimary : VS.Color.textTertiary)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 10)
+                            .overlay(alignment: .bottom) {
+                                Rectangle()
+                                    .fill(period == option ? VS.Color.accent : .clear)
+                                    .frame(height: 2)
+                            }
+                    }
+                    .buttonStyle(.plain)
                 }
+            }
+            .overlay(alignment: .bottom) {
+                Rectangle().fill(VS.Color.divider).frame(height: 1)
             }
 
             HStack(spacing: 14) {
-                analyticsMetric(CurrencyFormat.format(spent, currency: currency), "SPENT")
-                analyticsMetric(DistanceFormat.formatDistance(periodDistance, unit: unit), "DRIVEN")
+                analyticsMetric(CurrencyFormat.format(spent, currency: currency), "Spent")
+                analyticsMetric(DistanceFormat.formatDistance(periodDistance, unit: unit), "Driven")
             }
 
             HStack {
@@ -1706,55 +1571,52 @@ struct DriverProfileView: View {
     }
 
     private func funInsightCard(_ insight: FunInsight) -> some View {
-        HStack(alignment: .top, spacing: 14) {
-            FluentEmojiView(emoji: insight.emoji, size: 28)
-                .frame(width: 44, height: 44)
-                .background(
-                    insightTint(insight.kind).opacity(0.14),
-                    in: RoundedRectangle(cornerRadius: 12, style: .continuous)
-                )
-
-            VStack(alignment: .leading, spacing: 6) {
-                Text(insight.title)
-                    .font(VS.Typography.heading(16))
-                    .foregroundStyle(VS.Color.textPrimary)
-                Text(insight.message)
-                    .font(VS.Typography.body(14))
-                    .foregroundStyle(VS.Color.textSecondary)
-                    .lineLimit(3)
-            }
-            Spacer(minLength: 0)
+        VStack(alignment: .leading, spacing: 6) {
+            Text(insightKindLabel(insight.kind))
+                .font(VS.Typography.body(11, weight: .medium))
+                .foregroundStyle(insightTint(insight.kind))
+            Text(insight.title)
+                .font(VS.Typography.body(15, weight: .semibold))
+                .foregroundStyle(VS.Color.textPrimary)
+            Text(insight.message)
+                .font(VS.Typography.body(13))
+                .foregroundStyle(VS.Color.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
         }
-        .padding(VS.Spacing.card)
-        .glassCard()
-        .overlay(
-            RoundedRectangle(cornerRadius: VS.Radius.card, style: .continuous)
-                .strokeBorder(insightTint(insight.kind).opacity(0.22), lineWidth: 1)
-        )
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, VS.Spacing.md)
+        .padding(.vertical, 14)
+    }
+
+    private func insightKindLabel(_ kind: FunInsight.Kind) -> String {
+        switch kind {
+        case .celebrate: return "Nice"
+        case .tip: return "Tip"
+        case .watch: return "Watch"
+        }
     }
 
     private func insightTint(_ kind: FunInsight.Kind) -> Color {
         switch kind {
         case .celebrate: return VS.Color.accent
-        case .tip: return VS.Color.accentSecondary
+        case .tip: return VS.Color.textSecondary
         case .watch: return VS.Color.warning
         }
     }
 
     private func analyticsMetric(_ value: String, _ label: String) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(label)
+                .font(VS.Typography.body(12, weight: .medium))
+                .foregroundStyle(VS.Color.textTertiary)
             Text(value)
-                .font(VS.Typography.heading(24, weight: .bold))
+                .font(VS.Typography.heading(22, weight: .bold))
                 .foregroundStyle(VS.Color.textPrimary)
                 .minimumScaleFactor(0.7)
-            Text(label)
-                .font(VS.Typography.body(11, weight: .bold))
-                .tracking(0.8)
-                .foregroundStyle(VS.Color.textTertiary)
         }
-        .frame(maxWidth: .infinity, minHeight: 96, alignment: .leading)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .padding(VS.Spacing.card)
-        .glassCard(elevated: true)
+        .glassCard()
     }
 
     private func summaryRow(_ label: String, _ value: String) -> some View {
@@ -1778,23 +1640,21 @@ struct DriverProfileView: View {
     }
 
     private var analyticsEmptyState: some View {
-        VStack(spacing: 12) {
-            FluentEmojiView(emoji: "⛽", size: 40)
-            Text("A couple of fills unlock trends")
+        VStack(alignment: .leading, spacing: 6) {
+            Text("No trend yet")
                 .font(VS.Typography.heading(16))
                 .foregroundStyle(VS.Color.textPrimary)
-            Text("Spend and efficiency charts land here.")
+            Text("A couple of fills unlock spend and efficiency charts.")
                 .font(VS.Typography.body(13))
                 .foregroundStyle(VS.Color.textSecondary)
         }
-        .frame(maxWidth: .infinity)
-        .padding(32)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(VS.Spacing.card)
         .glassCard()
     }
 }
 
-/// Full badge collection — Mobbin refs: Withings category chips, Lyft/OLIO 3-col grid,
-/// Tripadvisor category progress, Duolingo locked vs earned contrast.
+/// Full badge collection — achievements only. Tracky lives on the Driver tab.
 struct DriverBadgesView: View {
     @Environment(\.dismiss) private var dismiss
     let achievements: [DriverAchievement]
@@ -1816,6 +1676,16 @@ struct DriverBadgesView: View {
 
     private var filters: [BadgeFilter] {
         [.all] + DriverAchievement.Category.allCases.map { .category($0) }
+    }
+
+    private var closestQuest: DriverAchievement? {
+        achievements
+            .filter { !$0.unlocked }
+            .sorted { lhs, rhs in
+                if lhs.progress != rhs.progress { return lhs.progress > rhs.progress }
+                return lhs.title < rhs.title
+            }
+            .first
     }
 
     private var filtered: [DriverAchievement] {
@@ -1842,9 +1712,9 @@ struct DriverBadgesView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 18) {
+            VStack(alignment: .leading, spacing: VS.Spacing.section) {
                 VStack(alignment: .leading, spacing: 6) {
-                    Text("Badges")
+                    Text("Collection")
                         .font(VS.Typography.heading(28, weight: .bold))
                         .foregroundStyle(VS.Color.textPrimary)
                     Text("\(unlockedCount) of \(achievements.count) unlocked")
@@ -1852,25 +1722,10 @@ struct DriverBadgesView: View {
                         .foregroundStyle(VS.Color.textSecondary)
                 }
 
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 8) {
-                        ForEach(filters, id: \.self) { option in
-                            Button {
-                                filter = option
-                            } label: {
-                                Text(option.title)
-                                    .font(VS.Typography.body(13, weight: .semibold))
-                                    .foregroundStyle(filter == option ? VS.Color.navPill : VS.Color.textSecondary)
-                                    .padding(.horizontal, 14)
-                                    .padding(.vertical, 9)
-                                    .background(
-                                        filter == option ? VS.Color.accent : VS.Color.chip,
-                                        in: Capsule()
-                                    )
-                            }
-                            .buttonStyle(.plain)
-                        }
-                    }
+                filterBar
+
+                if case .all = filter, let quest = closestQuest {
+                    featuredNext(quest)
                 }
 
                 if case .all = filter {
@@ -1881,7 +1736,7 @@ struct DriverBadgesView: View {
                     categoryBlock(category: category, items: filtered)
                 }
             }
-            .padding(.horizontal, 16)
+            .padding(.horizontal, VS.Spacing.pageInset)
             .padding(.top, 8)
             .padding(.bottom, 40)
         }
@@ -1905,70 +1760,130 @@ struct DriverBadgesView: View {
         .toolbarBackground(.hidden, for: .navigationBar)
     }
 
+    private var filterBar: some View {
+        HStack(spacing: 0) {
+            ForEach(filters, id: \.self) { option in
+                Button {
+                    withAnimation(.easeInOut(duration: 0.2)) { filter = option }
+                } label: {
+                    Text(option.title)
+                        .font(VS.Typography.body(13, weight: filter == option ? .semibold : .medium))
+                        .foregroundStyle(filter == option ? VS.Color.textPrimary : VS.Color.textTertiary)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 10)
+                        .overlay(alignment: .bottom) {
+                            Rectangle()
+                                .fill(filter == option ? VS.Color.accent : .clear)
+                                .frame(height: 2)
+                        }
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .overlay(alignment: .bottom) {
+            Rectangle().fill(VS.Color.divider).frame(height: 1)
+        }
+    }
+
+    private func featuredNext(_ quest: DriverAchievement) -> some View {
+        HStack(spacing: 16) {
+            BadgeHexMark(badge: quest, size: 84)
+
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Closest")
+                    .font(VS.Typography.body(11, weight: .medium))
+                    .foregroundStyle(VS.Color.textTertiary)
+                Text(quest.title)
+                    .font(VS.Typography.heading(18, weight: .bold))
+                    .foregroundStyle(VS.Color.textPrimary)
+                Text(quest.detail)
+                    .font(VS.Typography.body(13))
+                    .foregroundStyle(VS.Color.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                GeometryReader { geo in
+                    ZStack(alignment: .leading) {
+                        Rectangle().fill(VS.Color.chip)
+                        Rectangle()
+                            .fill(VS.Color.accent.opacity(0.85))
+                            .frame(width: max(2, geo.size.width * quest.progress))
+                    }
+                }
+                .frame(height: 2)
+
+                Text(quest.progressLabel)
+                    .font(VS.Typography.mono(12, weight: .medium))
+                    .foregroundStyle(VS.Color.textTertiary)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(VS.Spacing.card)
+        .glassCard(elevated: true)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Closest badge, \(quest.title), \(quest.progressLabel)")
+    }
+
     private func categoryBlock(category: DriverAchievement.Category, items: [DriverAchievement]) -> some View {
         let earned = items.filter(\.unlocked).count
-        return VStack(alignment: .leading, spacing: 12) {
-            HStack {
+        return VStack(alignment: .leading, spacing: 14) {
+            HStack(alignment: .firstTextBaseline) {
                 Text(category.label)
                     .font(VS.Typography.heading(17))
                     .foregroundStyle(VS.Color.textPrimary)
                 Spacer()
-                Text("Unlocked \(earned)/\(items.count)")
-                    .font(VS.Typography.body(12, weight: .semibold))
+                Text("\(earned)/\(items.count)")
+                    .font(VS.Typography.mono(12, weight: .medium))
                     .foregroundStyle(VS.Color.textTertiary)
             }
 
             GeometryReader { geo in
                 let progress = items.isEmpty ? 0 : Double(earned) / Double(items.count)
                 ZStack(alignment: .leading) {
-                    Capsule().fill(VS.Color.chip)
-                    Capsule()
-                        .fill(VS.Color.accent.opacity(0.75))
-                        .frame(width: max(earned > 0 ? 8 : 0, geo.size.width * progress))
+                    Rectangle().fill(VS.Color.chip)
+                    Rectangle()
+                        .fill(VS.Color.accent.opacity(0.7))
+                        .frame(width: max(earned > 0 ? 3 : 0, geo.size.width * progress))
                 }
             }
-            .frame(height: 4)
+            .frame(height: 2)
 
             LazyVGrid(
-                columns: [GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible())],
-                spacing: 12
+                columns: [
+                    GridItem(.flexible(), spacing: 12),
+                    GridItem(.flexible(), spacing: 12),
+                    GridItem(.flexible(), spacing: 12)
+                ],
+                spacing: 18
             ) {
                 ForEach(items) { badge in
-                    badgeCell(badge)
+                    hexCell(badge)
                 }
             }
         }
     }
 
-    private func badgeCell(_ badge: DriverAchievement) -> some View {
-        VStack(spacing: 8) {
-            ZStack {
-                Circle()
-                    .fill(badge.unlocked ? VS.Color.accent.opacity(0.14) : Color.white.opacity(0.04))
-                    .frame(width: 72, height: 72)
-                FluentEmojiView(emoji: badge.emoji, size: 34)
-                    .opacity(badge.unlocked ? 1 : 0.35)
-                    .saturation(badge.unlocked ? 1 : 0.15)
-            }
-            .overlay(alignment: .bottom) {
-                if !badge.unlocked {
-                    Text(shortProgress(badge))
-                        .font(VS.Typography.body(9, weight: .bold))
+    private func hexCell(_ badge: DriverAchievement) -> some View {
+        VStack(spacing: 10) {
+            ZStack(alignment: .bottom) {
+                BadgeHexMark(badge: badge, size: 86)
+                if !badge.unlocked, badge.progress > 0 {
+                    Text("\(Int((badge.progress * 100).rounded()))%")
+                        .font(VS.Typography.mono(9, weight: .bold))
                         .foregroundStyle(VS.Color.navPill)
-                        .padding(.horizontal, 7)
-                        .padding(.vertical, 3)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
                         .background(VS.Color.accent, in: Capsule())
                         .offset(y: 6)
                 }
             }
+            .padding(.bottom, badge.unlocked || badge.progress == 0 ? 0 : 4)
 
             Text(badge.title)
-                .font(VS.Typography.heading(12))
+                .font(VS.Typography.body(12, weight: .semibold))
                 .foregroundStyle(badge.unlocked ? VS.Color.textPrimary : VS.Color.textTertiary)
                 .multilineTextAlignment(.center)
                 .lineLimit(2)
                 .minimumScaleFactor(0.85)
-                .padding(.top, 4)
 
             Text(badge.unlocked ? badge.detail : badge.progressLabel)
                 .font(VS.Typography.body(10))
@@ -1977,26 +1892,13 @@ struct DriverBadgesView: View {
                 .lineLimit(2)
                 .minimumScaleFactor(0.85)
         }
-        .frame(maxWidth: .infinity, minHeight: 148, alignment: .top)
-        .padding(.horizontal, 6)
-        .padding(.vertical, 10)
-        .background(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .fill(badge.unlocked ? VS.Color.accent.opacity(0.07) : Color.white.opacity(0.03))
+        .frame(maxWidth: .infinity, alignment: .top)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(
+            badge.unlocked
+                ? "\(badge.title), unlocked. \(badge.detail)"
+                : "\(badge.title), locked. \(badge.progressLabel)"
         )
-        .overlay(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .strokeBorder(
-                    badge.unlocked ? VS.Color.accent.opacity(0.25) : VS.Color.divider,
-                    lineWidth: 1
-                )
-        )
-    }
-
-    private func shortProgress(_ badge: DriverAchievement) -> String {
-        let pct = Int((badge.progress * 100).rounded())
-        if pct > 0 { return "\(pct)%" }
-        return "0%"
     }
 }
 
