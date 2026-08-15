@@ -34,7 +34,10 @@
 		AB69738B2377CB8010930622 /* VSIcon.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5BEBBFE3A0702FEF839CEEE5 /* VSIcon.swift */; };
 		BDGE00000000000000000001 /* DriverBadgeChrome.swift in Sources */ = {isa = PBXBuildFile; fileRef = BDGE00000000000000000002 /* DriverBadgeChrome.swift */; };
 		TRKY00000000000000000001 /* TrackyFace.swift in Sources */ = {isa = PBXBuildFile; fileRef = TRKY00000000000000000002 /* TrackyFace.swift */; };
+		VMRK00000000000000000001 /* VehicleMark.swift in Sources */ = {isa = PBXBuildFile; fileRef = VMRK00000000000000000002 /* VehicleMark.swift */; };
+		PROD00000000000000000001 /* RoadmapView.swift in Sources */ = {isa = PBXBuildFile; fileRef = PROD00000000000000000002 /* RoadmapView.swift */; };
 		AC24231325EF9C9C5C9934B4 /* TripConfirmSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 95622FAF7EEA68AF70574E03 /* TripConfirmSheet.swift */; };
+		TSHR00000000000000000001 /* TripShareComposer.swift in Sources */ = {isa = PBXBuildFile; fileRef = TSHR00000000000000000002 /* TripShareComposer.swift */; };
 		B3763817EE58A8BABBD8B09F /* DataStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 032D9685E63E087090A2889A /* DataStore.swift */; };
 		B54A52B0BE07BAC01A98668D /* Metrics.swift in Sources */ = {isa = PBXBuildFile; fileRef = FF78BFABE392DBE393254431 /* Metrics.swift */; };
 		B54A52B0BE07BAC01A98668E /* AsyncTimeout.swift in Sources */ = {isa = PBXBuildFile; fileRef = FF78BFABE392DBE393254432 /* AsyncTimeout.swift */; };
@@ -122,12 +125,15 @@
 		5BEBBFE3A0702FEF839CEEE5 /* VSIcon.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VSIcon.swift; sourceTree = "<group>"; };
 		BDGE00000000000000000002 /* DriverBadgeChrome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DriverBadgeChrome.swift; sourceTree = "<group>"; };
 		TRKY00000000000000000002 /* TrackyFace.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackyFace.swift; sourceTree = "<group>"; };
+		VMRK00000000000000000002 /* VehicleMark.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VehicleMark.swift; sourceTree = "<group>"; };
+		PROD00000000000000000002 /* RoadmapView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RoadmapView.swift; sourceTree = "<group>"; };
 		5C8ECCF8B347101E05AE05BF /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
 		6D1A3E4EE9B0BEB713B1D5B0 /* TripPermissionsStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TripPermissionsStore.swift; sourceTree = "<group>"; };
 		873D378B91DBE12238CE4761 /* AuthService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthService.swift; sourceTree = "<group>"; };
 		8CCCB0D552ADF2C858E7B307 /* Media */ = {isa = PBXFileReference; lastKnownFileType = folder; name = Media; path = Veloseete/Resources/Media; sourceTree = SOURCE_ROOT; };
 		9431519E24928BF21DD4BA7B /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		95622FAF7EEA68AF70574E03 /* TripConfirmSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TripConfirmSheet.swift; sourceTree = "<group>"; };
+		TSHR00000000000000000002 /* TripShareComposer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TripShareComposer.swift; sourceTree = "<group>"; };
 		A1AC2C5E99E0603B3725F36D /* MainTabShell.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainTabShell.swift; sourceTree = "<group>"; };
 		AE792FA01498EEABB68D8BCB /* FluentEmoji */ = {isa = PBXFileReference; lastKnownFileType = folder; name = FluentEmoji; path = Veloseete/Resources/FluentEmoji; sourceTree = SOURCE_ROOT; };
 		B70FF38C17A056E74CA59B04 /* TripRecordingService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TripRecordingService.swift; sourceTree = "<group>"; };
@@ -249,12 +255,21 @@
 				9909F4D291495FAAD48FAE3E /* Dashboard */,
 				7B5023CE1C039CA7C2696CF3 /* Garage */,
 				07CAE06BA83720C14266C710 /* Onboarding */,
+				PROD00000000000000000003 /* Profile */,
 				6B28ED63C034EF7EBE38EB6A /* Refuel */,
 				9676E619C96D4AD1235B5877 /* Root */,
 				D1FF1E8528D395984C9E2EED /* Splash */,
 				B15330384B4EF5F64B074ECA /* Trips */,
 			);
 			path = Features;
+			sourceTree = "<group>";
+		};
+		PROD00000000000000000003 /* Profile */ = {
+			isa = PBXGroup;
+			children = (
+				PROD00000000000000000002 /* RoadmapView.swift */,
+			);
+			path = Profile;
 			sourceTree = "<group>";
 		};
 		6B28ED63C034EF7EBE38EB6A /* Refuel */ = {
@@ -327,6 +342,7 @@
 			isa = PBXGroup;
 			children = (
 				95622FAF7EEA68AF70574E03 /* TripConfirmSheet.swift */,
+				TSHR00000000000000000002 /* TripShareComposer.swift */,
 				0525EBB0DBFEA1A2FBC29AD3 /* TripsView.swift */,
 			);
 			path = Trips;
@@ -382,6 +398,7 @@
 				3F39C3DE6C6DA1496C373F94 /* FluentEmoji.swift */,
 				5C8ECCF8B347101E05AE05BF /* Theme.swift */,
 				TRKY00000000000000000002 /* TrackyFace.swift */,
+				VMRK00000000000000000002 /* VehicleMark.swift */,
 				5BEBBFE3A0702FEF839CEEE5 /* VSIcon.swift */,
 			);
 			path = Design;
@@ -645,6 +662,7 @@
 				C717BA273A6E967FDB7EE6D4 /* Theme.swift in Sources */,
 				99BC245D41EA70E257B86FA5 /* TripActivityAttributes.swift in Sources */,
 				AC24231325EF9C9C5C9934B4 /* TripConfirmSheet.swift in Sources */,
+				TSHR00000000000000000001 /* TripShareComposer.swift in Sources */,
 				1441B5F41A73A88F41EE32CD /* TripLiveActivityController.swift in Sources */,
 				48666A748C11F9368F00C94F /* TripPermissionsManager.swift in Sources */,
 				C993CEE9E96A91831F35B9A2 /* TripPermissionsOnboardingView.swift in Sources */,
@@ -656,6 +674,8 @@
 				AB69738B2377CB8010930622 /* VSIcon.swift in Sources */,
 				BDGE00000000000000000001 /* DriverBadgeChrome.swift in Sources */,
 				TRKY00000000000000000001 /* TrackyFace.swift in Sources */,
+				VMRK00000000000000000001 /* VehicleMark.swift in Sources */,
+				PROD00000000000000000001 /* RoadmapView.swift in Sources */,
 				33EF7235CAC444208BD0316C /* VeloseeteApp.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

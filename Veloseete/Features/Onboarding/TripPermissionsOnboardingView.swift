@@ -415,7 +415,7 @@ struct TripPermissionsOnboardingView: View {
                 .fill(state == .on ? VS.Color.accent : state == .partial ? VS.Color.warning : Color.white.opacity(0.13))
                 .frame(width: 50, height: 30)
             Circle()
-                .fill(state == .on ? VS.Color.navPill : Color.white)
+                .fill(VS.Color.navPill)
                 .frame(width: 24, height: 24)
                 .padding(3)
         }

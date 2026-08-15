@@ -117,7 +117,7 @@ struct RefuelSheetView: View {
                             .padding(.horizontal, 14)
                             .padding(.vertical, 10)
                             .frame(maxWidth: .infinity, alignment: .leading)
-                            .glassCard(radius: 12)
+                            .glassCard()
                     }
 
                     // Receipt amounts
@@ -289,25 +289,13 @@ struct RefuelSheetView: View {
 
             if !nearbyStations.isEmpty {
                 ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 8) {
+                    HStack(spacing: 10) {
                         ForEach(nearbyStations) { candidate in
                             let selected = station?.id == candidate.id && !stationSkipped
-                            Button {
-                                UISelectionFeedbackGenerator().selectionChanged()
+                            VSSelectableChip(title: candidate.name, selected: selected) {
                                 station = candidate
                                 stationSkipped = false
-                            } label: {
-                                Text(candidate.name)
-                                    .font(VS.Typography.body(13, weight: .semibold))
-                                    .lineLimit(1)
-                                    .padding(.horizontal, 12)
-                                    .padding(.vertical, 9)
-                                    .background(
-                                        Capsule().fill(selected ? VS.Color.accent : VS.Color.chip)
-                                    )
-                                    .foregroundStyle(selected ? VS.Color.navPill : VS.Color.textSecondary)
                             }
-                            .buttonStyle(.plain)
                         }
                     }
                 }
@@ -334,7 +322,7 @@ struct RefuelSheetView: View {
             }
         }
         .padding(14)
-        .glassCard(radius: 12)
+        .glassCard()
     }
 
     private func distanceLabel(for station: StationLookup.Station) -> String {
@@ -390,10 +378,9 @@ struct RefuelSheetView: View {
 
             TextField(lastOdometer > 0 ? String(format: "%.0f", lastOdometer) : "0", text: $odometer)
                 .keyboardType(.numberPad)
-                .font(VS.Typography.heading(26, weight: .bold))
+                .font(VS.Typography.heading(32, weight: .bold))
                 .foregroundStyle(VS.Color.textPrimary)
-                .padding(14)
-                .glassCard(radius: 12, elevated: true)
+                .vsInputField()
 
             if let varianceKm {
                 HStack(spacing: 8) {
@@ -417,19 +404,18 @@ struct RefuelSheetView: View {
     }
 
     private var costField: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 10) {
             fieldLabel("Cost")
             HStack {
                 TextField("0.00", text: $totalCost)
                     .keyboardType(.decimalPad)
-                    .font(VS.Typography.heading(20, weight: .semibold))
+                    .font(VS.Typography.heading(22, weight: .semibold))
                     .foregroundStyle(VS.Color.textPrimary)
                 Text(selectedCurrency)
-                    .font(VS.Typography.body(13, weight: .medium))
+                    .font(VS.Typography.body(15, weight: .medium))
                     .foregroundStyle(VS.Color.textTertiary)
             }
-            .padding(14)
-            .glassCard(radius: 12)
+            .vsInputField()
         }
     }
 
@@ -438,30 +424,20 @@ struct RefuelSheetView: View {
             fieldLabel("Currency")
 
             ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 8) {
+                HStack(spacing: 10) {
                     ForEach(entryCurrencies, id: \.self) { code in
-                        Button {
-                            UISelectionFeedbackGenerator().selectionChanged()
+                        VSSelectableChip(title: code, selected: selectedCurrency == code) {
                             selectedCurrency = code
-                        } label: {
-                            Text(code)
-                                .font(VS.Typography.body(13, weight: .semibold))
-                                .padding(.horizontal, 14)
-                                .padding(.vertical, 10)
-                                .background(
-                                    Capsule().fill(selectedCurrency == code ? VS.Color.accent : VS.Color.chip)
-                                )
-                                .foregroundStyle(selectedCurrency == code ? VS.Color.navPill : VS.Color.textSecondary)
-                                .overlay(
-                                    Capsule().stroke(
-                                        code == defaultCurrency && selectedCurrency != code
-                                            ? VS.Color.accent.opacity(0.35)
-                                            : Color.clear,
-                                        lineWidth: 1
-                                    )
-                                )
                         }
-                        .buttonStyle(.plain)
+                        .overlay(
+                            Capsule(style: .continuous)
+                                .stroke(
+                                    code == defaultCurrency && selectedCurrency != code
+                                        ? VS.Color.accent.opacity(0.35)
+                                        : Color.clear,
+                                    lineWidth: 1
+                                )
+                        )
                     }
                 }
             }
@@ -469,25 +445,24 @@ struct RefuelSheetView: View {
     }
 
     private var litersField: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 10) {
             fieldLabel(VolumeFormat.label(volumeUnit))
             HStack {
                 TextField("0.0", text: $liters)
                     .keyboardType(.decimalPad)
-                    .font(VS.Typography.heading(20, weight: .semibold))
+                    .font(VS.Typography.heading(22, weight: .semibold))
                     .foregroundStyle(VS.Color.textPrimary)
                 Text(VolumeFormat.suffix(volumeUnit))
-                    .font(VS.Typography.body(13, weight: .medium))
+                    .font(VS.Typography.body(15, weight: .medium))
                     .foregroundStyle(VS.Color.textTertiary)
             }
-            .padding(14)
-            .glassCard(radius: 12)
+            .vsInputField()
         }
     }
 
     private func fieldLabel(_ text: String) -> some View {
         Text(text)
-            .font(VS.Typography.body(12, weight: .medium))
+            .font(VS.Typography.body(13, weight: .medium))
             .foregroundStyle(VS.Color.textTertiary)
     }
 

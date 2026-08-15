@@ -43,9 +43,9 @@ enum TripTrackingLogic {
             let previous = cleaned.last!
             let current = valid[index]
             let next = valid[index + 1]
-            let intoSpike = distance(from: previous, to: current)
-            let outOfSpike = distance(from: current, to: next)
-            let bypass = distance(from: previous, to: next)
+            let intoSpike = approximateDistanceMeters(from: previous, to: current)
+            let outOfSpike = approximateDistanceMeters(from: current, to: next)
+            let bypass = approximateDistanceMeters(from: previous, to: next)
 
             // A point far from both neighbours that returns close to the route is a GPS jump.
             let isIsolatedSpike = intoSpike > 600
@@ -59,9 +59,35 @@ enum TripTrackingLogic {
         return cleaned
     }
 
-    private static func distance(from lhs: TripCoordinate, to rhs: TripCoordinate) -> CLLocationDistance {
-        CLLocation(latitude: lhs.latitude, longitude: lhs.longitude)
-            .distance(from: CLLocation(latitude: rhs.latitude, longitude: rhs.longitude))
+    /// Map-ready route: clean spikes, then downsample. Cached per trip id + point count
+    /// so SwiftUI/MapKit body refreshes (drawer drag) don't re-walk thousands of points.
+    static func mapDisplayRoute(
+        id: String,
+        points: [TripCoordinate],
+        maximumPoints: Int = 96
+    ) -> [TripCoordinate] {
+        let key = "\(id)|\(points.count)|\(maximumPoints)"
+        if let cached = displayCache.object(forKey: key as NSString) {
+            return cached.points
+        }
+        let prepared = downsample(cleanedForDisplay(points), maximum: maximumPoints)
+        displayCache.setObject(CachedRoute(points: prepared), forKey: key as NSString)
+        return prepared
+    }
+
+    /// Equirectangular approximation — fast enough for spike detection / UI, no CLLocation alloc.
+    private static func approximateDistanceMeters(from lhs: TripCoordinate, to rhs: TripCoordinate) -> Double {
+        let meanLat = (lhs.latitude + rhs.latitude) * 0.5 * .pi / 180
+        let dLat = (rhs.latitude - lhs.latitude) * 111_320
+        let dLng = (rhs.longitude - lhs.longitude) * 111_320 * cos(meanLat)
+        return (dLat * dLat + dLng * dLng).squareRoot()
+    }
+
+    private static let displayCache = NSCache<NSString, CachedRoute>()
+
+    private final class CachedRoute: NSObject {
+        let points: [TripCoordinate]
+        init(points: [TripCoordinate]) { self.points = points }
     }
 }
 

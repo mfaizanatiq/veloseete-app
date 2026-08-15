@@ -530,4 +530,175 @@ final class FirestoreRepository {
             try await batch.commit()
         }
     }
+
+    // MARK: - Product voice (feedback + roadmap)
+
+    func fetchModeratorConfig() async -> ModeratorConfig {
+        do {
+            let snap = try await db.collection("appConfig").document("moderators").getDocument()
+            return ModeratorConfig.from(data: snap.data())
+        } catch {
+            return ModeratorConfig(emails: [], userIds: [])
+        }
+    }
+
+    func fetchRoadmapItems() async throws -> [RoadmapItem] {
+        let snap = try await db.collection("roadmapItems").getDocuments()
+        return snap.documents
+            .map { RoadmapItem.from(document: $0.documentID, data: $0.data()) }
+            .sorted(by: Self.roadmapSort)
+    }
+
+    func fetchVotedItemIds(userId: String) async throws -> Set<String> {
+        let snap = try await db.collection("roadmapVotes")
+            .whereField("userId", isEqualTo: userId)
+            .getDocuments()
+        return Set(snap.documents.compactMap { $0.data()["itemId"] as? String })
+    }
+
+    func toggleRoadmapVote(itemId: String, userId: String) async throws -> Bool {
+        let voteId = "\(itemId)_\(userId)"
+        let voteRef = db.collection("roadmapVotes").document(voteId)
+        let itemRef = db.collection("roadmapItems").document(itemId)
+        let result = try await db.runTransaction { transaction, errorPointer -> Any? in
+            do {
+                let voteSnap = try transaction.getDocument(voteRef)
+                let itemSnap = try transaction.getDocument(itemRef)
+                guard itemSnap.exists else {
+                    throw NSError(
+                        domain: "Veloseete",
+                        code: 404,
+                        userInfo: [NSLocalizedDescriptionKey: "That roadmap item is no longer available."]
+                    )
+                }
+                if voteSnap.exists {
+                    transaction.deleteDocument(voteRef)
+                    transaction.updateData([
+                        "voteCount": FieldValue.increment(Int64(-1)),
+                        "updatedAt": FieldValue.serverTimestamp()
+                    ], forDocument: itemRef)
+                    return NSNumber(value: false)
+                }
+                transaction.setData([
+                    "itemId": itemId,
+                    "userId": userId,
+                    "createdAt": FieldValue.serverTimestamp()
+                ], forDocument: voteRef)
+                transaction.updateData([
+                    "voteCount": FieldValue.increment(Int64(1)),
+                    "updatedAt": FieldValue.serverTimestamp()
+                ], forDocument: itemRef)
+                return NSNumber(value: true)
+            } catch {
+                errorPointer?.pointee = error as NSError
+                return nil
+            }
+        }
+        return (result as? NSNumber)?.boolValue ?? false
+    }
+
+    func submitProductFeedback(userId: String, authorName: String, message: String) async throws {
+        let ref = db.collection("productFeedback").document()
+        try await ref.setData([
+            "userId": userId,
+            "authorName": authorName,
+            "message": message,
+            "createdAt": FieldValue.serverTimestamp()
+        ])
+    }
+
+    func submitFeatureRequest(userId: String, authorName: String, title: String, detail: String) async throws {
+        let ref = db.collection("featureRequests").document()
+        try await ref.setData([
+            "userId": userId,
+            "authorName": authorName,
+            "title": title,
+            "detail": detail,
+            "status": FeatureRequest.Status.open.rawValue,
+            "createdAt": FieldValue.serverTimestamp()
+        ])
+    }
+
+    func fetchFeatureRequests(userId: String? = nil, status: FeatureRequest.Status? = .open) async throws -> [FeatureRequest] {
+        var query: Query = db.collection("featureRequests")
+        if let userId {
+            query = query.whereField("userId", isEqualTo: userId)
+        }
+        if let status {
+            query = query.whereField("status", isEqualTo: status.rawValue)
+        }
+        let snap = try await query.getDocuments()
+        return snap.documents
+            .map { FeatureRequest.from(document: $0.documentID, data: $0.data()) }
+            .sorted { $0.createdAt > $1.createdAt }
+    }
+
+    func addRoadmapItem(
+        title: String,
+        detail: String,
+        status: RoadmapStatus,
+        sourceRequestId: String? = nil
+    ) async throws -> String {
+        let ref = db.collection("roadmapItems").document()
+        var data: [String: Any] = [
+            "title": title,
+            "detail": detail,
+            "status": status.rawValue,
+            "voteCount": 0,
+            "createdAt": FieldValue.serverTimestamp(),
+            "updatedAt": FieldValue.serverTimestamp()
+        ]
+        if status == .released {
+            data["releasedAt"] = FieldValue.serverTimestamp()
+        }
+        if let sourceRequestId {
+            data["sourceRequestId"] = sourceRequestId
+        }
+        try await ref.setData(data)
+        return ref.documentID
+    }
+
+    func updateRoadmapStatus(itemId: String, status: RoadmapStatus) async throws {
+        var data: [String: Any] = [
+            "status": status.rawValue,
+            "updatedAt": FieldValue.serverTimestamp()
+        ]
+        data["releasedAt"] = status == .released ? FieldValue.serverTimestamp() : NSNull()
+        try await db.collection("roadmapItems").document(itemId).updateData(data)
+    }
+
+    func promoteFeatureRequest(_ request: FeatureRequest) async throws {
+        let itemId = try await addRoadmapItem(
+            title: request.title,
+            detail: request.detail,
+            status: .upcoming,
+            sourceRequestId: request.id
+        )
+        try await db.collection("featureRequests").document(request.id).updateData([
+            "status": FeatureRequest.Status.promoted.rawValue,
+            "promotedItemId": itemId,
+            "updatedAt": FieldValue.serverTimestamp()
+        ])
+    }
+
+    func declineFeatureRequest(requestId: String) async throws {
+        try await db.collection("featureRequests").document(requestId).updateData([
+            "status": FeatureRequest.Status.declined.rawValue,
+            "updatedAt": FieldValue.serverTimestamp()
+        ])
+    }
+
+    private static func roadmapSort(_ lhs: RoadmapItem, _ rhs: RoadmapItem) -> Bool {
+        let order: [RoadmapStatus: Int] = [.upcoming: 0, .planned: 1, .released: 2]
+        let lhsRank = order[lhs.status] ?? 0
+        let rhsRank = order[rhs.status] ?? 0
+        if lhsRank != rhsRank { return lhsRank < rhsRank }
+        if lhs.status == .released {
+            let lhsDate = lhs.releasedAt ?? lhs.createdAt
+            let rhsDate = rhs.releasedAt ?? rhs.createdAt
+            return lhsDate > rhsDate
+        }
+        if lhs.voteCount != rhs.voteCount { return lhs.voteCount > rhs.voteCount }
+        return lhs.createdAt > rhs.createdAt
+    }
 }

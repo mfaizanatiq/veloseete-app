@@ -34,7 +34,6 @@ struct GarageView: View {
     ]
 
     private let currencies = ["QAR", "AED", "SAR", "USD", "EUR", "GBP", "PKR", "INR"]
-    private let icons = ["🚗", "🚙", "🚕", "🚌", "🚐", "🏎️", "🚓", "🚑", "🚒", "🚚", "🚛", "🛻", "🏍️", "🛵", "🚜", "🚎"]
 
     private var isSheet: Bool { onComplete != nil }
 
@@ -177,7 +176,7 @@ struct GarageView: View {
         }
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .glassCard(radius: 12)
+        .glassCard()
         .padding(.horizontal, 20)
         .padding(.top, 8)
     }
@@ -200,21 +199,15 @@ struct GarageView: View {
             glassTextField(label: "Name", placeholder: "My car", text: $nickname, large: true)
 
             VStack(alignment: .leading, spacing: 10) {
-                fieldLabel("Icon")
-                LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 8), spacing: 8) {
-                    ForEach(icons, id: \.self) { item in
-                        Button {
-                            UISelectionFeedbackGenerator().selectionChanged()
-                            icon = item
-                        } label: {
-                            FluentEmojiView(emoji: item, size: 26)
-                                .frame(width: 36, height: 36)
-                                .background(
-                                    RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                        .fill(icon == item ? VS.Color.accent : VS.Color.chip)
-                                )
+                fieldLabel("Car mark")
+                LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 3), spacing: 12) {
+                    ForEach(VehicleMarkStyle.selectable) { style in
+                        VehicleMarkPickerCell(
+                            style: style,
+                            selected: VehicleMarkStyle.resolve(icon) == style
+                        ) {
+                            icon = style.storageToken
                         }
-                        .buttonStyle(.plain)
                     }
                 }
             }
@@ -333,7 +326,7 @@ struct GarageView: View {
 
     private func fieldLabel(_ text: String) -> some View {
         Text(text)
-            .font(VS.Typography.body(12, weight: .medium))
+            .font(VS.Typography.body(13, weight: .medium))
             .foregroundStyle(VS.Color.textTertiary)
     }
 
@@ -343,13 +336,12 @@ struct GarageView: View {
         text: Binding<String>,
         large: Bool = false
     ) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 10) {
             fieldLabel(label)
             TextField(placeholder, text: text)
-                .font(large ? VS.Typography.heading(20, weight: .semibold) : VS.Typography.heading(18, weight: .semibold))
+                .font(large ? VS.Typography.heading(24, weight: .semibold) : VS.Typography.heading(20, weight: .semibold))
                 .foregroundStyle(VS.Color.textPrimary)
-                .padding(14)
-                .glassCard(radius: 12)
+                .vsInputField()
         }
     }
 
@@ -360,35 +352,23 @@ struct GarageView: View {
         suffix: String,
         large: Bool
     ) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 10) {
             fieldLabel(label)
             HStack {
                 TextField(placeholder, text: text)
                     .keyboardType(suffix == "km" ? .numberPad : .decimalPad)
-                    .font(large ? VS.Typography.heading(28, weight: .bold) : VS.Typography.heading(20, weight: .semibold))
+                    .font(large ? VS.Typography.heading(32, weight: .bold) : VS.Typography.heading(22, weight: .semibold))
                     .foregroundStyle(VS.Color.textPrimary)
                 Text(suffix)
-                    .font(VS.Typography.body(13, weight: .medium))
+                    .font(VS.Typography.body(15, weight: .medium))
                     .foregroundStyle(VS.Color.textTertiary)
             }
-            .padding(14)
-            .glassCard(radius: 12, elevated: large)
+            .vsInputField()
         }
     }
 
     private func capsuleChip(_ title: String, selected: Bool, action: @escaping () -> Void) -> some View {
-        Button {
-            UISelectionFeedbackGenerator().selectionChanged()
-            action()
-        } label: {
-            Text(title)
-                .font(VS.Typography.body(13, weight: .semibold))
-                .padding(.horizontal, 14)
-                .padding(.vertical, 10)
-                .background(Capsule().fill(selected ? VS.Color.accent : VS.Color.chip))
-                .foregroundStyle(selected ? VS.Color.navPill : VS.Color.textSecondary)
-        }
-        .buttonStyle(.plain)
+        VSSelectableChip(title: title, selected: selected, action: action)
     }
 
     private func advance() async {

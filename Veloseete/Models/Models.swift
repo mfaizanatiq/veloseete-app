@@ -166,6 +166,25 @@ enum FirestoreDecode {
         }
         return Date()
     }
+
+    static func optionalDate(_ any: Any?) -> Date? {
+        guard let any, !(any is NSNull) else { return nil }
+        if let timestamp = any as? Timestamp { return timestamp.dateValue() }
+        if let date = any as? Date { return date }
+        return nil
+    }
+
+    static func int(_ any: Any?, fallback: Int = 0) -> Int {
+        if let number = any as? NSNumber { return number.intValue }
+        if let value = any as? Int { return value }
+        if let value = any as? Double { return Int(value) }
+        if let text = any as? String, let value = Int(text) { return value }
+        return fallback
+    }
+
+    static func stringArray(_ any: Any?) -> [String] {
+        (any as? [Any])?.compactMap { string($0) }.filter { !$0.isEmpty } ?? []
+    }
 }
 
 extension Vehicle {
@@ -259,5 +278,118 @@ extension UserDocument {
             ),
             currentVehicleId: currentId
         )
+    }
+}
+
+enum RoadmapStatus: String, CaseIterable, Identifiable, Hashable {
+    case upcoming
+    case planned
+    case released
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .upcoming: return "Upcoming"
+        case .planned: return "Planned"
+        case .released: return "Released"
+        }
+    }
+}
+
+struct RoadmapItem: Identifiable, Hashable {
+    var id: String
+    var title: String
+    var detail: String
+    var status: RoadmapStatus
+    var voteCount: Int
+    var createdAt: Date
+    var releasedAt: Date?
+    var sourceRequestId: String?
+
+    static func from(document id: String, data: [String: Any]) -> RoadmapItem {
+        RoadmapItem(
+            id: id,
+            title: FirestoreDecode.string(data["title"], fallback: "Feature"),
+            detail: FirestoreDecode.string(data["detail"]),
+            status: RoadmapStatus(rawValue: FirestoreDecode.string(data["status"])) ?? .upcoming,
+            voteCount: max(0, FirestoreDecode.int(data["voteCount"])),
+            createdAt: FirestoreDecode.date(data["createdAt"]),
+            releasedAt: FirestoreDecode.optionalDate(data["releasedAt"]),
+            sourceRequestId: {
+                let value = FirestoreDecode.string(data["sourceRequestId"])
+                return value.isEmpty ? nil : value
+            }()
+        )
+    }
+}
+
+struct FeatureRequest: Identifiable, Hashable {
+    enum Status: String, Hashable {
+        case open
+        case promoted
+        case declined
+    }
+
+    var id: String
+    var userId: String
+    var authorName: String
+    var title: String
+    var detail: String
+    var createdAt: Date
+    var status: Status
+    var promotedItemId: String?
+
+    static func from(document id: String, data: [String: Any]) -> FeatureRequest {
+        FeatureRequest(
+            id: id,
+            userId: FirestoreDecode.string(data["userId"]),
+            authorName: FirestoreDecode.string(data["authorName"], fallback: "Driver"),
+            title: FirestoreDecode.string(data["title"], fallback: "Request"),
+            detail: FirestoreDecode.string(data["detail"]),
+            createdAt: FirestoreDecode.date(data["createdAt"]),
+            status: Status(rawValue: FirestoreDecode.string(data["status"])) ?? .open,
+            promotedItemId: {
+                let value = FirestoreDecode.string(data["promotedItemId"])
+                return value.isEmpty ? nil : value
+            }()
+        )
+    }
+}
+
+struct ProductFeedback: Identifiable, Hashable {
+    var id: String
+    var userId: String
+    var authorName: String
+    var message: String
+    var createdAt: Date
+}
+
+struct ModeratorConfig {
+    var emails: Set<String>
+    var userIds: Set<String>
+
+    static func from(data: [String: Any]?) -> ModeratorConfig {
+        let emails = FirestoreDecode.stringArray(data?["emails"]).map { $0.lowercased() }
+        let userIds = FirestoreDecode.stringArray(data?["userIds"])
+        return ModeratorConfig(emails: Set(emails), userIds: Set(userIds))
+    }
+}
+
+enum ProductModeration {
+    /// Owner accounts that can moderate even before `appConfig/moderators` exists.
+    static let ownerEmails: Set<String> = [
+        "mfaizanattique@gmail.com",
+        "mfaizanatiq@outlook.com.qa"
+    ]
+
+    static func isModerator(email: String?, userId: String?, config: ModeratorConfig?) -> Bool {
+        if let email {
+            let normalized = email.lowercased()
+            if ownerEmails.contains(normalized) { return true }
+            if config?.emails.contains(normalized) == true { return true }
+        }
+        if let userId, config?.userIds.contains(userId) == true { return true }
+        return false
     }
 }

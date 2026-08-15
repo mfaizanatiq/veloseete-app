@@ -241,7 +241,7 @@ struct AuthView: View {
         }
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(VS.Color.accent.opacity(0.12), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .background(VS.Color.accent.opacity(0.12), in: RoundedRectangle(cornerRadius: VS.Radius.chip, style: .continuous))
     }
 
     private var forgotSheet: some View {
@@ -277,7 +277,7 @@ struct AuthView: View {
                         .padding(.vertical, 14)
                         .background(VS.Color.accent)
                         .foregroundStyle(VS.Color.navPill)
-                        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                        .clipShape(RoundedRectangle(cornerRadius: VS.Radius.chip, style: .continuous))
                 }
 
                 Spacer()

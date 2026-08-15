@@ -165,9 +165,9 @@ struct StationMapPickerView: View {
             .disabled(isSearching)
         }
         .padding(12)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: VS.Radius.chip, style: .continuous))
         .overlay(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
+            RoundedRectangle(cornerRadius: VS.Radius.chip, style: .continuous)
                 .strokeBorder(Color.white.opacity(0.08), lineWidth: 1)
         )
     }
@@ -236,7 +236,7 @@ struct StationMapPickerView: View {
         }
         .padding(16)
         .background(
-            UnevenRoundedRectangle(topLeadingRadius: 22, topTrailingRadius: 22)
+            UnevenRoundedRectangle(topLeadingRadius: VS.Radius.card, topTrailingRadius: VS.Radius.card)
                 .fill(VS.Color.bgPrimary.opacity(0.96))
                 .overlay(alignment: .top) {
                     Capsule()

@@ -11,48 +11,79 @@ struct TripConfirmSheet: View {
     @State private var isSaving = false
     @State private var errorMessage: String?
 
+    private var distanceValue: String {
+        let km = pending.distanceKm
+        return String(format: km >= 100 ? "%.0f" : "%.1f", km)
+    }
+
     var body: some View {
         NavigationStack {
             ScrollView {
-                VStack(alignment: .leading, spacing: 18) {
-                    Text("Review drive")
-                        .font(VS.Typography.heading(26, weight: .bold))
-                        .foregroundStyle(VS.Color.textPrimary)
-
-                    Text(pending.vehicleName)
-                        .font(VS.Typography.body(14, weight: .medium))
-                        .foregroundStyle(VS.Color.textSecondary)
-
+                VStack(alignment: .leading, spacing: 16) {
                     if !pending.route.isEmpty || pending.startCoordinate != nil || pending.endCoordinate != nil {
                         PendingTripRouteMap(pending: pending)
-                            .frame(height: 210)
-                            .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+                            .frame(height: 220)
+                            .clipShape(RoundedRectangle(cornerRadius: VS.Radius.card, style: .continuous))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: VS.Radius.card, style: .continuous)
+                                    .stroke(VS.Color.hairline, lineWidth: 1)
+                            )
                     }
 
-                    HStack(spacing: 12) {
-                        confirmMetric(String(format: "%.1f", pending.distanceKm), "km")
-                        confirmMetric(formatDuration(pending.durationSec), "duration")
-                        confirmMetric(String(format: "%.0f", pending.maxSpeedKmh), "max km/h")
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text(pending.vehicleName)
+                            .font(VS.Typography.body(14, weight: .semibold))
+                            .foregroundStyle(VS.Color.textTertiary)
+
+                        HStack(alignment: .firstTextBaseline, spacing: 8) {
+                            Text(distanceValue)
+                                .font(VS.Typography.heading(56, weight: .bold))
+                                .foregroundStyle(VS.Color.textPrimary)
+                                .minimumScaleFactor(0.55)
+                                .lineLimit(1)
+                            Text("km")
+                                .font(VS.Typography.heading(20, weight: .bold))
+                                .foregroundStyle(VS.Color.textTertiary)
+                        }
+
+                        Text("Review drive")
+                            .font(VS.Typography.heading(18, weight: .bold))
+                            .foregroundStyle(VS.Color.textPrimary)
+
+                        Text("\(pending.startedAt.formatted(date: .abbreviated, time: .shortened)) – \(pending.endedAt.formatted(date: .omitted, time: .shortened))")
+                            .font(VS.Typography.body(14, weight: .medium))
+                            .foregroundStyle(VS.Color.textTertiary)
+                    }
+
+                    HStack(spacing: 10) {
+                        confirmMetric(formatDuration(pending.durationSec), "Duration")
+                        confirmMetric(String(format: "%.0f", pending.avgSpeedKmh), "Avg km/h")
+                        confirmMetric(String(format: "%.0f", pending.maxSpeedKmh), "Top km/h")
                     }
 
                     HStack(spacing: 12) {
                         VSIcon(icon: .gauge, size: 22, weight: .duotone, tint: VS.Color.accent)
-                        VStack(alignment: .leading, spacing: 3) {
+                        VStack(alignment: .leading, spacing: 4) {
                             Text("Adds to your estimate")
-                                .font(VS.Typography.heading(15))
+                                .font(VS.Typography.heading(15, weight: .bold))
                                 .foregroundStyle(VS.Color.textPrimary)
-                            Text("Your verified odometer changes only when you enter the number shown in your car, usually at the next refuel.")
-                                .font(VS.Typography.body(12))
+                            Text("Verified odometer only changes when you enter the number in your car — usually at the next refuel.")
+                                .font(VS.Typography.body(13, weight: .medium))
                                 .foregroundStyle(VS.Color.textTertiary)
                                 .fixedSize(horizontal: false, vertical: true)
                         }
                     }
-                    .padding(14)
-                    .glassCard()
+                    .padding(16)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(VS.Color.chip, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 22, style: .continuous)
+                            .stroke(VS.Color.hairline, lineWidth: 1)
+                    )
 
                     if let errorMessage {
                         Text(errorMessage)
-                            .font(VS.Typography.body(13))
+                            .font(VS.Typography.body(13, weight: .medium))
                             .foregroundStyle(VS.Color.error)
                     }
 
@@ -68,11 +99,14 @@ struct TripConfirmSheet: View {
                         recorder.discardPending(id: pending.id)
                         dismiss()
                     }
-                    .font(VS.Typography.body(14, weight: .semibold))
+                    .font(VS.Typography.heading(15, weight: .bold))
                     .foregroundStyle(VS.Color.textTertiary)
                     .frame(maxWidth: .infinity)
+                    .padding(.top, 4)
                 }
-                .padding(20)
+                .padding(.horizontal, VS.Spacing.sheetInset)
+                .padding(.top, 12)
+                .padding(.bottom, 28)
             }
             .veloseetePage()
             .toolbar {
@@ -85,17 +119,23 @@ struct TripConfirmSheet: View {
     }
 
     private func confirmMetric(_ value: String, _ label: String) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: 5) {
             Text(value)
                 .font(VS.Typography.heading(20, weight: .bold))
                 .foregroundStyle(VS.Color.textPrimary)
-            Text(label.uppercased())
-                .font(VS.Typography.body(11, weight: .medium))
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+            Text(label)
+                .font(VS.Typography.body(12, weight: .medium))
                 .foregroundStyle(VS.Color.textTertiary)
         }
-        .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .metricInset()
+        .padding(14)
+        .background(VS.Color.chip, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .stroke(VS.Color.hairline, lineWidth: 1)
+        )
     }
 
     private func formatDuration(_ sec: Double) -> String {
@@ -107,6 +147,7 @@ struct TripConfirmSheet: View {
     }
 
     private func save() async {
+        guard !isSaving else { return }
         isSaving = true
         errorMessage = nil
         do {
@@ -115,8 +156,8 @@ struct TripConfirmSheet: View {
             dismiss()
         } catch {
             errorMessage = error.localizedDescription
+            isSaving = false
         }
-        isSaving = false
     }
 }
 
@@ -143,14 +184,19 @@ private struct PendingTripRouteMap: View {
         let maxLatitude = latitudes.max() ?? first.latitude
         let minLongitude = longitudes.min() ?? first.longitude
         let maxLongitude = longitudes.max() ?? first.longitude
+        let midLat = (minLatitude + maxLatitude) / 2
+        let latDelta = max((maxLatitude - minLatitude) * 1.55, 0.02)
+        let lngDeltaRaw = max((maxLongitude - minLongitude) * 1.55, 0.02)
+        let cosLat = max(cos(midLat * .pi / 180), 0.2)
+        let lngDelta = max(lngDeltaRaw, latDelta / cosLat * 0.55)
         return MKCoordinateRegion(
             center: CLLocationCoordinate2D(
-                latitude: (minLatitude + maxLatitude) / 2,
+                latitude: midLat,
                 longitude: (minLongitude + maxLongitude) / 2
             ),
             span: MKCoordinateSpan(
-                latitudeDelta: max((maxLatitude - minLatitude) * 1.55, 0.02),
-                longitudeDelta: max((maxLongitude - minLongitude) * 1.55, 0.02)
+                latitudeDelta: latDelta,
+                longitudeDelta: lngDelta
             )
         )
     }

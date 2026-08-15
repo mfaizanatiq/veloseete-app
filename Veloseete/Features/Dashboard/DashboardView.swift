@@ -18,7 +18,7 @@ struct DashboardView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: VS.Spacing.section) {
+            VStack(alignment: .leading, spacing: VS.Spacing.floatStack) {
                 topBar
 
                 if !store.loadWarnings.isEmpty {
@@ -27,7 +27,7 @@ struct DashboardView: View {
                         .foregroundStyle(VS.Color.warning)
                         .padding(14)
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        .glassCard(radius: 12)
+                        .glassCard(elevated: true)
                 }
 
                 syncStatusChip
@@ -92,9 +92,9 @@ struct DashboardView: View {
             }
         }
         .foregroundStyle(VS.Color.textTertiary)
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
-        .glassCard(radius: 12)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+        .glassCard(elevated: true)
     }
 
     private var topBar: some View {
@@ -109,7 +109,7 @@ struct DashboardView: View {
         VStack(alignment: .leading, spacing: VS.Spacing.stack) {
             HStack(alignment: .firstTextBaseline) {
                 VSSectionHeader(title: "Recent fills")
-                Spacer()
+                Spacer(minLength: 8)
                 if !logs.isEmpty {
                     Button {
                         UISelectionFeedbackGenerator().selectionChanged()
@@ -139,8 +139,8 @@ struct DashboardView: View {
                         .multilineTextAlignment(.center)
                 }
                 .frame(maxWidth: .infinity)
-                .padding(40)
-                .glassCard()
+                .padding(VS.Spacing.card)
+                .glassCard(elevated: true)
             } else {
                 VStack(spacing: 0) {
                     ForEach(logs) { log in
@@ -166,8 +166,8 @@ struct DashboardView: View {
                         }
                     }
                 }
-                .padding(VS.Spacing.md)
-                .glassCard()
+                .padding(VS.Spacing.card)
+                .glassCard(elevated: true)
             }
         }
     }
@@ -191,31 +191,36 @@ struct HeroCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: VS.Spacing.stack) {
             HStack(alignment: .top) {
-                VStack(alignment: .leading, spacing: 3) {
+                VStack(alignment: .leading, spacing: 4) {
                     Text(vehicle.nickname)
-                        .font(VS.Typography.heading(18, weight: .bold))
-                        .foregroundStyle(VS.Color.textPrimary)
+                        .font(VS.Typography.heading(22, weight: .bold))
+                        .foregroundStyle(VS.Color.navPill)
                     Text("\(vehicle.make) \(vehicle.model)")
-                        .font(VS.Typography.body(12))
-                        .foregroundStyle(VS.Color.textTertiary)
+                        .font(VS.Typography.body(13, weight: .medium))
+                        .foregroundStyle(VS.Color.navPill.opacity(0.7))
                 }
                 Spacer(minLength: 12)
-                tonePill(emoji: vibe.emoji, text: vibe.label, tone: vibe.tone)
+                Text(vibe.label)
+                    .font(VS.Typography.body(12, weight: .semibold))
+                    .foregroundStyle(VS.Color.navPill)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 7)
+                    .overlay(Capsule().strokeBorder(VS.Color.navPill.opacity(0.35), lineWidth: 1.5))
             }
 
-            VStack(alignment: .leading, spacing: 4) {
-                HStack(alignment: .firstTextBaseline, spacing: 6) {
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
                     Text(efficiency.map { String(format: "%.1f", $0) } ?? "–.–")
-                        .font(VS.Typography.heading(46, weight: .bold))
-                        .foregroundStyle(efficiency == nil ? VS.Color.textTertiary : VS.Color.textPrimary)
+                        .font(VS.Typography.heading(64, weight: .bold))
+                        .foregroundStyle(VS.Color.navPill)
                         .contentTransition(.numericText())
-                    Text("L/100km")
-                        .font(VS.Typography.body(14, weight: .semibold))
-                        .foregroundStyle(VS.Color.textTertiary)
+                    Text("L/100")
+                        .font(VS.Typography.heading(18, weight: .bold))
+                        .foregroundStyle(VS.Color.navPill.opacity(0.65))
                 }
                 Text(status.text)
-                    .font(VS.Typography.body(13, weight: .medium))
-                    .foregroundStyle(toneColors(status.tone).text)
+                    .font(VS.Typography.body(14, weight: .medium))
+                    .foregroundStyle(VS.Color.navPill.opacity(0.75))
             }
 
             if let efficiency, let manufacturerStandard, manufacturerStandard > 0 {
@@ -223,12 +228,10 @@ struct HeroCard: View {
             } else if efficiency == nil {
                 Text("A few fills and this car’s personality shows up.")
                     .font(VS.Typography.body(13))
-                    .foregroundStyle(VS.Color.textTertiary)
+                    .foregroundStyle(VS.Color.navPill.opacity(0.6))
             }
 
-            Divider().overlay(VS.Color.divider)
-
-            HStack(spacing: 18) {
+            HStack(spacing: 16) {
                 footerStat(
                     icon: .car,
                     text: DistanceFormat.formatOdometer(vehicle.currentOdometer, unit: distanceUnit)
@@ -236,25 +239,28 @@ struct HeroCard: View {
                 footerStat(
                     icon: .gasPump,
                     text: refuelCount == 0
-                        ? "No full tanks yet"
-                        : "\(refuelCount) tank\(refuelCount == 1 ? "" : "s") measured"
+                        ? "No tanks yet"
+                        : "\(refuelCount) tank\(refuelCount == 1 ? "" : "s")"
                 )
                 Spacer(minLength: 0)
             }
         }
         .padding(VS.Spacing.card)
-        .glassCard(elevated: true)
+        .background(
+            RoundedRectangle(cornerRadius: VS.Radius.card, style: .continuous)
+                .fill(VS.Color.accent)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: VS.Radius.card, style: .continuous))
     }
 
     /// Lower L/100km is better and sits left of the brochure tick — the fill
-    /// stretches from the tick toward your reading, lime when you're beating spec.
+    /// stretches from the tick toward your reading.
     private func brochureGauge(current: Double, standard: Double) -> some View {
         let lower = standard * 0.6
         let upper = standard * 1.4
         let clamped = min(max(current, lower), upper)
         let fraction = (clamped - lower) / (upper - lower)
         let better = current <= standard
-        let color = better ? VS.Color.accent : VS.Color.warning
 
         return VStack(alignment: .leading, spacing: 8) {
             GeometryReader { geo in
@@ -264,25 +270,23 @@ struct HeroCard: View {
 
                 ZStack(alignment: .leading) {
                     Capsule()
-                        .fill(Color.white.opacity(0.08))
-                        .frame(height: 8)
+                        .fill(VS.Color.navPill.opacity(0.18))
+                        .frame(height: 10)
 
                     Capsule()
-                        .fill(color.opacity(0.85))
-                        .frame(width: max(abs(markerX - specX), 8), height: 8)
+                        .fill(VS.Color.navPill.opacity(better ? 0.9 : 0.55))
+                        .frame(width: max(abs(markerX - specX), 8), height: 10)
                         .offset(x: min(markerX, specX))
 
                     Rectangle()
-                        .fill(Color.white.opacity(0.45))
+                        .fill(VS.Color.navPill.opacity(0.55))
                         .frame(width: 2, height: 16)
                         .offset(x: specX - 1)
 
                     Circle()
-                        .fill(color)
-                        .frame(width: 15, height: 15)
-                        .overlay(Circle().stroke(VS.Color.bgSecondary, lineWidth: 3))
-                        .offset(x: min(max(markerX - 7.5, 0), width - 15))
-                        .shadow(color: color.opacity(0.5), radius: 5)
+                        .fill(VS.Color.navPill)
+                        .frame(width: 14, height: 14)
+                        .offset(x: min(max(markerX - 7, 0), width - 14))
                 }
                 .frame(height: 16)
             }
@@ -291,43 +295,26 @@ struct HeroCard: View {
             HStack {
                 Text(String(format: "You %.1f", current))
                     .font(VS.Typography.body(11, weight: .semibold))
-                    .foregroundStyle(color)
+                    .foregroundStyle(VS.Color.navPill)
                 Spacer()
                 Text(String(format: "Brochure %.1f", standard))
                     .font(VS.Typography.body(11, weight: .medium))
-                    .foregroundStyle(VS.Color.textTertiary)
+                    .foregroundStyle(VS.Color.navPill.opacity(0.55))
             }
         }
     }
 
     private func footerStat(icon: VSIconName, text: String) -> some View {
         HStack(spacing: 7) {
-            VSIcon(icon: icon, size: 13, weight: .fill, tint: VS.Color.textTertiary)
+            VSIcon(icon: icon, size: 13, weight: .fill, tint: VS.Color.navPill.opacity(0.7))
             Text(text)
-                .font(VS.Typography.body(12, weight: .medium))
-                .foregroundStyle(VS.Color.textSecondary)
+                .font(VS.Typography.body(12, weight: .semibold))
+                .foregroundStyle(VS.Color.navPill.opacity(0.8))
                 .lineLimit(1)
         }
     }
 
-    private func tonePill(emoji: String?, text: String, tone: EfficiencyVibe.Tone) -> some View {
-        let colors = toneColors(tone)
-        return HStack(spacing: 6) {
-            if let emoji { FluentEmojiView(emoji: emoji, size: 16) }
-            Text(text)
-                .font(VS.Typography.body(12, weight: .medium))
-                .foregroundStyle(colors.text)
-        }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 6)
-        .background(
-            Capsule()
-                .fill(colors.bg)
-                .overlay(Capsule().strokeBorder(colors.border, lineWidth: 1))
-                .shadow(color: colors.text.opacity(0.15), radius: 6, y: 1)
-        )
-    }
-
+    // Kept for status tone mapping used by DashboardCopy callers elsewhere.
     private func toneColors(_ tone: EfficiencyVibe.Tone) -> (bg: Color, border: Color, text: Color) {
         switch tone {
         case .excellent:
@@ -350,48 +337,40 @@ struct MetricsRow: View {
     let unit: String
 
     var body: some View {
-        VStack(spacing: 12) {
-            HStack(spacing: 12) {
-                metricCard(
-                    label: "This month",
-                    value: CurrencyFormat.format(metrics.monthlySpend, currency: currency),
-                    helper: DashboardCopy.spendTrend(metrics.spendChange)
-                )
-                metricCard(
-                    label: "Avg efficiency",
-                    value: metrics.avgEfficiency.map { String(format: "%.1f L/100", $0) } ?? "—",
-                    helper: metrics.efficiencySampleCount == 0
-                        ? "Needs two full-tank fills"
-                        : "\(metrics.efficiencySampleCount) valid interval\(metrics.efficiencySampleCount == 1 ? "" : "s")"
-                )
-            }
-            metricCard(
-                label: "Distance driven",
-                value: metrics.totalDistance > 0
-                    ? DistanceFormat.formatDistance(metrics.totalDistance, unit: unit)
-                    : "—",
-                helper: "This month"
+        HStack(spacing: VS.Spacing.gutter) {
+            bentoCard(
+                value: CurrencyFormat.format(metrics.monthlySpend, currency: currency),
+                label: "Spent this month",
+                icon: .gasPump
+            )
+            bentoCard(
+                value: metrics.avgEfficiency.map { String(format: "%.1f", $0) } ?? "—",
+                label: metrics.avgEfficiency == nil ? "Avg L/100" : "Avg L/100",
+                icon: .gauge
             )
         }
     }
 
-    private func metricCard(label: String, value: String, helper: String) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(label.uppercased())
-                .font(VS.Typography.body(11, weight: .medium))
-                .foregroundStyle(VS.Color.textTertiary)
+    private func bentoCard(value: String, label: String, icon: VSIconName) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Spacer(minLength: 0)
+                VSIcon(icon: icon, size: 16, weight: .fill, tint: VS.Color.accent)
+            }
+            Spacer(minLength: 8)
             Text(value)
-                .font(VS.Typography.heading(18, weight: .bold))
+                .font(VS.Typography.heading(40, weight: .bold))
                 .foregroundStyle(VS.Color.textPrimary)
                 .lineLimit(1)
-                .minimumScaleFactor(0.8)
-            Text(helper)
-                .font(VS.Typography.body(12))
-                .foregroundStyle(VS.Color.textSecondary)
+                .minimumScaleFactor(0.55)
+            Text(label)
+                .font(VS.Typography.body(13, weight: .medium))
+                .foregroundStyle(VS.Color.textTertiary)
+                .lineLimit(2)
         }
-        .padding(14)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .glassCard(elevated: false)
+        .padding(VS.Spacing.card)
+        .frame(maxWidth: .infinity, minHeight: 148, alignment: .leading)
+        .glassCard(elevated: true)
     }
 }
 

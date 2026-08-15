@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 // MARK: - Achievement visual language
 
@@ -86,13 +87,11 @@ struct HexagonShape: InsettableShape {
 
 /// Soft track-lane arcs inside a hex — the Veloseete signature texture.
 private struct HexTrackLanes: View {
-    var lit: Bool
+    var color: Color
+    var lineWidth: CGFloat = 1
 
     var body: some View {
         Canvas { context, size in
-            let color = lit
-                ? Color(red: 0.85, green: 0.99, blue: 0.33).opacity(0.55)
-                : Color.white.opacity(0.08)
             for i in 0..<4 {
                 var path = Path()
                 let y = size.height * (0.55 + CGFloat(i) * 0.08)
@@ -101,7 +100,7 @@ private struct HexTrackLanes: View {
                     to: CGPoint(x: size.width * 0.82, y: y - size.height * 0.06),
                     control: CGPoint(x: size.width * 0.5, y: y - size.height * 0.18)
                 )
-                context.stroke(path, with: .color(color), lineWidth: 1)
+                context.stroke(path, with: .color(color), lineWidth: lineWidth)
             }
         }
     }
@@ -109,7 +108,7 @@ private struct HexTrackLanes: View {
 
 // MARK: - Marks
 
-/// Direction C — shelf disc (icons / marks — not Tracky).
+/// Direction C — shelf disc. Same mark content as Collection hex (caption or icon).
 struct BadgeDiscMark: View {
     let badge: DriverAchievement
     var size: CGFloat = 56
@@ -123,14 +122,24 @@ struct BadgeDiscMark: View {
                     badge.unlocked ? VS.Color.accent.opacity(0.85) : VS.Color.hairline,
                     lineWidth: badge.unlocked ? 1.5 : 1
                 )
-            VSIcon(
-                icon: badge.markIcon,
-                size: size * 0.36,
-                weight: badge.unlocked ? .bold : .regular,
-                tint: badge.unlocked ? VS.Color.accent : VS.Color.textTertiary
-            )
+
+            if let caption = badge.hexCaption {
+                Text(caption)
+                    .font(VS.Typography.heading(size * 0.34, weight: .bold))
+                    .foregroundStyle(badge.unlocked ? VS.Color.accent : VS.Color.textTertiary)
+                    .minimumScaleFactor(0.7)
+                    .lineLimit(1)
+            } else {
+                VSIcon(
+                    icon: badge.markIcon,
+                    size: size * 0.36,
+                    weight: badge.unlocked ? .bold : .regular,
+                    tint: badge.unlocked ? VS.Color.accent : VS.Color.textTertiary
+                )
+            }
         }
         .frame(width: size, height: size)
+        .opacity(badge.unlocked ? 1 : 0.55)
         .accessibilityHidden(true)
     }
 }
@@ -149,7 +158,9 @@ struct BadgeHexMark: View {
                     badge.unlocked ? VS.Color.accent.opacity(0.9) : VS.Color.hairline,
                     lineWidth: badge.unlocked ? 1.75 : 1
                 )
-            HexTrackLanes(lit: badge.unlocked)
+            HexTrackLanes(
+                color: badge.unlocked ? VS.Color.accent.opacity(0.55) : Color.white.opacity(0.08)
+            )
                 .clipShape(HexagonShape())
                 .opacity(badge.unlocked ? 1 : 0.45)
 
@@ -178,6 +189,7 @@ struct BadgeHexMark: View {
 struct DriverBadgesShelfSection: View {
     let achievements: [DriverAchievement]
     let onOpenBoard: () -> Void
+    var onSelectBadge: (DriverAchievement) -> Void
 
     private var unlocked: [DriverAchievement] {
         achievements
@@ -217,7 +229,7 @@ struct DriverBadgesShelfSection: View {
             }
 
             if !previewNext.isEmpty {
-                VStack(alignment: .leading, spacing: 10) {
+                VStack(alignment: .leading, spacing: VS.Spacing.stack) {
                     Text("Up next")
                         .font(VS.Typography.body(12, weight: .medium))
                         .foregroundStyle(VS.Color.textTertiary)
@@ -232,7 +244,7 @@ struct DriverBadgesShelfSection: View {
 
                         boardLink
                     }
-                    .glassCard()
+                    .glassCard(elevated: true)
                 }
             } else {
                 VStack(spacing: 0) {
@@ -249,7 +261,7 @@ struct DriverBadgesShelfSection: View {
 
                     boardLink
                 }
-                .glassCard()
+                .glassCard(elevated: true)
             }
         }
     }
@@ -265,23 +277,27 @@ struct DriverBadgesShelfSection: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(VS.Spacing.card)
-        .glassCard()
+        .glassCard(elevated: true)
     }
 
     private var shelfStrip: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(alignment: .top, spacing: 16) {
                 ForEach(unlocked.prefix(10)) { badge in
-                    VStack(spacing: 8) {
-                        BadgeDiscMark(badge: badge, size: 58)
-                        Text(badge.title)
-                            .font(VS.Typography.body(11, weight: .medium))
-                            .foregroundStyle(VS.Color.textSecondary)
-                            .lineLimit(2)
-                            .multilineTextAlignment(.center)
-                            .frame(width: 72)
+                    Button {
+                        onSelectBadge(badge)
+                    } label: {
+                        VStack(spacing: 8) {
+                            BadgeDiscMark(badge: badge, size: 58)
+                            Text(badge.title)
+                                .font(VS.Typography.body(11, weight: .medium))
+                                .foregroundStyle(VS.Color.textSecondary)
+                                .lineLimit(2)
+                                .multilineTextAlignment(.center)
+                                .frame(width: 72)
+                        }
                     }
-                    .accessibilityElement(children: .combine)
+                    .buttonStyle(.plain)
                     .accessibilityLabel("\(badge.title), unlocked")
                 }
             }
@@ -291,7 +307,9 @@ struct DriverBadgesShelfSection: View {
     }
 
     private func nextQuestRow(_ badge: DriverAchievement) -> some View {
-        Button(action: onOpenBoard) {
+        Button {
+            onSelectBadge(badge)
+        } label: {
             HStack(spacing: 12) {
                 BadgeDiscMark(badge: badge, size: 40)
 
@@ -344,5 +362,176 @@ struct DriverBadgesShelfSection: View {
         .overlay(alignment: .top) {
             Divider().overlay(VS.Color.divider)
         }
+    }
+}
+
+// MARK: - Detail drawer + share
+
+/// Hex medal inverted for lime share cards — black lines on accent.
+struct BadgeShareMark: View {
+    let badge: DriverAchievement
+    var size: CGFloat = 180
+
+    var body: some View {
+        ZStack {
+            HexagonShape()
+                .strokeBorder(VS.Color.navPill, lineWidth: max(3, size * 0.028))
+            HexTrackLanes(color: VS.Color.navPill.opacity(0.55), lineWidth: max(1.5, size * 0.012))
+                .clipShape(HexagonShape())
+
+            if let caption = badge.hexCaption {
+                Text(caption)
+                    .font(VS.Typography.heading(size * 0.28, weight: .bold))
+                    .foregroundStyle(VS.Color.navPill)
+                    .minimumScaleFactor(0.7)
+            } else {
+                VSIcon(
+                    icon: badge.markIcon,
+                    size: size * 0.32,
+                    weight: .bold,
+                    tint: VS.Color.navPill
+                )
+            }
+        }
+        .frame(width: size, height: size)
+        .accessibilityHidden(true)
+    }
+}
+
+struct BadgeShareCard: View {
+    let badge: DriverAchievement
+    var cardSize = CGSize(width: 360, height: 480)
+
+    var body: some View {
+        VStack(spacing: 0) {
+            Text("VELOSEETE")
+                .font(VS.Typography.body(11, weight: .bold))
+                .tracking(4)
+                .foregroundStyle(VS.Color.navPill.opacity(0.55))
+
+            Spacer(minLength: 0)
+
+            BadgeShareMark(badge: badge, size: 188)
+
+            Spacer(minLength: 0)
+
+            VStack(spacing: 10) {
+                Text(badge.title)
+                    .font(VS.Typography.heading(32, weight: .bold))
+                    .multilineTextAlignment(.center)
+                    .minimumScaleFactor(0.7)
+                    .lineLimit(2)
+                Text(badge.detail)
+                    .font(VS.Typography.heading(18, weight: .bold))
+                    .multilineTextAlignment(.center)
+                    .minimumScaleFactor(0.8)
+                    .lineLimit(3)
+                if let achievedOnLabel = badge.achievedOnLabel {
+                    Text(achievedOnLabel)
+                        .font(VS.Typography.heading(14, weight: .bold))
+                        .opacity(0.7)
+                }
+            }
+            .foregroundStyle(VS.Color.navPill)
+        }
+        .padding(.horizontal, 32)
+        .padding(.vertical, 36)
+        .frame(width: cardSize.width, height: cardSize.height)
+        .background(VS.Color.accent)
+    }
+
+    @MainActor
+    static func render(_ badge: DriverAchievement) -> UIImage? {
+        let card = BadgeShareCard(badge: badge)
+        let renderer = ImageRenderer(content: card)
+        renderer.scale = 3
+        renderer.proposedSize = ProposedViewSize(width: 360, height: 480)
+        return renderer.uiImage
+    }
+}
+
+struct BadgeDetailDrawer: View {
+    let badge: DriverAchievement
+
+    var body: some View {
+        VStack(spacing: VS.Spacing.module) {
+            BadgeHexMark(badge: badge, size: 168)
+
+            VStack(spacing: 10) {
+                Text(badge.title)
+                    .font(VS.Typography.heading(28, weight: .bold))
+                    .foregroundStyle(VS.Color.textPrimary)
+                    .multilineTextAlignment(.center)
+                Text(badge.detail)
+                    .font(VS.Typography.body(16, weight: .medium))
+                    .foregroundStyle(VS.Color.textSecondary)
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                if badge.unlocked, let achievedOnLabel = badge.achievedOnLabel {
+                    Text("Unlocked \(achievedOnLabel)")
+                        .font(VS.Typography.heading(15, weight: .bold))
+                        .foregroundStyle(VS.Color.accent)
+                } else if !badge.unlocked {
+                    VStack(spacing: 8) {
+                        GeometryReader { geo in
+                            ZStack(alignment: .leading) {
+                                Rectangle().fill(VS.Color.chip)
+                                Rectangle()
+                                    .fill(VS.Color.accent.opacity(0.85))
+                                    .frame(width: max(2, geo.size.width * badge.progress))
+                            }
+                        }
+                        .frame(height: 3)
+                        Text(badge.progressLabel)
+                            .font(VS.Typography.mono(13, weight: .medium))
+                            .foregroundStyle(VS.Color.textTertiary)
+                    }
+                    .padding(.top, 6)
+                }
+            }
+            .frame(maxWidth: .infinity)
+
+            Spacer(minLength: 0)
+
+            if badge.unlocked {
+                PrimaryCTAButton(title: "Share badge", icon: nil) {
+                    var items: [Any] = [badge.shareCaption]
+                    if let image = BadgeShareCard.render(badge) {
+                        items.insert(image, at: 0)
+                    }
+                    SharePresenter.present(items)
+                }
+            }
+        }
+        .padding(.horizontal, VS.Spacing.sheetInset)
+        .padding(.top, 12)
+        .padding(.bottom, 28)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .veloseetePage()
+    }
+}
+
+enum SharePresenter {
+    static func present(_ items: [Any]) {
+        guard let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene else { return }
+        let root = scene.windows.first(where: \.isKeyWindow)?.rootViewController
+            ?? scene.windows.first?.rootViewController
+        guard var top = root else { return }
+        while let presented = top.presentedViewController {
+            top = presented
+        }
+        let controller = UIActivityViewController(activityItems: items, applicationActivities: nil)
+        if let popover = controller.popoverPresentationController {
+            popover.sourceView = top.view
+            popover.sourceRect = CGRect(
+                x: top.view.bounds.midX,
+                y: top.view.bounds.maxY - 24,
+                width: 0,
+                height: 0
+            )
+            popover.permittedArrowDirections = []
+        }
+        top.present(controller, animated: true)
     }
 }

@@ -38,71 +38,202 @@ enum TrackyMood: String, CaseIterable, Identifiable {
     }
 }
 
-/// Driver-tab Tracky picker — outside Collection / achievements.
+/// Compact Tracky card — selected face centered; mood grid lives in a drawer.
 struct TrackyPickerCard: View {
     @AppStorage("veloseete.tracky.mood") private var trackyMoodRaw: String = TrackyMood.chill.rawValue
+    @State private var showMoodDrawer = false
 
     private var trackyMood: TrackyMood {
         TrackyMood(rawValue: trackyMoodRaw) ?? .chill
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: VS.Spacing.stack) {
-            HStack(alignment: .firstTextBaseline) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Tracky")
-                        .font(VS.Typography.heading(17))
+        Button {
+            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            showMoodDrawer = true
+        } label: {
+            VStack(spacing: 14) {
+                Text("Tracky")
+                    .font(VS.Typography.heading(15, weight: .bold))
+                    .foregroundStyle(VS.Color.textTertiary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+
+                TrackyFace(mood: trackyMood, size: 96)
+                    .overlay {
+                        Circle()
+                            .strokeBorder(VS.Color.accent.opacity(0.55), lineWidth: 2.5)
+                            .frame(width: 108, height: 108)
+                    }
+                    .frame(width: 108, height: 108)
+                    .shadow(color: VS.Color.accent.opacity(0.22), radius: 16)
+
+                VStack(spacing: 6) {
+                    Text(trackyMood.label)
+                        .font(VS.Typography.heading(22, weight: .bold))
                         .foregroundStyle(VS.Color.textPrimary)
-                    Text("Your co-pilot face")
-                        .font(VS.Typography.body(12))
+                        .contentTransition(.opacity)
+
+                    Text("Map co-pilot · tap to change")
+                        .font(VS.Typography.body(13))
                         .foregroundStyle(VS.Color.textTertiary)
                 }
-                Spacer()
-                Text(trackyMood.label)
-                    .font(VS.Typography.body(12, weight: .medium))
-                    .foregroundStyle(VS.Color.textSecondary)
+            }
+            .padding(.horizontal, VS.Spacing.card)
+            .padding(.top, 18)
+            .padding(.bottom, 20)
+            .frame(maxWidth: .infinity)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .glassCard(elevated: true)
+        .accessibilityLabel("Tracky, \(trackyMood.label)")
+        .accessibilityHint("Opens mood picker")
+        .sheet(isPresented: $showMoodDrawer) {
+            TrackyMoodDrawer(
+                selectedRaw: $trackyMoodRaw,
+                onDismiss: { showMoodDrawer = false }
+            )
+            .presentationDetents([.medium, .large])
+            .presentationDragIndicator(.visible)
+            .veloseeteSheet()
+        }
+    }
+}
+
+/// Cutout drawer — pick a mood; selection updates the centered face on the Driver card.
+private struct TrackyMoodDrawer: View {
+    @Binding var selectedRaw: String
+    var onDismiss: () -> Void
+
+    private var selected: TrackyMood {
+        TrackyMood(rawValue: selectedRaw) ?? .chill
+    }
+
+    private let columns = Array(repeating: GridItem(.flexible(), spacing: 10), count: 3)
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: VS.Spacing.stack) {
+            HStack(alignment: .center, spacing: 14) {
+                TrackyFace(mood: selected, size: 56)
+                    .overlay {
+                        Circle()
+                            .strokeBorder(VS.Color.accent, lineWidth: 2)
+                            .frame(width: 64, height: 64)
+                    }
+                    .frame(width: 64, height: 64)
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Tracky mood")
+                        .font(VS.Typography.heading(20, weight: .bold))
+                        .foregroundStyle(VS.Color.textPrimary)
+                    Text("Shows on your map co-pilot")
+                        .font(VS.Typography.body(13))
+                        .foregroundStyle(VS.Color.textTertiary)
+                }
+                Spacer(minLength: 8)
+                Button(action: onDismiss) {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 13, weight: .bold))
+                        .foregroundStyle(VS.Color.textSecondary)
+                        .frame(width: 32, height: 32)
+                        .background(VS.Color.chip, in: Circle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Close")
             }
 
-            HStack(spacing: 16) {
-                TrackyFace(mood: trackyMood, size: 72)
-                    .accessibilityLabel("Tracky, \(trackyMood.label)")
+            Text("SELECTED")
+                .font(VS.Typography.body(11, weight: .bold))
+                .foregroundStyle(VS.Color.textTertiary)
+                .padding(.top, 4)
 
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 10) {
-                        ForEach(TrackyMood.selectable) { mood in
-                            Button {
-                                trackyMoodRaw = mood.rawValue
-                            } label: {
-                                VStack(spacing: 6) {
-                                    TrackyFace(mood: mood, size: 44)
-                                        .overlay {
-                                            Circle()
-                                                .strokeBorder(
-                                                    trackyMood == mood ? VS.Color.accent : .clear,
-                                                    lineWidth: 2
-                                                )
-                                                .padding(-3)
-                                        }
-                                    Text(mood.label)
-                                        .font(VS.Typography.body(10, weight: trackyMood == mood ? .semibold : .medium))
-                                        .foregroundStyle(
-                                            trackyMood == mood ? VS.Color.textPrimary : VS.Color.textTertiary
-                                        )
-                                        .lineLimit(1)
-                                }
-                                .frame(width: 56)
-                            }
-                            .buttonStyle(.plain)
-                            .accessibilityLabel("Tracky \(mood.label)")
-                            .accessibilityAddTraits(trackyMood == mood ? .isSelected : [])
-                        }
-                    }
-                    .padding(.vertical, 2)
+            HStack(spacing: 12) {
+                TrackyFace(mood: selected, size: 44)
+                Text(selected.label)
+                    .font(VS.Typography.heading(18, weight: .bold))
+                    .foregroundStyle(VS.Color.textPrimary)
+                Spacer()
+                Text("Active")
+                    .font(VS.Typography.body(11, weight: .bold))
+                    .foregroundStyle(VS.Color.navPill)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 5)
+                    .background(VS.Color.accent, in: Capsule())
+            }
+            .padding(14)
+            .background(
+                RoundedRectangle(cornerRadius: VS.Radius.metric, style: .continuous)
+                    .fill(VS.Color.accent.opacity(0.12))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: VS.Radius.metric, style: .continuous)
+                    .strokeBorder(VS.Color.accent.opacity(0.55), lineWidth: 1.5)
+            )
+
+            Text("OTHERS")
+                .font(VS.Typography.body(11, weight: .bold))
+                .foregroundStyle(VS.Color.textTertiary)
+                .padding(.top, 6)
+
+            LazyVGrid(columns: columns, spacing: 10) {
+                ForEach(TrackyMood.selectable) { mood in
+                    moodCell(mood)
                 }
             }
+
+            Spacer(minLength: 0)
         }
         .padding(VS.Spacing.card)
-        .glassCard()
+        .padding(.top, 8)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .background(VS.Color.bgPrimary)
+    }
+
+    private func moodCell(_ mood: TrackyMood) -> some View {
+        let isSelected = selected == mood
+
+        return Button {
+            UISelectionFeedbackGenerator().selectionChanged()
+            withAnimation(.snappy(duration: 0.22)) {
+                selectedRaw = mood.rawValue
+            }
+        } label: {
+            VStack(spacing: 8) {
+                TrackyFace(mood: mood, size: 44)
+                    .opacity(isSelected ? 1 : 0.4)
+                    .saturation(isSelected ? 1 : 0.4)
+                    .overlay {
+                        Circle()
+                            .strokeBorder(
+                                isSelected ? VS.Color.accent : VS.Color.hairline,
+                                lineWidth: isSelected ? 3 : 1
+                            )
+                            .frame(width: 54, height: 54)
+                    }
+                    .frame(width: 54, height: 54)
+
+                Text(mood.label)
+                    .font(VS.Typography.body(11, weight: isSelected ? .bold : .medium))
+                    .foregroundStyle(isSelected ? VS.Color.accent : VS.Color.textTertiary)
+                    .lineLimit(1)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 12)
+            .background(
+                RoundedRectangle(cornerRadius: VS.Radius.chip, style: .continuous)
+                    .fill(isSelected ? VS.Color.accent.opacity(0.14) : VS.Color.chip)
+            )
+            .overlay {
+                RoundedRectangle(cornerRadius: VS.Radius.chip, style: .continuous)
+                    .strokeBorder(
+                        isSelected ? VS.Color.accent.opacity(0.85) : Color.clear,
+                        lineWidth: 1.5
+                    )
+            }
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Tracky \(mood.label)")
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 }
 
@@ -152,7 +283,6 @@ struct TrackyFace: View {
                 context.stroke(disc, with: .color(discStroke), lineWidth: max(1, s * 0.025))
             }
 
-            // Two-dot eyes — the whole identity.
             let eyeY = center.y - s * eyeYOffset
             let eyeR = s * eyeRadius
             let spacing = s * eyeSpacing
@@ -162,7 +292,6 @@ struct TrackyFace: View {
             context.fill(Path(ellipseIn: eyeRect(left, eyeR)), with: .color(eyeColor))
             context.fill(Path(ellipseIn: eyeRect(right, eyeR)), with: .color(eyeColor))
 
-            // Mouth: one stroke. Never a full emoji face.
             if let mouth = mouthPath(center: center, s: s) {
                 context.stroke(
                     mouth,
@@ -176,8 +305,6 @@ struct TrackyFace: View {
     private func eyeRect(_ c: CGPoint, _ r: CGFloat) -> CGRect {
         CGRect(x: c.x - r, y: c.y - r, width: r * 2, height: r * 2)
     }
-
-    // MARK: Mood geometry
 
     private var eyeSpacing: CGFloat {
         switch mood {
@@ -205,7 +332,6 @@ struct TrackyFace: View {
         }
     }
 
-    /// Tiny asymmetry for grit / night — still two dots.
     private var eyeYJitter: CGFloat {
         switch mood {
         case .grit: return size * 0.008
@@ -253,13 +379,11 @@ struct TrackyFace: View {
         case .locked:
             return nil
         case .focused:
-            // Flat — concentrating.
             var p = Path()
             p.move(to: CGPoint(x: center.x - s * 0.07, y: y))
             p.addLine(to: CGPoint(x: center.x + s * 0.07, y: y))
             return p
         case .fueled:
-            // Tiny open “o” — tank open / sip.
             return Path(ellipseIn: CGRect(
                 x: center.x - s * 0.035,
                 y: y - s * 0.02,
@@ -267,7 +391,6 @@ struct TrackyFace: View {
                 height: s * 0.055
             ))
         case .night:
-            // Soft small smile, sleepy.
             var p = Path()
             p.move(to: CGPoint(x: center.x - s * 0.06, y: y))
             p.addQuadCurve(
@@ -284,7 +407,6 @@ struct TrackyFace: View {
             )
             return p
         case .grit:
-            // Slight grit — short firm line, tilted.
             var p = Path()
             p.move(to: CGPoint(x: center.x - s * 0.06, y: y + s * 0.01))
             p.addLine(to: CGPoint(x: center.x + s * 0.06, y: y - s * 0.01))

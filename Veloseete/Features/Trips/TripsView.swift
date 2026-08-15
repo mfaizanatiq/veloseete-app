@@ -154,8 +154,8 @@ struct TripsView: View {
             UIImpactFeedbackGenerator(style: .light).impactOccurred()
             withAnimation(.snappy(duration: 0.3)) {
                 selectedTripId = trip.id
-                if let region = drawerAwareRegion(for: trip) {
-                    mapPosition = .region(region)
+                if let region = drawerAwareRegion(for: trip, shiftForPitch: true) {
+                    mapPosition = .camera(Self.pitchedCamera(for: region, overview: false))
                 }
             }
             detailTrip = trip
@@ -167,13 +167,18 @@ struct TripsView: View {
             )
         }
         .buttonStyle(.plain)
-        Divider().overlay(VS.Color.divider)
     }
 
     private var driveMapCoordinates: [TripCoordinate] {
-        filteredTrips.flatMap { trip in
-            if !trip.route.isEmpty { return TripTrackingLogic.cleanedForDisplay(trip.route) }
-            return [trip.startCoordinate, trip.endCoordinate].compactMap { $0 }
+        // Bounding samples only — start/end of every drive so overview frames
+        // the full historic footprint (e.g. Doha + Dammam), not a subset.
+        filteredTrips.flatMap { trip -> [TripCoordinate] in
+            var points: [TripCoordinate] = []
+            if let start = trip.startCoordinate { points.append(start) }
+            if let end = trip.endCoordinate { points.append(end) }
+            if let first = trip.route.first { points.append(first) }
+            if let last = trip.route.last { points.append(last) }
+            return points
         }
     }
 
@@ -194,7 +199,7 @@ struct TripsView: View {
     }
 
     var body: some View {
-        ZStack(alignment: .top) {
+        ZStack {
             GeometryReader { proxy in
                 TripsMapCanvas(
                     trips: mode == .drives ? filteredTrips : [],
@@ -204,15 +209,13 @@ struct TripsView: View {
                     showsUserCharacter: usesLocationFocalMap,
                     courseDegrees: recorder.followCourseDegrees,
                     characterCoordinate: mapCharacterCoordinate,
+                    locksMinimumPitch: mode == .tracking || selectedTrip != nil,
                     position: $mapPosition
                 )
                 .frame(
                     width: proxy.size.width,
                     height: proxy.size.height + mapTopObstruction + mapBottomObstruction
                 )
-                // GeometryReader anchors an oversized child at the top. Moving it up by
-                // the complete bottom obstruction places MapKit's focal point at the
-                // centre of the genuinely visible area above the drawer.
                 .offset(y: -mapBottomObstruction)
             }
             .clipped()
@@ -227,11 +230,24 @@ struct TripsView: View {
             .ignoresSafeArea()
 
             VStack(spacing: 0) {
+                Spacer(minLength: 0)
+
+                Group {
+                    if mode == .tracking {
+                        trackingMode
+                            .transition(.move(edge: .bottom).combined(with: .opacity))
+                    } else {
+                        drivesMode
+                            .transition(.move(edge: .bottom).combined(with: .opacity))
+                    }
+                }
+                .floatingInFrame(bottomClearance: VS.Spacing.frameGutter + 78)
+            }
+        }
+        .overlay(alignment: .topLeading) {
+            VStack(alignment: .leading, spacing: 10) {
                 modePicker
                     .frame(maxWidth: 255)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.leading, 16)
-                    .padding(.top, 10)
 
                 HStack(spacing: 7) {
                     Circle()
@@ -245,20 +261,9 @@ struct TripsView: View {
                 .padding(.vertical, 7)
                 .background(.ultraThinMaterial, in: Capsule())
                 .overlay(Capsule().stroke(Color.white.opacity(0.12), lineWidth: 1))
-                .padding(.top, 10)
-
-                Spacer(minLength: 100)
-
-                Group {
-                    if mode == .tracking {
-                        trackingMode
-                            .transition(.move(edge: .bottom).combined(with: .opacity))
-                    } else {
-                        drivesMode
-                            .transition(.move(edge: .bottom).combined(with: .opacity))
-                    }
-                }
             }
+            .padding(.leading, VS.Spacing.frameGutter + 6)
+            .padding(.top, 10)
         }
         .overlay(alignment: .topTrailing) {
             Button {
@@ -284,6 +289,8 @@ struct TripsView: View {
             }
             syncRecorderVehicle()
             tripPermissions.refreshStatuses()
+            driveDrawerExpanded = false
+            driveDrawerDragOffset = 0
             if mode == .tracking {
                 recorder.ensureMapFollowUpdates()
                 focusTrackingLocation()
@@ -294,6 +301,8 @@ struct TripsView: View {
         }
         .onDisappear {
             recorder.stopMapFollowUpdates()
+            driveDrawerExpanded = false
+            driveDrawerDragOffset = 0
         }
         .sheet(isPresented: $showTripPermissions) {
             TripPermissionsOnboardingView {
@@ -304,7 +313,14 @@ struct TripsView: View {
         .sheet(item: $reviewPendingTrip) { pending in
             TripConfirmSheet(pending: pending)
         }
-        .sheet(item: $detailTrip) { trip in
+        .sheet(item: $detailTrip, onDismiss: {
+            selectedTripId = nil
+            if mode == .drives {
+                withAnimation(.easeInOut(duration: 0.45)) {
+                    focusMap()
+                }
+            }
+        }) { trip in
             TripDetailView(trip: trip, unit: store.defaultDistanceUnit)
                 .veloseeteSheet()
         }
@@ -336,10 +352,16 @@ struct TripsView: View {
             guard mode == .drives, selectedTripId == nil else { return }
             focusMap()
         }
-        .onChange(of: driveDrawerExpanded) { _, _ in
-            guard mode == .drives else { return }
-            withAnimation(.easeInOut(duration: 0.32)) {
+        .onChange(of: mode) { _, newMode in
+            driveDrawerExpanded = false
+            driveDrawerDragOffset = 0
+            if newMode == .drives {
+                selectedTripId = nil
+                recorder.stopMapFollowUpdates()
                 focusMap()
+            } else {
+                recorder.ensureMapFollowUpdates()
+                focusTrackingLocation()
             }
         }
         .onChange(of: store.currentVehicle?.id) { _, _ in
@@ -352,11 +374,23 @@ struct TripsView: View {
 
     /// Keeps the camera focal point inside the map area that is actually visible
     /// between the top controls and the live bottom panel.
-    private var mapTopObstruction: CGFloat { 150 }
+    private var mapTopObstruction: CGFloat { 118 }
 
     private var mapBottomObstruction: CGFloat {
-        guard mode == .drives else { return 395 }
-        return driveDrawerExpanded ? driveDrawerExpandedHeight : driveDrawerCollapsedHeight
+        let floatChrome = VS.Spacing.frameGutter * 2 + 78
+        guard mode == .drives else { return trackingPanelHeight + floatChrome }
+        // Resting height only — live drag must NOT resize MapKit every frame (watchdog kill).
+        let resting = driveDrawerExpanded ? driveDrawerExpandedHeight : driveDrawerCollapsedHeight
+        return resting + floatChrome
+    }
+
+    private var trackingPanelHeight: CGFloat {
+        let fuelExtra: CGFloat = trackingFuelWarning != nil ? 48 : 0
+        switch recorder.phase {
+        case .recording: return 400 + fuelExtra
+        case .confirming: return 328 + fuelExtra
+        default: return 296 + fuelExtra
+        }
     }
 
     private var modePicker: some View {
@@ -367,13 +401,6 @@ struct TripsView: View {
                     UISelectionFeedbackGenerator().selectionChanged()
                     withAnimation(.snappy(duration: 0.34, extraBounce: 0.06)) {
                         mode = item
-                        if item == .drives {
-                            recorder.stopMapFollowUpdates()
-                            focusMap()
-                        } else {
-                            recorder.ensureMapFollowUpdates()
-                            focusTrackingLocation()
-                        }
                     }
                 } label: {
                     HStack(spacing: 7) {
@@ -409,28 +436,310 @@ struct TripsView: View {
     }
 
     private var trackingMode: some View {
-        ScrollView(showsIndicators: false) {
-            VStack(alignment: .leading, spacing: 12) {
-                recordingControls
+        VStack(alignment: .leading, spacing: 0) {
+            Capsule()
+                .fill(Color.white.opacity(0.22))
+                .frame(width: 40, height: 4)
+                .frame(maxWidth: .infinity)
+                .padding(.top, 10)
+                .padding(.bottom, 12)
 
-                if let vehicleId = selectedVehicleId ?? store.currentVehicle?.id,
-                   let estimate = store.odometerEstimate(vehicleId: vehicleId) {
-                    odometerCard(estimate)
+            trackingPanelBody
+                .padding(.horizontal, 16)
+                .padding(.bottom, 14)
+        }
+        .frame(height: trackingPanelHeight, alignment: .top)
+        .background(panelBackground)
+        .clipShape(RoundedRectangle(cornerRadius: VS.Radius.panel, style: .continuous))
+        .animation(.snappy(duration: 0.28), value: recorder.phase)
+    }
+
+    private var trackingVehicle: Vehicle? {
+        if let id = selectedVehicleId ?? store.currentVehicle?.id {
+            return store.vehicles.first(where: { $0.id == id }) ?? store.currentVehicle
+        }
+        return store.currentVehicle
+    }
+
+    private var trackingFuelWarning: (title: String, detail: String, tint: Color)? {
+        guard let vehicle = trackingVehicle else { return nil }
+        let estimate = store.odometerEstimate(vehicleId: vehicle.id)
+        let prediction = FuelInsightLogic.predictNextFill(
+            logs: store.fuelLogs.filter { $0.vehicleId == vehicle.id },
+            estimatedOdometer: estimate?.estimatedKm ?? vehicle.currentOdometer,
+            tankCapacityLiters: vehicle.fuelTankCapacity,
+            brochureL100km: store.manufacturerStandard
+        )
+        guard let prediction, prediction.urgency >= .watch, prediction.confidence >= 0.4 else {
+            return nil
+        }
+        let range: String = {
+            if let km = prediction.kmRemaining {
+                return DistanceFormat.formatDistance(km, unit: store.defaultDistanceUnit) + " left"
+            }
+            return "\(prediction.daysRemaining)d left"
+        }()
+        switch prediction.urgency {
+        case .empty:
+            return ("Running on fumes", range, VS.Color.warning)
+        case .low:
+            return ("Low fuel", range, VS.Color.warning)
+        case .watch:
+            return ("Fuel watch", range, VS.Color.accentSecondary)
+        case .none:
+            return nil
+        }
+    }
+
+    private func monthDrivenKm(for vehicleId: String) -> Double {
+        let cal = Calendar.current
+        let start = cal.date(from: cal.dateComponents([.year, .month], from: Date())) ?? Date()
+        let tripsKm = store.trips
+            .filter { $0.vehicleId == vehicleId && $0.startedAt >= start }
+            .reduce(0.0) { $0 + $1.distanceKm }
+        let pendingKm = recorder.pendingSaves
+            .filter { $0.vehicleId == vehicleId && $0.startedAt >= start }
+            .reduce(0.0) { $0 + $1.distanceKm }
+        return tripsKm + pendingKm
+    }
+
+    private var trackingPanelBody: some View {
+        let vehicle = trackingVehicle
+        let vehicleId = vehicle?.id
+        let estimate = vehicleId.flatMap { store.odometerEstimate(vehicleId: $0) }
+        let odoKm = estimate?.estimatedKm
+            ?? vehicle?.currentOdometer
+            ?? 0
+        let usesMiles = store.defaultDistanceUnit == "mi"
+        let odoValue = String(format: "%.0f", usesMiles ? odoKm * 0.621371 : odoKm)
+        let odoUnit = usesMiles ? "mi" : "km"
+        let monthKm = vehicleId.map(monthDrivenKm(for:)) ?? 0
+        let monthLabel = DistanceFormat.formatDistance(monthKm, unit: store.defaultDistanceUnit)
+
+        return VStack(alignment: .leading, spacing: 16) {
+            // Identity — Dashboard hero language
+            HStack(alignment: .top, spacing: 12) {
+                trackingVehiclePicker(vehicle: vehicle)
+                Spacer(minLength: 8)
+                trackingAutoCapsule
+            }
+
+            // Hero odometer — the number owns the panel
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Text(odoValue)
+                        .font(VS.Typography.heading(60, weight: .bold))
+                        .foregroundStyle(VS.Color.textPrimary)
+                        .minimumScaleFactor(0.48)
+                        .lineLimit(1)
+                        .contentTransition(.numericText())
+                    Text(odoUnit)
+                        .font(VS.Typography.heading(20, weight: .bold))
+                        .foregroundStyle(VS.Color.textTertiary)
                 }
 
-                if let error = recorder.lastError {
-                    Text(error)
-                        .font(VS.Typography.body(12))
-                        .foregroundStyle(VS.Color.warning)
-                        .onTapGesture { recorder.clearError() }
+                HStack(spacing: 8) {
+                    Text(estimate != nil ? "Odometer · estimated" : "Odometer")
+                        .font(VS.Typography.body(13, weight: .medium))
+                        .foregroundStyle(VS.Color.textTertiary)
+                    if recorder.phase == .recording {
+                        Text("·")
+                            .foregroundStyle(VS.Color.textTertiary)
+                        Text(phaseTitle)
+                            .font(VS.Typography.body(13, weight: .semibold))
+                            .foregroundStyle(VS.Color.success)
+                    }
+                }
+
+                Text("\(monthLabel) this month")
+                    .font(VS.Typography.body(14, weight: .medium))
+                    .foregroundStyle(VS.Color.textSecondary)
+            }
+
+            if let warning = trackingFuelWarning {
+                HStack(spacing: 10) {
+                    VSIcon(icon: .gasPump, size: 15, weight: .fill, tint: warning.tint)
+                    Text(warning.title)
+                        .font(VS.Typography.heading(13, weight: .bold))
+                        .foregroundStyle(VS.Color.textPrimary)
+                    Spacer(minLength: 4)
+                    Text(warning.detail)
+                        .font(VS.Typography.body(12, weight: .semibold))
+                        .foregroundStyle(warning.tint)
+                        .lineLimit(1)
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 10)
+                .background(warning.tint.opacity(0.12), in: Capsule())
+                .overlay(Capsule().stroke(warning.tint.opacity(0.28), lineWidth: 1))
+            }
+
+            if let snap = recorder.snapshot, recorder.phase == .recording {
+                HStack(spacing: 8) {
+                    liveMetric(String(format: "%.1f", snap.distanceKm), "km")
+                    liveMetric(formatDuration(snap.durationSec), "time")
+                    liveMetric(String(format: "%.0f", snap.currentSpeedKmh), "km/h")
+                }
+
+                HStack(spacing: 6) {
+                    Circle()
+                        .fill(recorder.liveRoute.isEmpty ? VS.Color.warning : VS.Color.success)
+                        .frame(width: 7, height: 7)
+                    Text(routeStatusText)
+                        .font(VS.Typography.body(12, weight: .semibold))
+                        .foregroundStyle(VS.Color.textTertiary)
+                        .lineLimit(1)
+                    Spacer(minLength: 0)
                 }
             }
-            .padding(.horizontal, 16)
-            .padding(.top, 10)
-            .padding(.bottom, 105)
+
+            if let error = recorder.lastError {
+                Text(error)
+                    .font(VS.Typography.body(13, weight: .medium))
+                    .foregroundStyle(VS.Color.warning)
+                    .onTapGesture { recorder.clearError() }
+            }
+
+            trackingActionRow
         }
-        .frame(maxHeight: 395)
-        .background(panelBackground.ignoresSafeArea(edges: .bottom))
+    }
+
+    private var trackingAutoCapsule: some View {
+        Button {
+            UISelectionFeedbackGenerator().selectionChanged()
+            recorder.setAutoTracking(!recorder.autoTrackingEnabled)
+        } label: {
+            HStack(spacing: 7) {
+                Circle()
+                    .fill(recorder.autoTrackingEnabled ? VS.Color.accent : VS.Color.textTertiary.opacity(0.55))
+                    .frame(width: 7, height: 7)
+                Text(recorder.autoTrackingEnabled ? "Auto on" : "Auto off")
+                    .font(VS.Typography.body(12, weight: .semibold))
+            }
+            .foregroundStyle(VS.Color.textPrimary)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .overlay(
+                Capsule()
+                    .strokeBorder(
+                        recorder.autoTrackingEnabled
+                            ? VS.Color.accent.opacity(0.55)
+                            : Color.white.opacity(0.16),
+                        lineWidth: 1.5
+                    )
+            )
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(recorder.autoTrackingEnabled ? "Auto-detect on" : "Auto-detect off")
+        .accessibilityHint("Double tap to toggle automatic trip detection")
+    }
+
+    @ViewBuilder
+    private func trackingVehiclePicker(vehicle: Vehicle?) -> some View {
+        Menu {
+            ForEach(store.vehicles) { option in
+                Button {
+                    selectedVehicleId = option.id
+                } label: {
+                    Label {
+                        Text(option.nickname)
+                    } icon: {
+                        VehicleMark(style: VehicleMarkStyle.resolve(option.icon), size: 18)
+                    }
+                }
+            }
+        } label: {
+            HStack(alignment: .center, spacing: 12) {
+                if let vehicle {
+                    VehicleMark(style: VehicleMarkStyle.resolve(vehicle.icon), size: 44)
+                } else {
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .fill(VS.Color.chip)
+                        .frame(width: 44, height: 44)
+                        .overlay(
+                            VSIcon(icon: .car, size: 18, weight: .fill, tint: VS.Color.textTertiary)
+                        )
+                }
+                VStack(alignment: .leading, spacing: 3) {
+                    HStack(spacing: 5) {
+                        Text(vehicle?.nickname ?? "Select car")
+                            .font(VS.Typography.heading(20, weight: .bold))
+                            .foregroundStyle(VS.Color.textPrimary)
+                            .lineLimit(1)
+                        if store.vehicles.count > 1 {
+                            VSIcon(icon: .caretDown, size: 12, weight: .bold, tint: VS.Color.textTertiary)
+                        }
+                    }
+                    Text(trackingIdentitySubtitle(vehicle))
+                        .font(VS.Typography.body(13, weight: .medium))
+                        .foregroundStyle(VS.Color.textTertiary)
+                        .lineLimit(1)
+                }
+            }
+            .contentShape(Rectangle())
+        }
+        .disabled(store.vehicles.isEmpty)
+    }
+
+    private func trackingIdentitySubtitle(_ vehicle: Vehicle?) -> String {
+        guard let vehicle else { return phaseSubtitle }
+        let makeModel = [vehicle.make, vehicle.model]
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+            .joined(separator: " ")
+        if makeModel.isEmpty {
+            return phaseSubtitle
+        }
+        // Status rides with the car when idle/watching — keeps the hero number clear.
+        switch recorder.phase {
+        case .idle, .watching:
+            return "\(makeModel) · \(phaseTitle)"
+        default:
+            return makeModel
+        }
+    }
+
+    private var trackingActionRow: some View {
+        HStack(spacing: 10) {
+            if recorder.phase == .recording {
+                Button {
+                    if recorder.snapshot?.isPaused == true {
+                        recorder.resumeTrip()
+                    } else {
+                        recorder.pauseTrip()
+                    }
+                } label: {
+                    HStack(spacing: 8) {
+                        VSIcon(
+                            icon: recorder.snapshot?.isPaused == true ? .play : .pause,
+                            size: 18,
+                            weight: .fill,
+                            tint: VS.Color.textPrimary
+                        )
+                        Text(recorder.snapshot?.isPaused == true ? "Resume" : "Pause")
+                            .font(VS.Typography.heading(16, weight: .bold))
+                    }
+                    .foregroundStyle(VS.Color.textPrimary)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 16)
+                    .background(VS.Color.divider, in: Capsule())
+                }
+                .buttonStyle(.plain)
+
+                PrimaryCTAButton(title: "End drive", icon: .stop) {
+                    recorder.endTrip()
+                }
+            } else {
+                PrimaryCTAButton(title: "Start drive", icon: .play) {
+                    guard tripPermissions.locationStatus.isUsable else {
+                        showTripPermissions = true
+                        return
+                    }
+                    syncRecorderVehicle()
+                    recorder.startManualTrip()
+                }
+            }
+        }
     }
 
     private var drivesMode: some View {
@@ -441,30 +750,31 @@ struct TripsView: View {
                     .frame(width: 42, height: 5)
                     .padding(.top, 8)
 
-                HStack {
-                    VStack(alignment: .leading, spacing: 2) {
+                HStack(alignment: .firstTextBaseline, spacing: 12) {
+                    VStack(alignment: .leading, spacing: 4) {
                         Text("My Drives")
-                            .font(VS.Typography.heading(25, weight: .bold))
+                            .font(VS.Typography.heading(28, weight: .bold))
                             .foregroundStyle(VS.Color.textPrimary)
                         Text(filteredPendingTrips.isEmpty
                              ? driveRollupLine
                              : "\(filteredPendingTrips.count) awaiting your review")
-                            .font(VS.Typography.body(11, weight: .medium))
+                            .font(VS.Typography.body(13, weight: .medium))
                             .foregroundStyle(VS.Color.textTertiary)
+                            .lineLimit(2)
                     }
-                    Spacer()
+                    Spacer(minLength: 8)
                     Text("\(filteredTrips.count + filteredPendingTrips.count)")
-                        .font(VS.Typography.body(12, weight: .bold))
+                        .font(VS.Typography.heading(16, weight: .bold))
                         .foregroundStyle(VS.Color.navPill)
-                        .frame(minWidth: 28, minHeight: 28)
+                        .frame(minWidth: 36, minHeight: 36)
                         .background(VS.Color.accent, in: Circle())
                 }
-                .padding(.horizontal, 16)
+                .padding(.horizontal, 18)
             }
             .contentShape(Rectangle())
             .highPriorityGesture(driveDrawerGesture(from: .handle))
 
-            filterBar.padding(.horizontal, 16)
+            filterBar.padding(.horizontal, 18)
 
             if filteredTrips.isEmpty && filteredPendingTrips.isEmpty {
                 emptyState
@@ -473,41 +783,43 @@ struct TripsView: View {
                     .highPriorityGesture(driveDrawerGesture(from: .content))
             } else {
                 ScrollView {
-                    LazyVStack(spacing: 0) {
+                    LazyVStack(spacing: 10) {
                         if !filteredPendingTrips.isEmpty {
                             HStack(spacing: 8) {
-                                Text("REVIEW REQUIRED")
-                                    .font(VS.Typography.body(11, weight: .bold))
+                                Text("Review required")
+                                    .font(VS.Typography.heading(13, weight: .bold))
                                     .foregroundStyle(VS.Color.warning)
                                 Text("\(filteredPendingTrips.count)")
-                                    .font(VS.Typography.body(11, weight: .bold))
-                                    .foregroundStyle(VS.Color.warning)
+                                    .font(VS.Typography.heading(12, weight: .bold))
+                                    .foregroundStyle(VS.Color.navPill)
+                                    .padding(.horizontal, 8)
+                                    .padding(.vertical, 3)
+                                    .background(VS.Color.warning, in: Capsule())
                                 Spacer()
                                 Button {
                                     Task { await confirmAllPending() }
                                 } label: {
-                                    HStack(spacing: 5) {
+                                    HStack(spacing: 6) {
                                         if isConfirmingAll {
                                             ProgressView()
                                                 .controlSize(.mini)
                                                 .tint(VS.Color.navPill)
                                         } else {
-                                            VSIcon(icon: .checkCircle, size: 12, weight: .bold, tint: VS.Color.navPill)
+                                            VSIcon(icon: .checkCircle, size: 13, weight: .bold, tint: VS.Color.navPill)
                                         }
                                         Text(isConfirmingAll ? "Confirming…" : "Confirm all")
-                                            .font(VS.Typography.body(11, weight: .bold))
+                                            .font(VS.Typography.heading(12, weight: .bold))
                                             .foregroundStyle(VS.Color.navPill)
                                     }
-                                    .padding(.horizontal, 10)
-                                    .padding(.vertical, 5)
+                                    .padding(.horizontal, 12)
+                                    .padding(.vertical, 8)
                                     .background(VS.Color.accent, in: Capsule())
                                 }
                                 .buttonStyle(.plain)
                                 .disabled(isConfirmingAll)
                                 .accessibilityLabel("Confirm all pending drives")
                             }
-                            .padding(.top, 5)
-                            .padding(.bottom, 4)
+                            .padding(.top, 2)
 
                             ForEach(filteredPendingTrips) { pending in
                                 Button {
@@ -520,32 +832,30 @@ struct TripsView: View {
                                     )
                                 }
                                 .buttonStyle(.plain)
-                                Divider().overlay(VS.Color.divider)
                             }
 
                             if !filteredTrips.isEmpty {
-                                Text("CONFIRMED DRIVES")
-                                    .font(VS.Typography.body(11, weight: .bold))
+                                Text("Confirmed")
+                                    .font(VS.Typography.heading(13, weight: .bold))
                                     .foregroundStyle(VS.Color.textTertiary)
                                     .frame(maxWidth: .infinity, alignment: .leading)
-                                    .padding(.top, 18)
-                                    .padding(.bottom, 4)
+                                    .padding(.top, 10)
                             }
                         }
 
                         if sort.isChronological {
                             ForEach(groupedTrips) { group in
-                                HStack {
-                                    Text(group.title.uppercased())
-                                        .font(VS.Typography.body(11, weight: .bold))
-                                        .foregroundStyle(VS.Color.textTertiary)
+                                HStack(alignment: .firstTextBaseline) {
+                                    Text(group.title)
+                                        .font(VS.Typography.heading(14, weight: .bold))
+                                        .foregroundStyle(VS.Color.textSecondary)
                                     Spacer()
                                     Text(DistanceFormat.formatDistance(group.totalKm, unit: store.defaultDistanceUnit))
-                                        .font(VS.Typography.body(11, weight: .bold))
-                                        .foregroundStyle(VS.Color.textTertiary)
+                                        .font(VS.Typography.heading(14, weight: .bold))
+                                        .foregroundStyle(VS.Color.textPrimary)
                                 }
-                                .padding(.top, 14)
-                                .padding(.bottom, 2)
+                                .padding(.top, 6)
+                                .padding(.horizontal, 2)
 
                                 ForEach(group.trips) { trip in
                                     driveRow(trip, showsDay: false)
@@ -557,39 +867,48 @@ struct TripsView: View {
                             }
                         }
                     }
-                    .padding(.horizontal, 16)
-                    .padding(.bottom, 110)
+                    .padding(.horizontal, 14)
+                    .padding(.bottom, 28)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .scrollDisabled(!driveDrawerExpanded)
                 .simultaneousGesture(driveDrawerGesture(from: .content))
             }
         }
-        .frame(height: driveDrawerExpandedHeight)
-        .clipped()
-        .background(panelBackground.ignoresSafeArea(edges: .bottom))
-        .offset(y: driveDrawerOffset)
+        .frame(height: driveDrawerVisibleHeight, alignment: .top)
+        .background(panelBackground)
+        .clipShape(RoundedRectangle(cornerRadius: VS.Radius.panel, style: .continuous))
+        .animation(.spring(response: 0.42, dampingFraction: 0.9), value: driveDrawerExpanded)
     }
 
+    /// Collapsed sheet — keeps mode picker + bottom nav fully on screen.
     private var driveDrawerCollapsedHeight: CGFloat {
-        UIScreen.main.bounds.height * 0.46
+        min(300, UIScreen.main.bounds.height * 0.36)
     }
 
+    /// Expanded sheet — never covers top chrome or the floating bottom nav.
     private var driveDrawerExpandedHeight: CGFloat {
-        UIScreen.main.bounds.height * (filteredTrips.isEmpty && filteredPendingTrips.isEmpty ? 0.62 : 0.72)
+        let screen = UIScreen.main.bounds.height
+        let reservedTop: CGFloat = 132
+        let reservedBottom = VS.Spacing.frameGutter + 78 + 12
+        let maxAllowed = max(driveDrawerCollapsedHeight, screen - reservedTop - reservedBottom)
+        let target = screen * (filteredTrips.isEmpty && filteredPendingTrips.isEmpty ? 0.48 : 0.56)
+        return max(driveDrawerCollapsedHeight, min(maxAllowed, target))
     }
 
     private var driveDrawerTravel: CGFloat {
         max(0, driveDrawerExpandedHeight - driveDrawerCollapsedHeight)
     }
 
-    private var driveDrawerOffset: CGFloat {
-        let restingOffset = driveDrawerExpanded ? 0 : driveDrawerTravel
-        return min(driveDrawerTravel, max(0, restingOffset + driveDrawerDragOffset))
+    /// Live height while dragging — no off-screen offset layout.
+    private var driveDrawerVisibleHeight: CGFloat {
+        let resting = driveDrawerExpanded ? driveDrawerExpandedHeight : driveDrawerCollapsedHeight
+        let proposed = resting - driveDrawerDragOffset
+        return min(driveDrawerExpandedHeight, max(driveDrawerCollapsedHeight, proposed))
     }
 
     private func driveDrawerGesture(from source: DriveDrawerGestureOwner) -> some Gesture {
-        DragGesture(minimumDistance: 8, coordinateSpace: .global)
+        DragGesture(minimumDistance: 10, coordinateSpace: .global)
             .onChanged { value in
                 if driveDrawerGestureOwner == nil {
                     driveDrawerGestureOwner = drawerGestureOwner(
@@ -610,13 +929,18 @@ struct TripsView: View {
                     driveDrawerDragOffset = 0
                     return
                 }
-                guard driveDrawerTravel > 0 else { return }
-                let restingOffset = driveDrawerExpanded ? 0 : driveDrawerTravel
-                let projectedOffset = min(
-                    driveDrawerTravel,
-                    max(0, restingOffset + value.predictedEndTranslation.height)
+                guard driveDrawerTravel > 0 else {
+                    driveDrawerDragOffset = 0
+                    return
+                }
+
+                let resting = driveDrawerExpanded ? driveDrawerExpandedHeight : driveDrawerCollapsedHeight
+                let projected = min(
+                    driveDrawerExpandedHeight,
+                    max(driveDrawerCollapsedHeight, resting - value.predictedEndTranslation.height)
                 )
-                let shouldExpand = projectedOffset < driveDrawerTravel / 2
+                let midpoint = (driveDrawerCollapsedHeight + driveDrawerExpandedHeight) / 2
+                let shouldExpand = projected > midpoint
 
                 if shouldExpand != driveDrawerExpanded {
                     UIImpactFeedbackGenerator(style: .light).impactOccurred()
@@ -633,21 +957,18 @@ struct TripsView: View {
         initialTranslation: CGFloat
     ) -> DriveDrawerGestureOwner {
         if source == .handle { return .handle }
-        // Collapsed: any content drag moves the drawer (scroll is disabled anyway).
-        // Expanded: content gestures always scroll — only the handle/header collapses,
-        // so list scrolling can never accidentally slide the drawer down.
+        // Collapsed: content drag expands. Expanded: list scrolls; only handle collapses.
         if !driveDrawerExpanded { return .content }
         return .scrolling
     }
 
     private var panelBackground: some View {
-        UnevenRoundedRectangle(topLeadingRadius: 28, topTrailingRadius: 28)
-            .fill(VS.Color.bgPrimary.opacity(0.97))
-            .overlay {
-                UnevenRoundedRectangle(topLeadingRadius: 28, topTrailingRadius: 28)
-                    .strokeBorder(Color.white.opacity(0.09), lineWidth: 1)
-            }
-            .shadow(color: .black.opacity(0.45), radius: 24, y: -8)
+        RoundedRectangle(cornerRadius: VS.Radius.panel, style: .continuous)
+            .fill(Color(hex: 0x161916))
+            .overlay(
+                RoundedRectangle(cornerRadius: VS.Radius.panel, style: .continuous)
+                    .stroke(VS.Color.hairline, lineWidth: 1)
+            )
     }
 
     private func mapCanvas(height: CGFloat) -> some View {
@@ -660,6 +981,7 @@ struct TripsView: View {
                 showsUserCharacter: mode == .tracking,
                 courseDegrees: recorder.followCourseDegrees,
                 characterCoordinate: mapCharacterCoordinate,
+                locksMinimumPitch: mode == .tracking || selectedTrip != nil,
                 position: $mapPosition
             )
             .frame(height: height)
@@ -678,7 +1000,7 @@ struct TripsView: View {
             .overlay(Capsule().stroke(Color.white.opacity(0.12), lineWidth: 1))
             .padding(14)
         }
-        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: VS.Radius.card, style: .continuous))
         .padding(.horizontal, 16)
     }
 
@@ -699,131 +1021,6 @@ struct TripsView: View {
         if recorder.autoTrackingEnabled, recorder.phase == .idle {
             recorder.setAutoTracking(true)
         }
-    }
-
-    private var recordingControls: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(phaseTitle)
-                        .font(VS.Typography.heading(15))
-                        .foregroundStyle(VS.Color.textPrimary)
-                    Text(phaseSubtitle)
-                        .font(VS.Typography.body(12))
-                        .foregroundStyle(VS.Color.textTertiary)
-                }
-                Spacer()
-                Toggle("", isOn: Binding(
-                    get: { recorder.autoTrackingEnabled },
-                    set: { recorder.setAutoTracking($0) }
-                ))
-                .labelsHidden()
-                .tint(VS.Color.accent)
-            }
-
-            if let snap = recorder.snapshot, recorder.phase == .recording {
-                HStack(spacing: 10) {
-                    liveMetric(String(format: "%.1f", snap.distanceKm), "km")
-                    liveMetric(formatDuration(snap.durationSec), "time")
-                    liveMetric(String(format: "%.0f", snap.currentSpeedKmh), "km/h")
-                }
-
-                HStack(spacing: 7) {
-                    Circle()
-                        .fill(recorder.liveRoute.isEmpty ? VS.Color.warning : VS.Color.success)
-                        .frame(width: 7, height: 7)
-                    Text(routeStatusText)
-                        .font(VS.Typography.body(10, weight: .semibold))
-                        .foregroundStyle(VS.Color.textTertiary)
-                    Spacer()
-                    Text("\(recorder.liveRoute.count) points")
-                        .font(VS.Typography.mono(10, weight: .semibold))
-                        .foregroundStyle(VS.Color.textSecondary)
-                }
-            }
-
-            HStack(spacing: 10) {
-                if recorder.phase == .recording {
-                    Button {
-                        if recorder.snapshot?.isPaused == true {
-                            recorder.resumeTrip()
-                        } else {
-                            recorder.pauseTrip()
-                        }
-                    } label: {
-                        HStack(spacing: 8) {
-                            VSIcon(
-                                icon: recorder.snapshot?.isPaused == true ? .play : .pause,
-                                size: 16,
-                                weight: .fill,
-                                tint: VS.Color.textPrimary
-                            )
-                            Text(recorder.snapshot?.isPaused == true ? "Resume" : "Pause")
-                                .font(VS.Typography.heading(14))
-                        }
-                        .foregroundStyle(VS.Color.textPrimary)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 12)
-                        .background(VS.Color.divider, in: Capsule())
-                    }
-
-                    PrimaryCTAButton(title: "End drive", icon: .stop) {
-                        recorder.endTrip()
-                    }
-                } else {
-                    PrimaryCTAButton(title: "Start drive", icon: .play) {
-                        guard tripPermissions.locationStatus.isUsable else {
-                            showTripPermissions = true
-                            return
-                        }
-                        syncRecorderVehicle()
-                        recorder.startManualTrip()
-                    }
-                }
-            }
-        }
-        .padding(14)
-        .glassCard(elevated: recorder.phase == .recording)
-    }
-
-    private func odometerCard(_ estimate: OdometerEstimate) -> some View {
-        HStack(spacing: 14) {
-            ZStack {
-                Circle().fill(VS.Color.accent.opacity(0.12))
-                VSIcon(icon: .gauge, size: 22, weight: .duotone, tint: VS.Color.accent)
-            }
-            .frame(width: 44, height: 44)
-
-            VStack(alignment: .leading, spacing: 3) {
-                HStack(spacing: 6) {
-                    Text(String(format: "%.0f km", estimate.estimatedKm))
-                        .font(VS.Typography.heading(21, weight: .bold))
-                        .foregroundStyle(VS.Color.textPrimary)
-                    Text("EST.")
-                        .font(VS.Typography.body(9, weight: .bold))
-                        .foregroundStyle(VS.Color.navPill)
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 3)
-                        .background(VS.Color.accent, in: Capsule())
-                }
-                Text(String(format: "%.0f verified + %.1f tracked", estimate.verifiedKm, estimate.trackedSinceKm))
-                    .font(VS.Typography.body(11))
-                    .foregroundStyle(VS.Color.textTertiary)
-            }
-
-            Spacer()
-
-            VStack(alignment: .trailing, spacing: 2) {
-                Text("Verified")
-                    .font(VS.Typography.body(10, weight: .semibold))
-                    .foregroundStyle(VS.Color.success)
-                Text(estimate.verifiedAt.formatted(date: .abbreviated, time: .omitted))
-                    .font(VS.Typography.body(10))
-                    .foregroundStyle(VS.Color.textTertiary)
-            }
-        }
-        .padding(14)
-        .glassCard(elevated: true)
     }
 
     private var phaseTitle: String {
@@ -851,16 +1048,16 @@ struct TripsView: View {
     }
 
     private func liveMetric(_ value: String, _ label: String) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
+        VStack(alignment: .leading, spacing: 3) {
             Text(value)
-                .font(VS.Typography.heading(18, weight: .bold))
+                .font(VS.Typography.heading(22, weight: .bold))
                 .foregroundStyle(VS.Color.textPrimary)
             Text(label.uppercased())
-                .font(VS.Typography.body(10, weight: .medium))
+                .font(VS.Typography.body(11, weight: .bold))
                 .foregroundStyle(VS.Color.textTertiary)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(10)
+        .padding(12)
         .metricInset()
     }
 
@@ -879,13 +1076,23 @@ struct TripsView: View {
     }
 
     private func focusMap() {
-        if let trip = selectedTrip, let region = drawerAwareRegion(for: trip) {
-            mapPosition = .region(region)
+        if let trip = selectedTrip, let region = drawerAwareRegion(for: trip, shiftForPitch: true) {
+            mapPosition = .camera(Self.pitchedCamera(for: region, overview: false))
             return
         }
 
         if !driveMapCoordinates.isEmpty {
-            mapPosition = .region(drawerAwareRegion(for: driveMapCoordinates))
+            // Wide historic overview — flat camera, no 9.5 km distance cap, no south shift
+            // into empty water between cities (Dammam ↔ Doha).
+            let region = drawerAwareRegion(for: driveMapCoordinates, shiftForPitch: false)
+            mapPosition = .camera(Self.pitchedCamera(for: region, overview: true))
+        } else if let lat = recorder.followLatitude, let lng = recorder.followLongitude {
+            mapPosition = .camera(
+                Self.pitchedCamera(
+                    center: CLLocationCoordinate2D(latitude: lat, longitude: lng),
+                    distance: 1_200
+                )
+            )
         } else {
             mapPosition = .userLocation(followsHeading: false, fallback: .automatic)
         }
@@ -904,7 +1111,6 @@ struct TripsView: View {
         }
 
         guard let coordinate else {
-            // Wait for GPS instead of locking onto a hardcoded city fallback.
             mapPosition = .userLocation(followsHeading: false, fallback: .automatic)
             return
         }
@@ -912,12 +1118,44 @@ struct TripsView: View {
         let heading = recorder.followCourseDegrees >= 0 ? recorder.followCourseDegrees : 0
         let distance: CLLocationDistance = recorder.phase == .recording ? 680 : 1_050
         mapPosition = .camera(
-            MapCamera(
-                centerCoordinate: coordinate,
-                distance: distance,
-                heading: heading,
-                pitch: 58
-            )
+            Self.pitchedCamera(center: coordinate, distance: distance, heading: heading)
+        )
+    }
+
+    /// Shared pitched camera so realistic elevation / 3D buildings actually render.
+    private static let mapPitch: Double = 58
+
+    private static func pitchedCamera(
+        for region: MKCoordinateRegion,
+        heading: CLLocationDirection = 0,
+        overview: Bool = false
+    ) -> MapCamera {
+        let metersPerDegree: CLLocationDistance = 111_000
+        let spanMeters = max(region.span.latitudeDelta, region.span.longitudeDelta) * metersPerDegree
+        // Overview of multi-city history needs hundreds of km — the old 9.5 km cap
+        // zoomed into empty gulf water between Doha and Dammam.
+        let maxDistance: CLLocationDistance = overview ? 1_800_000 : 12_000
+        let minDistance: CLLocationDistance = overview ? 4_000 : 520
+        let distance = max(minDistance, min(spanMeters * (overview ? 1.25 : 1.55), maxDistance))
+        return pitchedCamera(
+            center: region.center,
+            distance: distance,
+            heading: heading,
+            pitch: overview ? 0 : mapPitch
+        )
+    }
+
+    private static func pitchedCamera(
+        center: CLLocationCoordinate2D,
+        distance: CLLocationDistance,
+        heading: CLLocationDirection = 0,
+        pitch: Double = mapPitch
+    ) -> MapCamera {
+        MapCamera(
+            centerCoordinate: center,
+            distance: distance,
+            heading: heading,
+            pitch: pitch
         )
     }
 
@@ -927,21 +1165,28 @@ struct TripsView: View {
                 Menu {
                     Button("All Cars") { selectedVehicleId = nil }
                     ForEach(store.vehicles) { vehicle in
-                        Button("\(vehicle.icon ?? "🚗") \(vehicle.nickname)") {
+                        Button {
                             selectedVehicleId = vehicle.id
+                        } label: {
+                            Label {
+                                Text(vehicle.nickname)
+                            } icon: {
+                                VehicleMark(style: VehicleMarkStyle.resolve(vehicle.icon), size: 18)
+                            }
                         }
                     }
                 } label: {
-                    HStack(spacing: 6) {
-                        VSIcon(icon: .car, size: 12, weight: .fill, tint: VS.Color.textSecondary)
+                    HStack(spacing: 8) {
+                        VSIcon(icon: .car, size: 14, weight: .fill, tint: VS.Color.textSecondary)
                         Text(vehicleFilterLabel)
-                            .font(VS.Typography.body(13, weight: .semibold))
-                        VSIcon(icon: .caretDown, size: 10, weight: .bold, tint: VS.Color.textSecondary)
+                            .font(VS.Typography.heading(14, weight: .bold))
+                        VSIcon(icon: .caretDown, size: 11, weight: .bold, tint: VS.Color.textSecondary)
                     }
                     .foregroundStyle(VS.Color.textSecondary)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 8)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 11)
                     .background(VS.Color.chip, in: Capsule())
+                    .overlay(Capsule().stroke(VS.Color.hairline, lineWidth: 1))
                 }
 
                 Menu {
@@ -959,15 +1204,15 @@ struct TripsView: View {
                         }
                     }
                 } label: {
-                    HStack(spacing: 6) {
-                        VSIcon(icon: .chartLine, size: 12, weight: .bold, tint: VS.Color.navPill)
+                    HStack(spacing: 8) {
+                        VSIcon(icon: .chartLine, size: 14, weight: .bold, tint: VS.Color.navPill)
                         Text(sort.label)
-                            .font(VS.Typography.body(13, weight: .semibold))
-                        VSIcon(icon: .caretDown, size: 10, weight: .bold, tint: VS.Color.navPill)
+                            .font(VS.Typography.heading(14, weight: .bold))
+                        VSIcon(icon: .caretDown, size: 11, weight: .bold, tint: VS.Color.navPill)
                     }
                     .foregroundStyle(VS.Color.navPill)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 8)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 11)
                     .background(VS.Color.accent, in: Capsule())
                 }
             }
@@ -1019,43 +1264,51 @@ struct TripsView: View {
     private func region(for trip: Trip) -> MKCoordinateRegion? {
         let coords = trip.route.isEmpty
             ? [trip.startCoordinate, trip.endCoordinate].compactMap { $0 }
-            : trip.route
+            : TripTrackingLogic.mapDisplayRoute(id: trip.id, points: trip.route, maximumPoints: 120)
         guard !coords.isEmpty else { return nil }
-        let lats = coords.map(\.latitude)
-        let lngs = coords.map(\.longitude)
-        let minLat = lats.min()!, maxLat = lats.max()!
-        let minLng = lngs.min()!, maxLng = lngs.max()!
-        let center = CLLocationCoordinate2D(
-            latitude: (minLat + maxLat) / 2,
-            longitude: (minLng + maxLng) / 2
-        )
-        let span = MKCoordinateSpan(
-            latitudeDelta: max((maxLat - minLat) * 1.6, 0.04),
-            longitudeDelta: max((maxLng - minLng) * 1.6, 0.04)
-        )
-        return MKCoordinateRegion(center: center, span: span)
+        return region(for: coords)
     }
 
-    private func drawerAwareRegion(for trip: Trip) -> MKCoordinateRegion? {
+    private func drawerAwareRegion(for trip: Trip, shiftForPitch: Bool = true) -> MKCoordinateRegion? {
         let coordinates = trip.route.isEmpty
             ? [trip.startCoordinate, trip.endCoordinate].compactMap { $0 }
-            : TripTrackingLogic.cleanedForDisplay(trip.route)
+            : TripTrackingLogic.mapDisplayRoute(id: trip.id, points: trip.route, maximumPoints: 120)
         guard !coordinates.isEmpty else { return nil }
-        return drawerAwareRegion(for: coordinates)
+        return drawerAwareRegion(for: coordinates, shiftForPitch: shiftForPitch)
     }
 
-    private func drawerAwareRegion(for coordinates: [TripCoordinate]) -> MKCoordinateRegion {
+    private func drawerAwareRegion(
+        for coordinates: [TripCoordinate],
+        shiftForPitch: Bool = true
+    ) -> MKCoordinateRegion {
         let base = region(for: coordinates)
         let viewportHeight = max(UIScreen.main.bounds.height, 1)
         let usableHeight = max(180, viewportHeight - mapTopObstruction - mapBottomObstruction)
         let mapCanvasHeight = viewportHeight + mapTopObstruction + mapBottomObstruction
         let fittedLatitudeDelta = base.span.latitudeDelta * mapCanvasHeight / usableHeight
+        let fittedLongitudeDelta = max(
+            base.span.longitudeDelta,
+            base.span.longitudeDelta * mapCanvasHeight / usableHeight * 0.85
+        )
+
+        let center: CLLocationCoordinate2D
+        if shiftForPitch {
+            // Pitched single-drive focus: look-at sits low; nudge so the route clears the sheet.
+            let bottomCover = mapBottomObstruction / mapCanvasHeight
+            let shiftFraction = min(0.28, bottomCover * 0.35 + 0.1)
+            center = CLLocationCoordinate2D(
+                latitude: base.center.latitude - fittedLatitudeDelta * shiftFraction,
+                longitude: base.center.longitude
+            )
+        } else {
+            center = base.center
+        }
 
         return MKCoordinateRegion(
-            center: base.center,
+            center: center,
             span: MKCoordinateSpan(
                 latitudeDelta: fittedLatitudeDelta,
-                longitudeDelta: base.span.longitudeDelta
+                longitudeDelta: fittedLongitudeDelta
             )
         )
     }
@@ -1090,11 +1343,13 @@ struct TripsMapCanvas: View {
     let courseDegrees: Double
     /// Recorder follow pose — keeps the avatar on our route, not MapKit's lagging user location.
     let characterCoordinate: CLLocationCoordinate2D?
+    /// When false (historic overview), allow flat camera so multi-city history can fit.
+    var locksMinimumPitch: Bool = true
     @Binding var position: MapCameraPosition
     @State private var mapHeading: Double = 0
 
     var body: some View {
-        Map(position: $position) {
+        Map(position: $position, interactionModes: [.pan, .zoom, .pitch, .rotate]) {
             if showsUserCharacter {
                 if let characterCoordinate {
                     Annotation("You", coordinate: characterCoordinate, anchor: .center) {
@@ -1116,59 +1371,54 @@ struct TripsMapCanvas: View {
             }
 
             ForEach(trips) { trip in
-                let displayRoute = TripTrackingLogic.cleanedForDisplay(trip.route)
+                let displayRoute: [TripCoordinate] = {
+                    if trip.route.count >= 2 {
+                        return TripTrackingLogic.mapDisplayRoute(
+                            id: trip.id,
+                            points: trip.route,
+                            maximumPoints: 64
+                        )
+                    }
+                    return [trip.startCoordinate, trip.endCoordinate].compactMap { $0 }
+                }()
                 if displayRoute.count >= 2 {
                     let coords = displayRoute.map {
                         CLLocationCoordinate2D(latitude: $0.latitude, longitude: $0.longitude)
                     }
                     let isSelected = selected?.id == trip.id
-                    let dim = isSelected ? 0.45 : 1.0
+                    let dim = isSelected ? 0.35 : 1.0
 
-                    // Heatmap bloom: two falloff layers of accent glow,
-                    // then a hot near-white core — overlaps stack to solid white.
                     MapPolyline(coordinates: coords)
                         .stroke(
-                            VS.Color.accent.opacity(0.10 * dim),
-                            style: StrokeStyle(lineWidth: 18, lineCap: .round, lineJoin: .round)
-                        )
-                    MapPolyline(coordinates: coords)
-                        .stroke(
-                            VS.Color.accent.opacity(0.26 * dim),
+                            VS.Color.accent.opacity(0.22 * dim),
                             style: StrokeStyle(lineWidth: 10, lineCap: .round, lineJoin: .round)
                         )
                     MapPolyline(coordinates: coords)
                         .stroke(
-                            VS.Color.accent.opacity(0.55 * dim),
-                            style: StrokeStyle(lineWidth: 5.5, lineCap: .round, lineJoin: .round)
-                        )
-                    MapPolyline(coordinates: coords)
-                        .stroke(
-                            Color.white.opacity(0.82 * dim),
+                            Color.white.opacity(0.75 * dim),
                             style: StrokeStyle(lineWidth: 2.5, lineCap: .round, lineJoin: .round)
                         )
                 }
             }
 
             if let selected {
-                let selectedRoute = TripTrackingLogic.cleanedForDisplay(selected.route)
+                let selectedRoute = TripTrackingLogic.mapDisplayRoute(
+                    id: selected.id,
+                    points: selected.route,
+                    maximumPoints: 160
+                )
                 if selectedRoute.count >= 2 {
                     let coords = selectedRoute.map {
                         CLLocationCoordinate2D(latitude: $0.latitude, longitude: $0.longitude)
                     }
 
-                    // Focused drive: full-strength bloom so it pops off the heatmap.
                     MapPolyline(coordinates: coords)
                         .stroke(
-                            VS.Color.accent.opacity(0.20),
-                            style: StrokeStyle(lineWidth: 20, lineCap: .round, lineJoin: .round)
+                            VS.Color.accent.opacity(0.28),
+                            style: StrokeStyle(lineWidth: 14, lineCap: .round, lineJoin: .round)
                         )
                     MapPolyline(coordinates: coords)
-                        .stroke(
-                            VS.Color.accent.opacity(0.45),
-                            style: StrokeStyle(lineWidth: 11, lineCap: .round, lineJoin: .round)
-                        )
-                    MapPolyline(coordinates: coords)
-                        .stroke(VS.Color.accent, style: StrokeStyle(lineWidth: 5.5, lineCap: .round, lineJoin: .round))
+                        .stroke(VS.Color.accent, style: StrokeStyle(lineWidth: 5, lineCap: .round, lineJoin: .round))
                     MapPolyline(coordinates: coords)
                         .stroke(
                             Color.white.opacity(0.95),
@@ -1223,6 +1473,19 @@ struct TripsMapCanvas: View {
         .onMapCameraChange(frequency: .continuous) { context in
             mapHeading = context.camera.heading
         }
+        .onMapCameraChange(frequency: .onEnd) { context in
+            // Keep enough pitch for extruded buildings when tracking / single-drive focus.
+            // Historic multi-city overview must stay flat or distance framing collapses.
+            guard locksMinimumPitch, context.camera.pitch < Self.minimumPitch else { return }
+            position = .camera(
+                MapCamera(
+                    centerCoordinate: context.camera.centerCoordinate,
+                    distance: context.camera.distance,
+                    heading: context.camera.heading,
+                    pitch: Self.enforcedPitch
+                )
+            )
+        }
         .animation(.linear(duration: 0.35), value: characterCoordinate?.latitude)
         .animation(.linear(duration: 0.35), value: characterCoordinate?.longitude)
     }
@@ -1234,6 +1497,8 @@ struct TripsMapCanvas: View {
         pointsOfInterest: .excludingAll,
         showsTraffic: false
     )
+    private static let minimumPitch: Double = 48
+    private static let enforcedPitch: Double = 58
 }
 
 /// Soft wedge showing look / travel direction behind the map character.
@@ -1341,41 +1606,55 @@ struct PendingDriveRowView: View {
         return hours > 0 ? "\(hours)h \(minutes)m" : "\(max(minutes, 1))m"
     }
 
+    private var distanceValue: String {
+        DistanceFormat.formatDistance(pending.distanceKm, unit: unit)
+            .replacingOccurrences(of: " km", with: "")
+            .replacingOccurrences(of: " mi", with: "")
+    }
+
     var body: some View {
         HStack(spacing: 14) {
-            VStack(alignment: .leading, spacing: 4) {
-                HStack(spacing: 7) {
-                    Text(DistanceFormat.formatDistance(pending.distanceKm, unit: unit))
-                        .font(VS.Typography.heading(21, weight: .bold))
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    Text(distanceValue)
+                        .font(VS.Typography.heading(28, weight: .bold))
                         .foregroundStyle(VS.Color.textPrimary)
+                    Text(unit == "mi" ? "mi" : "km")
+                        .font(VS.Typography.heading(14, weight: .bold))
+                        .foregroundStyle(VS.Color.textTertiary)
                     Text("REVIEW")
-                        .font(VS.Typography.body(8, weight: .bold))
-                        .foregroundStyle(Color.black)
-                        .padding(.horizontal, 7)
-                        .padding(.vertical, 3)
+                        .font(VS.Typography.body(9, weight: .bold))
+                        .foregroundStyle(VS.Color.navPill)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
                         .background(VS.Color.warning, in: Capsule())
                 }
 
                 Text("\(dayTitle) · \(pending.startedAt.formatted(date: .omitted, time: .shortened)) – \(pending.endedAt.formatted(date: .omitted, time: .shortened))")
-                    .font(VS.Typography.body(12))
+                    .font(VS.Typography.body(13, weight: .medium))
                     .foregroundStyle(VS.Color.textTertiary)
 
                 Text(durationFormatted)
-                    .font(VS.Typography.body(12, weight: .medium))
+                    .font(VS.Typography.heading(13, weight: .bold))
                     .foregroundStyle(VS.Color.textSecondary)
             }
 
             Spacer(minLength: 6)
 
-            MiniRoutePreview(route: pending.route)
-                .frame(width: 48, height: 48)
+            MiniRoutePreview(routeId: pending.id.uuidString, route: pending.route)
+                .frame(width: 56, height: 56)
 
-            VSIcon(icon: .caretLeft, size: 15, weight: .bold, tint: VS.Color.warning)
+            VSIcon(icon: .caretLeft, size: 16, weight: .bold, tint: VS.Color.warning)
                 .rotationEffect(.degrees(180))
         }
+        .padding(.horizontal, 14)
         .padding(.vertical, 14)
-        .padding(.horizontal, 4)
-        .contentShape(Rectangle())
+        .background(VS.Color.chip, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
+                .stroke(VS.Color.warning.opacity(0.28), lineWidth: 1)
+        )
+        .contentShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
         .accessibilityElement(children: .combine)
         .accessibilityLabel("Review required. \(dayTitle), \(DistanceFormat.formatDistance(pending.distanceKm, unit: unit)), \(durationFormatted)")
         .accessibilityHint("Opens this drive for confirmation")
@@ -1416,42 +1695,53 @@ struct DriveRowView: View {
 
     var body: some View {
         HStack(spacing: 14) {
-            VStack(alignment: .leading, spacing: 4) {
-                HStack(alignment: .lastTextBaseline, spacing: 4) {
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
                     Text(distanceValue)
-                        .font(VS.Typography.heading(21, weight: .bold))
+                        .font(VS.Typography.heading(28, weight: .bold))
                         .foregroundStyle(VS.Color.textPrimary)
                     Text(unit == "mi" ? "mi" : "km")
-                        .font(VS.Typography.body(11, weight: .medium))
+                        .font(VS.Typography.heading(14, weight: .bold))
                         .foregroundStyle(VS.Color.textTertiary)
                 }
 
                 Text(timeLine)
-                    .font(VS.Typography.body(12))
+                    .font(VS.Typography.body(13, weight: .medium))
                     .foregroundStyle(VS.Color.textTertiary)
 
                 Text(speedLine)
-                    .font(VS.Typography.body(12, weight: .medium))
+                    .font(VS.Typography.heading(13, weight: .bold))
                     .foregroundStyle(VS.Color.textSecondary)
             }
 
             Spacer(minLength: 8)
 
-            MiniRoutePreview(route: trip.route)
-                .frame(width: 48, height: 48)
+            MiniRoutePreview(routeId: trip.id, route: trip.route)
+                .frame(width: 56, height: 56)
         }
+        .padding(.horizontal, 14)
         .padding(.vertical, 14)
-        .padding(.horizontal, 4)
-        .contentShape(Rectangle())
+        .background(VS.Color.chip, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
+                .stroke(VS.Color.hairline, lineWidth: 1)
+        )
+        .contentShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
     }
 }
 
 struct MiniRoutePreview: View {
+    var routeId: String = "preview"
     let route: [TripCoordinate]
+
+    private var displayRoute: [TripCoordinate] {
+        TripTrackingLogic.mapDisplayRoute(id: routeId, points: route, maximumPoints: 48)
+    }
 
     var body: some View {
         Canvas { context, size in
-            guard route.count >= 2 else {
+            let points = displayRoute
+            guard points.count >= 2 else {
                 var path = Path()
                 path.move(to: CGPoint(x: size.width * 0.2, y: size.height * 0.7))
                 path.addQuadCurve(
@@ -1462,33 +1752,46 @@ struct MiniRoutePreview: View {
                 return
             }
 
-            let lats = route.map(\.latitude)
-            let lngs = route.map(\.longitude)
+            let lats = points.map(\.latitude)
+            let lngs = points.map(\.longitude)
             let minLat = lats.min()!, maxLat = lats.max()!
             let minLng = lngs.min()!, maxLng = lngs.max()!
-            let dLat = max(maxLat - minLat, 0.0001)
-            let dLng = max(maxLng - minLng, 0.0001)
+            let midLat = (minLat + maxLat) / 2
+
+            // Aspect-fit in meters so the path is centered — not stretched to corners.
+            let pad: CGFloat = 7
+            let availW = max(size.width - pad * 2, 1)
+            let availH = max(size.height - pad * 2, 1)
+            let metersPerDegLat = 111_320.0
+            let metersPerDegLng = max(1_000.0, 111_320.0 * cos(midLat * .pi / 180))
+            let widthM = max((maxLng - minLng) * metersPerDegLng, 40)
+            let heightM = max((maxLat - minLat) * metersPerDegLat, 40)
+            let scale = min(availW / widthM, availH / heightM)
+            let drawW = widthM * scale
+            let drawH = heightM * scale
+            let originX = (size.width - drawW) / 2
+            let originY = (size.height - drawH) / 2
 
             var path = Path()
-            for (i, point) in route.enumerated() {
-                let x = ((point.longitude - minLng) / dLng) * (size.width - 8) + 4
-                let y = (1 - ((point.latitude - minLat) / dLat)) * (size.height - 8) + 4
+            for (i, point) in points.enumerated() {
+                let x = originX + CGFloat((point.longitude - minLng) * metersPerDegLng * scale)
+                let y = originY + CGFloat((maxLat - point.latitude) * metersPerDegLat * scale)
                 if i == 0 { path.move(to: CGPoint(x: x, y: y)) }
                 else { path.addLine(to: CGPoint(x: x, y: y)) }
             }
             context.stroke(
                 path,
                 with: .color(VS.Color.accent),
-                style: StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round)
+                style: StrokeStyle(lineWidth: 2.2, lineCap: .round, lineJoin: .round)
             )
         }
         .padding(6)
         .background(
-            RoundedRectangle(cornerRadius: 12)
-                .fill(Color.white.opacity(0.05))
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(Color.black.opacity(0.35))
                 .overlay(
-                    RoundedRectangle(cornerRadius: 12)
-                        .stroke(VS.Color.divider, lineWidth: 1)
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .stroke(VS.Color.hairline, lineWidth: 1)
                 )
         )
     }
@@ -1496,13 +1799,20 @@ struct MiniRoutePreview: View {
 
 struct TripDetailView: View {
     @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject private var store: DataStore
     let trip: Trip
     let unit: String
+
+    @State private var isPreparingShare = false
+    @State private var shareImage: UIImage?
+    @AppStorage("veloseete.tracky.mood") private var trackyMoodRaw: String = TrackyMood.chill.rawValue
+    @State private var showShareSheet = false
+    @State private var shareError: String?
 
     private var routeRegion: MKCoordinateRegion {
         let coords = trip.route.isEmpty
             ? [trip.startCoordinate, trip.endCoordinate].compactMap { $0 }
-            : trip.route
+            : TripTrackingLogic.mapDisplayRoute(id: trip.id, points: trip.route, maximumPoints: 160)
         guard !coords.isEmpty else {
             return MKCoordinateRegion(
                 center: CLLocationCoordinate2D(latitude: 25.2854, longitude: 51.5310),
@@ -1513,94 +1823,210 @@ struct TripDetailView: View {
         let lngs = coords.map(\.longitude)
         let minLat = lats.min()!, maxLat = lats.max()!
         let minLng = lngs.min()!, maxLng = lngs.max()!
+        let midLat = (minLat + maxLat) / 2
+        // Keep geographic aspect so short routes aren't crushed / off-center.
+        let latDelta = max((maxLat - minLat) * 1.55, 0.02)
+        let lngDeltaRaw = max((maxLng - minLng) * 1.55, 0.02)
+        let cosLat = max(cos(midLat * .pi / 180), 0.2)
+        let lngDelta = max(lngDeltaRaw, latDelta / cosLat * 0.55)
         return MKCoordinateRegion(
-            center: CLLocationCoordinate2D(latitude: (minLat + maxLat) / 2, longitude: (minLng + maxLng) / 2),
+            center: CLLocationCoordinate2D(latitude: midLat, longitude: (minLng + maxLng) / 2),
             span: MKCoordinateSpan(
-                latitudeDelta: max((maxLat - minLat) * 1.5, 0.025),
-                longitudeDelta: max((maxLng - minLng) * 1.5, 0.025)
+                latitudeDelta: latDelta,
+                longitudeDelta: lngDelta
             )
         )
+    }
+
+    private var distanceValue: String {
+        let km = trip.distanceKm
+        if unit == "mi" {
+            let mi = km * 0.621371
+            return String(format: mi >= 100 ? "%.0f" : "%.1f", mi)
+        }
+        return String(format: km >= 100 ? "%.0f" : "%.1f", km)
+    }
+
+    private var unitLabel: String { unit == "mi" ? "mi" : "km" }
+
+    private var vehicleName: String {
+        store.vehicles.first(where: { $0.id == trip.vehicleId })?.nickname
+            ?? store.archivedVehicles.first(where: { $0.id == trip.vehicleId })?.nickname
+            ?? "Drive"
     }
 
     var body: some View {
         NavigationStack {
             ScrollView {
-                VStack(spacing: 0) {
+                VStack(alignment: .leading, spacing: 16) {
                     routeMap
-                        .frame(height: 320)
+                        .frame(height: 280)
+                        .clipShape(RoundedRectangle(cornerRadius: VS.Radius.card, style: .continuous))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: VS.Radius.card, style: .continuous)
+                                .stroke(VS.Color.hairline, lineWidth: 1)
+                        )
 
-                    VStack(alignment: .leading, spacing: 18) {
-                        HStack(alignment: .top) {
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text(trip.startedAt.formatted(date: .complete, time: .omitted))
-                                    .font(VS.Typography.heading(22, weight: .bold))
-                                    .foregroundStyle(VS.Color.textPrimary)
-                                Text("\(trip.startedAt.formatted(date: .omitted, time: .shortened)) – \(trip.endedAt.formatted(date: .omitted, time: .shortened))")
-                                    .font(VS.Typography.body(13))
-                                    .foregroundStyle(VS.Color.textTertiary)
-                            }
-                            Spacer()
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack(alignment: .firstTextBaseline, spacing: 8) {
+                            Text(distanceValue)
+                                .font(VS.Typography.heading(56, weight: .bold))
+                                .foregroundStyle(VS.Color.textPrimary)
+                                .minimumScaleFactor(0.55)
+                                .lineLimit(1)
+                            Text(unitLabel)
+                                .font(VS.Typography.heading(20, weight: .bold))
+                                .foregroundStyle(VS.Color.textTertiary)
+                            Spacer(minLength: 8)
                             Text(trip.source == "auto" ? "AUTO" : "MANUAL")
                                 .font(VS.Typography.body(10, weight: .bold))
-                                .foregroundStyle(VS.Color.accent)
-                                .padding(.horizontal, 9)
-                                .padding(.vertical, 6)
-                                .background(VS.Color.accent.opacity(0.1), in: Capsule())
+                                .foregroundStyle(VS.Color.navPill)
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 5)
+                                .background(VS.Color.accent, in: Capsule())
                         }
 
-                        HStack(spacing: 10) {
-                            stat(DistanceFormat.formatDistance(trip.distanceKm, unit: unit), "GPS distance")
-                            stat(trip.durationFormatted, "Drive time")
-                            stat(speed(trip.avgSpeedKmh), "Average")
-                        }
+                        Text(trip.startedAt.formatted(date: .complete, time: .omitted))
+                            .font(VS.Typography.heading(16, weight: .bold))
+                            .foregroundStyle(VS.Color.textPrimary)
 
-                        HStack(spacing: 12) {
-                            VSIcon(icon: .checkCircle, size: 21, weight: .fill, tint: VS.Color.success)
-                            VStack(alignment: .leading, spacing: 3) {
-                                Text("Included in odometer estimate")
-                                    .font(VS.Typography.heading(14))
-                                    .foregroundStyle(VS.Color.textPrimary)
-                                Text("This route adds \(DistanceFormat.formatDistance(trip.distanceKm, unit: unit)) until your next verified dashboard reading.")
-                                    .font(VS.Typography.body(12))
-                                    .foregroundStyle(VS.Color.textTertiary)
-                                    .fixedSize(horizontal: false, vertical: true)
-                            }
-                        }
-                        .padding(14)
-                        .glassCard()
+                        Text("\(trip.startedAt.formatted(date: .omitted, time: .shortened)) – \(trip.endedAt.formatted(date: .omitted, time: .shortened))")
+                            .font(VS.Typography.body(14, weight: .medium))
+                            .foregroundStyle(VS.Color.textTertiary)
+                    }
 
-                        HStack(spacing: 0) {
-                            detailMetric(speed(trip.maxSpeedKmh), "Top speed", .gauge)
-                            Rectangle().fill(VS.Color.divider).frame(width: 1, height: 42)
-                            detailMetric("\(trip.route.count)", "Route points", .mapPin)
-                            Rectangle().fill(VS.Color.divider).frame(width: 1, height: 42)
-                            detailMetric(trip.route.count >= 10 ? "Good" : "Partial", "GPS quality", .target)
+                    HStack(spacing: 10) {
+                        detailHeroStat(trip.durationFormatted, "Drive time")
+                        detailHeroStat(speed(trip.avgSpeedKmh), "Average")
+                        detailHeroStat(speed(trip.maxSpeedKmh), "Top speed")
+                    }
+
+                    HStack(spacing: 12) {
+                        VSIcon(icon: .checkCircle, size: 22, weight: .fill, tint: VS.Color.success)
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("In odometer estimate")
+                                .font(VS.Typography.heading(15, weight: .bold))
+                                .foregroundStyle(VS.Color.textPrimary)
+                            Text("Adds \(DistanceFormat.formatDistance(trip.distanceKm, unit: unit)) until your next verified dashboard reading.")
+                                .font(VS.Typography.body(13, weight: .medium))
+                                .foregroundStyle(VS.Color.textTertiary)
+                                .fixedSize(horizontal: false, vertical: true)
                         }
-                        .padding(14)
-                        .glassCard()
                     }
                     .padding(16)
-                    .padding(.bottom, 24)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(VS.Color.chip, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 22, style: .continuous)
+                            .stroke(VS.Color.hairline, lineWidth: 1)
+                    )
+
+                    HStack(spacing: 0) {
+                        detailMetric("\(trip.route.count)", "Route points", .mapPin)
+                        Rectangle().fill(VS.Color.divider).frame(width: 1, height: 48)
+                        detailMetric(trip.route.count >= 10 ? "Good" : "Partial", "GPS quality", .target)
+                        Rectangle().fill(VS.Color.divider).frame(width: 1, height: 48)
+                        detailMetric(unitLabel, "Distance unit", .roadHorizon)
+                    }
+                    .padding(.vertical, 16)
+                    .padding(.horizontal, 8)
+                    .background(VS.Color.chip, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 22, style: .continuous)
+                            .stroke(VS.Color.hairline, lineWidth: 1)
+                    )
+
+                    if let shareError {
+                        Text(shareError)
+                            .font(VS.Typography.body(13, weight: .medium))
+                            .foregroundStyle(VS.Color.warning)
+                    }
+
+                    PrimaryCTAButton(
+                        title: isPreparingShare ? "Preparing…" : "Share drive",
+                        icon: nil,
+                        isLoading: isPreparingShare
+                    ) {
+                        Task { await prepareShare() }
+                    }
                 }
+                .padding(.horizontal, VS.Spacing.sheetInset)
+                .padding(.top, 12)
+                .padding(.bottom, 32)
             }
             .veloseetePage()
-            .ignoresSafeArea(edges: .top)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
-                    ModalCloseButton { dismiss() }
+                    HStack(spacing: 12) {
+                        Button {
+                            Task { await prepareShare() }
+                        } label: {
+                            if isPreparingShare {
+                                ProgressView().controlSize(.small)
+                            } else {
+                                Image(systemName: "square.and.arrow.up")
+                            }
+                        }
+                        .accessibilityLabel("Share drive")
+                        .disabled(isPreparingShare)
+
+                        ModalCloseButton { dismiss() }
+                    }
+                }
+            }
+            .sheet(isPresented: $showShareSheet) {
+                if let shareImage {
+                    ActivityShareSheet(items: [shareImage]) {
+                        showShareSheet = false
+                    }
+                    .presentationDetents([.medium, .large])
                 }
             }
         }
     }
 
+    private func prepareShare() async {
+        guard !isPreparingShare else { return }
+        isPreparingShare = true
+        shareError = nil
+        let mood = TrackyMood(rawValue: trackyMoodRaw) ?? .chill
+        let image = await TripShareComposer.render(
+            trip: trip,
+            unit: unit,
+            vehicleName: vehicleName,
+            trackyMood: mood
+        )
+        isPreparingShare = false
+        if let image {
+            shareImage = image
+            presentSystemShare(image)
+        } else {
+            shareError = "Couldn’t build the share card. Try again."
+        }
+    }
+
+    private func presentSystemShare(_ image: UIImage) {
+        guard let root = UIApplication.shared.veloseeteTopViewController else {
+            showShareSheet = true
+            return
+        }
+        let controller = UIActivityViewController(activityItems: [image], applicationActivities: nil)
+        if let popover = controller.popoverPresentationController {
+            popover.sourceView = root.view
+            popover.sourceRect = CGRect(x: root.view.bounds.midX, y: 72, width: 1, height: 1)
+            popover.permittedArrowDirections = .up
+        }
+        root.present(controller, animated: true)
+    }
+
     private var routeMap: some View {
         Map(initialPosition: .region(routeRegion)) {
-            let displayRoute = TripTrackingLogic.cleanedForDisplay(trip.route)
+            let displayRoute = TripTrackingLogic.mapDisplayRoute(id: trip.id, points: trip.route, maximumPoints: 160)
             if displayRoute.count >= 2 {
                 MapPolyline(coordinates: displayRoute.map {
                     CLLocationCoordinate2D(latitude: $0.latitude, longitude: $0.longitude)
                 })
-                .stroke(VS.Color.accent.opacity(0.2), lineWidth: 10)
+                .stroke(VS.Color.accent.opacity(0.22), lineWidth: 12)
                 MapPolyline(coordinates: displayRoute.map {
                     CLLocationCoordinate2D(latitude: $0.latitude, longitude: $0.longitude)
                 })
@@ -1622,12 +2048,12 @@ struct TripDetailView: View {
         .preferredColorScheme(.dark)
         .overlay(alignment: .bottomLeading) {
             Text("RECORDED ROUTE")
-                .font(VS.Typography.body(10, weight: .bold))
+                .font(VS.Typography.heading(11, weight: .bold))
                 .foregroundStyle(VS.Color.navPill)
-                .padding(.horizontal, 9)
-                .padding(.vertical, 6)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 7)
                 .background(VS.Color.accent, in: Capsule())
-                .padding(16)
+                .padding(14)
         }
     }
 
@@ -1639,38 +2065,41 @@ struct TripDetailView: View {
 
     private func routeMarker(color: Color, icon: String) -> some View {
         Image(systemName: icon)
-            .font(.system(size: 9, weight: .bold))
+            .font(.system(size: 10, weight: .bold))
             .foregroundStyle(VS.Color.navPill)
-            .frame(width: 25, height: 25)
+            .frame(width: 28, height: 28)
             .background(color, in: Circle())
-            .overlay(Circle().stroke(Color.white.opacity(0.8), lineWidth: 2))
-            .shadow(color: color.opacity(0.45), radius: 8)
+            .overlay(Circle().stroke(Color.white.opacity(0.85), lineWidth: 2))
     }
 
-    private func stat(_ value: String, _ label: String) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
+    private func detailHeroStat(_ value: String, _ label: String) -> some View {
+        VStack(alignment: .leading, spacing: 5) {
             Text(value)
-                .font(VS.Typography.heading(18, weight: .bold))
+                .font(VS.Typography.heading(20, weight: .bold))
                 .foregroundStyle(VS.Color.textPrimary)
                 .lineLimit(1)
-                .minimumScaleFactor(0.75)
+                .minimumScaleFactor(0.7)
             Text(label)
-                .font(VS.Typography.body(10))
+                .font(VS.Typography.body(12, weight: .medium))
                 .foregroundStyle(VS.Color.textTertiary)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(12)
-        .metricInset()
+        .padding(14)
+        .background(VS.Color.chip, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .stroke(VS.Color.hairline, lineWidth: 1)
+        )
     }
 
     private func detailMetric(_ value: String, _ label: String, _ icon: VSIconName) -> some View {
-        VStack(spacing: 5) {
-            VSIcon(icon: icon, size: 17, weight: .duotone, tint: VS.Color.accent)
+        VStack(spacing: 6) {
+            VSIcon(icon: icon, size: 18, weight: .duotone, tint: VS.Color.accent)
             Text(value)
-                .font(VS.Typography.heading(14))
+                .font(VS.Typography.heading(15, weight: .bold))
                 .foregroundStyle(VS.Color.textPrimary)
             Text(label)
-                .font(VS.Typography.body(9))
+                .font(VS.Typography.body(11, weight: .medium))
                 .foregroundStyle(VS.Color.textTertiary)
         }
         .frame(maxWidth: .infinity)

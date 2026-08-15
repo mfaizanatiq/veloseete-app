@@ -53,10 +53,14 @@ struct MainTabShell: View {
                     DriverProfileView(onProfile: { showProfile = true })
                 }
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
             .coordinateSpace(name: "bottomNavScroll")
 
             BottomNavBar(active: $tab)
         }
+        // Always fill the home-indicator region so Drives (map ignoresSafeArea)
+        // and every other tab share the same bottom-nav baseline.
+        .ignoresSafeArea(.container, edges: .bottom)
         .environmentObject(navChrome)
         .onChange(of: tab) { _, _ in
             navChrome.reset()
@@ -103,16 +107,23 @@ struct MainTabShell: View {
 
 /// Shared top alignment for every primary tab. The trailing space is reserved for
 /// the profile avatar supplied by `MainTabShell`, so local actions never collide.
-struct MainTabHeader: View {
+struct MainTabHeader<Accessory: View>: View {
     @EnvironmentObject private var avatarStore: ProfileAvatarStore
     let title: String
     let subtitle: String?
     let onProfile: () -> Void
+    var accessory: Accessory
 
-    init(_ title: String, subtitle: String? = nil, onProfile: @escaping () -> Void) {
+    init(
+        _ title: String,
+        subtitle: String? = nil,
+        onProfile: @escaping () -> Void,
+        @ViewBuilder accessory: () -> Accessory
+    ) {
         self.title = title
         self.subtitle = subtitle
         self.onProfile = onProfile
+        self.accessory = accessory()
     }
 
     var body: some View {
@@ -129,6 +140,7 @@ struct MainTabHeader: View {
                 }
             }
             Spacer(minLength: 8)
+            accessory
             Button {
                 UIImpactFeedbackGenerator(style: .light).impactOccurred()
                 onProfile()
@@ -140,8 +152,14 @@ struct MainTabHeader: View {
             .accessibilityLabel("Open profile")
         }
         .frame(minHeight: 52, alignment: .top)
-        .padding(.top, 10)
-        .padding(.bottom, 4)
+        .padding(.top, VS.Spacing.xs)
+        .padding(.bottom, 0)
+    }
+}
+
+extension MainTabHeader where Accessory == EmptyView {
+    init(_ title: String, subtitle: String? = nil, onProfile: @escaping () -> Void) {
+        self.init(title, subtitle: subtitle, onProfile: onProfile) { EmptyView() }
     }
 }
 
@@ -153,13 +171,18 @@ struct BottomNavBar: View {
     private let selectedPill = VS.Color.navActive
     private let outerPill = VS.Color.navPill
 
-    private var isCompact: Bool { navChrome.isCompact }
+    private var isCompact: Bool {
+        // Drives map + drawer already fight for vertical space — keep the pill full-size.
+        active == .trips ? false : navChrome.isCompact
+    }
 
     private var iconSize: CGFloat { isCompact ? 18 : 22 }
     private var circleSize: CGFloat { isCompact ? 34 : 40 }
     private var itemMinHeight: CGFloat { isCompact ? 40 : 48 }
     private var outerPadding: CGFloat { isCompact ? 6 : 10 }
     private var horizontalInset: CGFloat { isCompact ? 28 : 16 }
+    /// How far the pill dips into the home-indicator region (same on every tab).
+    private var homeIndicatorDip: CGFloat { isCompact ? 14 : 18 }
 
     var body: some View {
         HStack(spacing: 0) {
@@ -208,9 +231,19 @@ struct BottomNavBar: View {
                 .shadow(color: .black.opacity(0.4), radius: isCompact ? 12 : 16, y: 4)
         )
         .padding(.horizontal, horizontalInset)
-        // Native floating tab bars dip into the bottom safe area and hug the home
-        // indicator; staying fully above it left a visible dead strip under the pill.
-        .offset(y: isCompact ? 14 : 18)
+        // Parent shell always ignores the bottom safe area, so pad from the
+        // physical bottom using the window inset — identical on Drives + others.
+        .padding(.bottom, max(Self.homeIndicatorInset - homeIndicatorDip, 6))
+    }
+
+    /// Stable home-indicator height from the key window (not affected by tab layout).
+    private static var homeIndicatorInset: CGFloat {
+        let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+        let window = scenes
+            .flatMap(\.windows)
+            .first(where: \.isKeyWindow)
+            ?? scenes.first?.windows.first
+        return window?.safeAreaInsets.bottom ?? 34
     }
 }
 
@@ -284,92 +317,48 @@ struct PlaceholderPane: View {
 struct DetailsListView: View {
     @EnvironmentObject private var store: DataStore
     @EnvironmentObject private var vehiclePhotos: VehiclePhotoStore
+    @EnvironmentObject private var avatarStore: ProfileAvatarStore
     let onProfile: () -> Void
     @State private var showAddVehicle = false
+    @State private var showSwitcher = false
     @State private var editingVehicle: Vehicle?
     @State private var selectionError: String?
     @State private var vehiclePendingArchive: Vehicle?
     @State private var archiveError: String?
     @State private var isArchiving = false
+    @State private var archivedExpanded = false
+    @State private var draftVehicleId: String?
+    @State private var isConfirmingSwitch = false
+
+    private var currentVehicle: Vehicle? { store.currentVehicle }
+
+    /// Live preview while switching — hero follows the draft pick, then settles on confirm.
+    private var displayedVehicle: Vehicle? {
+        if showSwitcher,
+           let draftVehicleId,
+           let draft = store.vehicles.first(where: { $0.id == draftVehicleId }) {
+            return draft
+        }
+        return currentVehicle
+    }
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: VS.Spacing.section) {
-                MainTabHeader("Garage", subtitle: "Cars in the mix", onProfile: onProfile)
+        ZStack {
+            garageScrollContent
 
-                HStack {
-                    Spacer()
-                    Button {
-                        showAddVehicle = true
-                    } label: {
-                        HStack(spacing: 7) {
-                            VSIcon(icon: .plusCircle, size: 17, weight: .fill, tint: VS.Color.navPill)
-                            Text("Add vehicle")
-                                .font(VS.Typography.body(13, weight: .bold))
-                        }
-                        .foregroundStyle(VS.Color.navPill)
-                        .padding(.horizontal, 14)
-                        .frame(height: 40)
-                        .background(VS.Color.accent, in: Capsule())
-                    }
-                    .buttonStyle(ScaleButtonStyle())
-                    .accessibilityLabel("Add vehicle")
-                }
-
-                if let selectionError {
-                    Text(selectionError)
-                        .font(VS.Typography.body(12))
-                        .foregroundStyle(VS.Color.error)
-                }
-                if let archiveError {
-                    Text(archiveError)
-                        .font(VS.Typography.body(12))
-                        .foregroundStyle(VS.Color.error)
-                }
-
-                if store.vehicles.isEmpty {
-                    VStack(spacing: 14) {
-                        VSIcon(icon: .car, size: 40, weight: .regular, tint: VS.Color.accent)
-                        Text("Garage’s empty")
-                            .font(VS.Typography.heading(18))
-                            .foregroundStyle(VS.Color.textPrimary)
-                        Text("Add a car to connect drives, fuel, and service.")
-                            .font(VS.Typography.body(14))
-                            .foregroundStyle(VS.Color.textSecondary)
-                            .multilineTextAlignment(.center)
-                        Button("Add your first car") { showAddVehicle = true }
-                            .font(VS.Typography.heading(14))
-                            .foregroundStyle(VS.Color.navPill)
-                            .padding(.horizontal, 18)
-                            .padding(.vertical, 12)
-                            .background(VS.Color.accent, in: Capsule())
-                    }
-                    .frame(maxWidth: .infinity)
-                    .padding(32)
-                    .glassCard(elevated: true)
-                } else {
-                    ForEach(store.vehicles) { vehicle in
-                        garageVehicleCard(vehicle)
-                    }
-                }
-
-                if !store.archivedVehicles.isEmpty {
-                    VStack(alignment: .leading, spacing: VS.Spacing.stack) {
-                        VSSectionHeader(title: "Archived", subtitle: "Hidden from the garage — history stays put")
-
-                        ForEach(store.archivedVehicles) { vehicle in
-                            archivedVehicleCard(vehicle)
-                        }
-                    }
-                }
+            if showSwitcher {
+                vehicleSwitcherOverlay
+                    .transition(.opacity)
+                    .zIndex(20)
             }
-            .padding(.horizontal, VS.Spacing.pageInset)
-            .padding(.bottom, 110)
-            .tracksBottomNavScroll()
         }
-        .veloseetePage()
+        .animation(.snappy(duration: 0.28), value: showSwitcher)
+        .animation(.snappy(duration: 0.32), value: displayedVehicle?.id)
         .sheet(isPresented: $showAddVehicle) {
-            GarageView(onComplete: { showAddVehicle = false })
+            GarageView(onComplete: {
+                showAddVehicle = false
+                showSwitcher = false
+            })
         }
         .sheet(item: $editingVehicle) { vehicle in
             VehicleEditorView(vehicle: vehicle) { vehiclePendingArchive = $0 }
@@ -395,118 +384,460 @@ struct DetailsListView: View {
         }
         .onAppear {
             vehiclePhotos.load(vehicleIds: (store.vehicles + store.archivedVehicles).map(\.id))
+            draftVehicleId = store.currentVehicle?.id
         }
         .onChange(of: store.vehicles.map(\.id) + store.archivedVehicles.map(\.id)) { _, ids in
             vehiclePhotos.load(vehicleIds: ids)
         }
+        .onChange(of: store.currentVehicle?.id) { _, id in
+            if !showSwitcher {
+                draftVehicleId = id
+            }
+        }
     }
 
-    private func garageVehicleCard(_ vehicle: Vehicle) -> some View {
-        let isCurrent = store.currentVehicle?.id == vehicle.id
-        let refuels = store.fuelLogs.filter { $0.vehicleId == vehicle.id }.count
-        let services = store.serviceLogs.filter { $0.vehicleId == vehicle.id }.count
-        let drives = store.trips.filter { $0.vehicleId == vehicle.id }.count
+    private var garageScrollContent: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: VS.Spacing.floatStack) {
+                MainTabHeader(
+                    "Garage",
+                    subtitle: currentVehicle.map { $0.nickname } ?? "Cars in the mix",
+                    onProfile: onProfile
+                ) {
+                    Button {
+                        showAddVehicle = true
+                    } label: {
+                        VSIcon(icon: .plusCircle, size: 40, weight: .fill, tint: VS.Color.accent)
+                    }
+                    .buttonStyle(ScaleButtonStyle())
+                    .accessibilityLabel("Add vehicle")
+                }
+                garageErrorBanner
+                garageHeroSection
+                garageArchivedSection
+            }
+            .padding(.horizontal, VS.Spacing.pageInset)
+            .padding(.bottom, 110)
+            .tracksBottomNavScroll()
+        }
+        .veloseetePage()
+    }
 
-        return VStack(alignment: .leading, spacing: 16) {
-            HStack(spacing: 13) {
+    @ViewBuilder
+    private var garageErrorBanner: some View {
+        if let selectionError {
+            Text(selectionError)
+                .font(VS.Typography.body(12))
+                .foregroundStyle(VS.Color.error)
+        }
+        if let archiveError {
+            Text(archiveError)
+                .font(VS.Typography.body(12))
+                .foregroundStyle(VS.Color.error)
+        }
+    }
+
+    @ViewBuilder
+    private var garageHeroSection: some View {
+        if let vehicle = displayedVehicle {
+            currentVehicleHero(vehicle)
+                .id(vehicle.id)
+                .transition(.opacity)
+        } else {
+            garageEmptyActive
+        }
+    }
+
+    @ViewBuilder
+    private var garageArchivedSection: some View {
+        if !store.archivedVehicles.isEmpty {
+            garageCollapsibleSection(
+                title: "Archived",
+                count: store.archivedVehicles.count,
+                expanded: $archivedExpanded
+            ) {
+                VStack(spacing: VS.Spacing.module) {
+                    ForEach(store.archivedVehicles) { vehicle in
+                        archivedVehicleCard(vehicle)
+                    }
+                }
+            }
+        }
+    }
+
+    private func currentVehicleHero(_ vehicle: Vehicle) -> some View {
+        let isCommittedActive = store.currentVehicle?.id == vehicle.id
+        let refuels = store.fuelLogs.filter { $0.vehicleId == vehicle.id }.count
+        let drives = store.trips.filter { $0.vehicleId == vehicle.id }.count
+        let usesMiles = store.defaultDistanceUnit == "mi"
+        let odoValue = String(
+            format: "%.0f",
+            usesMiles ? vehicle.currentOdometer * 0.621371 : vehicle.currentOdometer
+        )
+        let odoUnit = usesMiles ? "mi" : "km"
+        let tank = vehicle.fuelTankCapacity.map {
+            VolumeFormat.formatTank($0, unit: vehicle.fuelVolumeUnit)
+        }
+        let caption: String = {
+            let fuel = vehicle.fuelType.capitalized
+            if let tank { return "\(fuel) · \(tank) tank" }
+            return fuel
+        }()
+
+        return VStack(alignment: .leading, spacing: VS.Spacing.stack) {
+            HStack(alignment: .center, spacing: 16) {
                 vehicleAppearancePreview(
                     image: vehiclePhotos.image(for: vehicle.id),
                     emoji: vehicle.icon ?? "🚗",
-                    size: 54
+                    size: 128,
+                    well: VS.Color.navPill.opacity(0.14),
+                    stroke: VS.Color.navPill.opacity(0.22)
                 )
-                VStack(alignment: .leading, spacing: 3) {
-                    HStack(spacing: 8) {
-                        Text(vehicle.nickname)
-                            .font(VS.Typography.heading(19, weight: .bold))
-                            .foregroundStyle(VS.Color.textPrimary)
-                        if isCurrent {
-                            Text("ACTIVE")
-                                .font(VS.Typography.body(8, weight: .bold))
-                                .tracking(0.7)
+
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack(alignment: .top, spacing: 8) {
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(vehicle.nickname)
+                                .font(VS.Typography.heading(22, weight: .bold))
                                 .foregroundStyle(VS.Color.navPill)
-                                .padding(.horizontal, 7)
-                                .padding(.vertical, 4)
-                                .background(VS.Color.accent, in: Capsule())
+                                .lineLimit(1)
+                            Text("\(vehicle.make) \(vehicle.model)")
+                                .font(VS.Typography.body(13, weight: .medium))
+                                .foregroundStyle(VS.Color.navPill.opacity(0.7))
+                                .lineLimit(1)
                         }
+                        Spacer(minLength: 4)
+                        Text(isCommittedActive ? "Active" : "Preview")
+                            .font(VS.Typography.body(11, weight: .semibold))
+                            .foregroundStyle(VS.Color.navPill)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 5)
+                            .overlay(Capsule().strokeBorder(VS.Color.navPill.opacity(0.35), lineWidth: 1.5))
                     }
-                    Text("\(vehicle.make) \(vehicle.model) · \(vehicle.fuelType.capitalized)")
-                        .font(VS.Typography.body(12))
-                        .foregroundStyle(VS.Color.textSecondary)
+
+                    HStack(alignment: .firstTextBaseline, spacing: 6) {
+                        Text(odoValue)
+                            .font(VS.Typography.heading(36, weight: .bold))
+                            .foregroundStyle(VS.Color.navPill)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.5)
+                            .contentTransition(.numericText())
+                        Text(odoUnit)
+                            .font(VS.Typography.heading(15, weight: .bold))
+                            .foregroundStyle(VS.Color.navPill.opacity(0.65))
+                    }
+
+                    Text(caption)
+                        .font(VS.Typography.body(13, weight: .medium))
+                        .foregroundStyle(VS.Color.navPill.opacity(0.7))
+                        .lineLimit(1)
+
+                    HStack(spacing: 12) {
+                        limeFooterStat(
+                            icon: .car,
+                            text: drives == 1 ? "1 drive" : "\(drives) drives"
+                        )
+                        limeFooterStat(
+                            icon: .gasPump,
+                            text: refuels == 0
+                                ? "No fills"
+                                : "\(refuels) fill\(refuels == 1 ? "" : "s")"
+                        )
+                    }
                 }
-                Spacer()
-                Button { editingVehicle = vehicle } label: {
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .padding(VS.Spacing.card)
+            .background(
+                RoundedRectangle(cornerRadius: VS.Radius.card, style: .continuous)
+                    .fill(VS.Color.accent)
+            )
+            .clipShape(RoundedRectangle(cornerRadius: VS.Radius.card, style: .continuous))
+
+            HStack(spacing: VS.Spacing.gutter) {
+                Button {
+                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                    draftVehicleId = store.currentVehicle?.id
+                    showSwitcher = true
+                } label: {
                     Text("Edit")
-                        .font(VS.Typography.body(12, weight: .semibold))
-                        .foregroundStyle(VS.Color.accent)
-                        .padding(.horizontal, 11)
-                        .padding(.vertical, 8)
-                        .background(VS.Color.chip, in: Capsule())
+                        .font(VS.Typography.heading(15))
+                        .foregroundStyle(VS.Color.textPrimary)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 14)
+                        .background(Color(hex: 0x1C1C1E), in: Capsule())
                 }
                 .buttonStyle(.plain)
-            }
 
-            HStack(spacing: 10) {
-                garageMetric(DistanceFormat.formatOdometer(vehicle.currentOdometer, unit: store.defaultDistanceUnit), "ODOMETER")
-                garageMetric(VolumeFormat.formatTank(vehicle.fuelTankCapacity, unit: vehicle.fuelVolumeUnit), "TANK")
-            }
-
-            HStack(spacing: 0) {
-                garageCount(drives, "Drives")
-                Divider().overlay(VS.Color.divider)
-                garageCount(refuels, "Refuels")
-                Divider().overlay(VS.Color.divider)
-                garageCount(services, "Services")
-            }
-            .frame(height: 42)
-
-            if !isCurrent {
                 Button {
-                    Task {
-                        do {
-                            selectionError = nil
-                            try await store.selectVehicle(vehicle.id)
-                            UISelectionFeedbackGenerator().selectionChanged()
-                        } catch {
-                            selectionError = error.localizedDescription
-                        }
-                    }
+                    editingVehicle = vehicle
                 } label: {
-                    Text("Make active vehicle")
-                        .font(VS.Typography.heading(13))
+                    Text("Details")
+                        .font(VS.Typography.heading(15))
                         .foregroundStyle(VS.Color.navPill)
                         .frame(maxWidth: .infinity)
-                        .padding(.vertical, 11)
+                        .padding(.vertical, 14)
                         .background(VS.Color.accent, in: Capsule())
                 }
                 .buttonStyle(.plain)
             }
         }
-        .padding(16)
-        .glassCard(elevated: isCurrent)
+    }
+
+    private func limeFooterStat(icon: VSIconName, text: String) -> some View {
+        HStack(spacing: 7) {
+            VSIcon(icon: icon, size: 13, weight: .fill, tint: VS.Color.navPill.opacity(0.7))
+            Text(text)
+                .font(VS.Typography.body(12, weight: .semibold))
+                .foregroundStyle(VS.Color.navPill.opacity(0.8))
+                .lineLimit(1)
+                .minimumScaleFactor(0.75)
+        }
+    }
+
+    private var vehicleSwitcherOverlay: some View {
+        ZStack(alignment: .bottom) {
+            Color.black.opacity(0.55)
+                .ignoresSafeArea()
+                .onTapGesture {
+                    showSwitcher = false
+                }
+
+            VStack(alignment: .leading, spacing: VS.Spacing.stack) {
+                HStack {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Your cars")
+                            .font(VS.Typography.heading(22, weight: .bold))
+                            .foregroundStyle(VS.Color.textPrimary)
+                        Text("Pick one, then confirm")
+                            .font(VS.Typography.body(13))
+                            .foregroundStyle(VS.Color.textTertiary)
+                    }
+                    Spacer(minLength: 8)
+                    Button {
+                        showSwitcher = false
+                    } label: {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 13, weight: .bold))
+                            .foregroundStyle(VS.Color.textSecondary)
+                            .frame(width: 32, height: 32)
+                            .background(VS.Color.chip, in: Circle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Close")
+                }
+
+                ScrollView {
+                    VStack(spacing: 10) {
+                        ForEach(store.vehicles) { vehicle in
+                            switcherRow(vehicle)
+                        }
+                    }
+                }
+                .frame(maxHeight: 320)
+
+                if let selectionError {
+                    Text(selectionError)
+                        .font(VS.Typography.body(12))
+                        .foregroundStyle(VS.Color.error)
+                }
+
+                PrimaryCTAButton(
+                    title: "Confirm",
+                    icon: .checkCircle,
+                    isLoading: isConfirmingSwitch,
+                    isEnabled: draftVehicleId != nil && !isConfirmingSwitch
+                ) {
+                    Task { await confirmVehicleSwitch() }
+                }
+
+                Button {
+                    showAddVehicle = true
+                } label: {
+                    Text("Add another car")
+                        .font(VS.Typography.body(14, weight: .semibold))
+                        .foregroundStyle(VS.Color.accent)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 8)
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(VS.Spacing.card)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                RoundedRectangle(cornerRadius: VS.Radius.panel, style: .continuous)
+                    .fill(Color(hex: 0x1C1C1E))
+            )
+            .clipShape(RoundedRectangle(cornerRadius: VS.Radius.panel, style: .continuous))
+            .floatingInFrame(bottomClearance: VS.Spacing.frameGutter + 78)
+        }
+        .ignoresSafeArea()
+    }
+
+    private func switcherRow(_ vehicle: Vehicle) -> some View {
+        let selected = draftVehicleId == vehicle.id
+        let isCurrent = store.currentVehicle?.id == vehicle.id
+
+        return Button {
+            UISelectionFeedbackGenerator().selectionChanged()
+            withAnimation(.snappy(duration: 0.32)) {
+                draftVehicleId = vehicle.id
+            }
+        } label: {
+            HStack(spacing: 14) {
+                vehicleAppearancePreview(
+                    image: vehiclePhotos.image(for: vehicle.id),
+                    emoji: vehicle.icon ?? "🚗",
+                    size: 48
+                )
+                VStack(alignment: .leading, spacing: 3) {
+                    HStack(spacing: 8) {
+                        Text(vehicle.nickname)
+                            .font(VS.Typography.heading(17, weight: .bold))
+                            .foregroundStyle(VS.Color.textPrimary)
+                        if isCurrent {
+                            Text("Active")
+                                .font(VS.Typography.body(10, weight: .bold))
+                                .foregroundStyle(VS.Color.navPill)
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 3)
+                                .background(VS.Color.accent, in: Capsule())
+                        }
+                    }
+                    Text("\(vehicle.make) \(vehicle.model)")
+                        .font(VS.Typography.body(13))
+                        .foregroundStyle(VS.Color.textSecondary)
+                }
+                Spacer(minLength: 8)
+                Image(systemName: selected ? "checkmark.circle.fill" : "circle")
+                    .font(.system(size: 22, weight: .semibold))
+                    .foregroundStyle(selected ? VS.Color.accent : VS.Color.textTertiary)
+            }
+            .padding(14)
+            .background(
+                RoundedRectangle(cornerRadius: VS.Radius.metric, style: .continuous)
+                    .fill(selected ? VS.Color.accent.opacity(0.12) : VS.Color.chip)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: VS.Radius.metric, style: .continuous)
+                    .strokeBorder(selected ? VS.Color.accent.opacity(0.8) : Color.clear, lineWidth: 1.5)
+            )
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func confirmVehicleSwitch() async {
+        guard let draftVehicleId else { return }
+        if draftVehicleId == store.currentVehicle?.id {
+            showSwitcher = false
+            return
+        }
+        isConfirmingSwitch = true
+        selectionError = nil
+        defer { isConfirmingSwitch = false }
+        do {
+            try await store.selectVehicle(draftVehicleId)
+            UINotificationFeedbackGenerator().notificationOccurred(.success)
+            withAnimation(.snappy(duration: 0.32)) {
+                showSwitcher = false
+            }
+        } catch {
+            selectionError = error.localizedDescription
+        }
+    }
+
+    private func garageCollapsibleSection<Content: View>(
+        title: String,
+        count: Int,
+        expanded: Binding<Bool>,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        VStack(alignment: .leading, spacing: VS.Spacing.stack) {
+            Button {
+                UISelectionFeedbackGenerator().selectionChanged()
+                withAnimation(.snappy(duration: 0.28)) {
+                    expanded.wrappedValue.toggle()
+                }
+            } label: {
+                HStack(spacing: 10) {
+                    Text(title)
+                        .font(VS.Typography.heading(20, weight: .bold))
+                        .foregroundStyle(VS.Color.textPrimary)
+                    Text("\(count)")
+                        .font(VS.Typography.mono(13, weight: .semibold))
+                        .foregroundStyle(VS.Color.textSecondary)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(VS.Color.chip, in: Capsule())
+                    Spacer(minLength: 8)
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 13, weight: .bold))
+                        .foregroundStyle(VS.Color.textTertiary)
+                        .rotationEffect(.degrees(expanded.wrappedValue ? 90 : 0))
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("\(title), \(count)")
+            .accessibilityHint(expanded.wrappedValue ? "Collapse" : "Expand")
+
+            if expanded.wrappedValue {
+                content()
+                    .transition(.opacity.combined(with: .move(edge: .top)))
+            }
+        }
+    }
+
+    private var garageEmptyActive: some View {
+        VStack(spacing: 14) {
+            VSIcon(icon: .car, size: 40, weight: .regular, tint: VS.Color.accent)
+            Text("No cars yet")
+                .font(VS.Typography.heading(18))
+                .foregroundStyle(VS.Color.textPrimary)
+            Text("Add a car to connect drives, fuel, and service.")
+                .font(VS.Typography.body(14))
+                .foregroundStyle(VS.Color.textSecondary)
+                .multilineTextAlignment(.center)
+            Button("Add your first car") { showAddVehicle = true }
+                .font(VS.Typography.heading(14))
+                .foregroundStyle(VS.Color.navPill)
+                .padding(.horizontal, 18)
+                .padding(.vertical, 12)
+                .background(VS.Color.accent, in: Capsule())
+        }
+        .frame(maxWidth: .infinity)
+        .padding(32)
+        .glassCard(elevated: true)
     }
 
     private func archivedVehicleCard(_ vehicle: Vehicle) -> some View {
         let refuels = store.fuelLogs.filter { $0.vehicleId == vehicle.id }.count
         let drives = store.trips.filter { $0.vehicleId == vehicle.id }.count
 
-        return HStack(spacing: 12) {
-            vehicleAppearancePreview(
-                image: vehiclePhotos.image(for: vehicle.id),
-                emoji: vehicle.icon ?? "🚗",
-                size: 48
-            )
-            .opacity(0.7)
+        return VStack(alignment: .leading, spacing: VS.Spacing.stack) {
+            HStack(spacing: 14) {
+                vehicleAppearancePreview(
+                    image: vehiclePhotos.image(for: vehicle.id),
+                    emoji: vehicle.icon ?? "🚗",
+                    size: 52
+                )
+                .opacity(0.75)
 
-            VStack(alignment: .leading, spacing: 3) {
-                Text(vehicle.nickname)
-                    .font(VS.Typography.heading(16))
-                    .foregroundStyle(VS.Color.textPrimary)
-                Text("\(vehicle.make) \(vehicle.model) · \(drives) drives · \(refuels) fills")
-                    .font(VS.Typography.body(12))
-                    .foregroundStyle(VS.Color.textTertiary)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(vehicle.nickname)
+                        .font(VS.Typography.heading(20, weight: .bold))
+                        .foregroundStyle(VS.Color.textPrimary)
+                    Text("\(vehicle.make) \(vehicle.model)")
+                        .font(VS.Typography.body(13))
+                        .foregroundStyle(VS.Color.textSecondary)
+                }
+                Spacer(minLength: 0)
             }
 
-            Spacer(minLength: 0)
+            HStack(spacing: VS.Spacing.gutter) {
+                garageBentoCount(drives, "Drives")
+                garageBentoCount(refuels, "Refuels")
+            }
 
             Button {
                 Task {
@@ -519,17 +850,17 @@ struct DetailsListView: View {
                     }
                 }
             } label: {
-                Text("Restore")
-                    .font(VS.Typography.body(12, weight: .semibold))
-                    .foregroundStyle(VS.Color.accent)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 8)
-                    .background(VS.Color.chip, in: Capsule())
+                Text("Restore to active")
+                    .font(VS.Typography.heading(14))
+                    .foregroundStyle(VS.Color.navPill)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 14)
+                    .background(VS.Color.accent, in: Capsule())
             }
             .buttonStyle(.plain)
         }
-        .padding(14)
-        .glassCard()
+        .padding(VS.Spacing.card)
+        .glassCard(elevated: true)
     }
 
     private func archiveVehicle(_ vehicle: Vehicle) async {
@@ -547,28 +878,40 @@ struct DetailsListView: View {
         }
     }
 
-    private func garageMetric(_ value: String, _ label: String) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
+    private func garageBentoStat(value: String, label: String) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
             Text(value)
-                .font(VS.Typography.heading(17))
+                .font(VS.Typography.heading(26, weight: .bold))
                 .foregroundStyle(VS.Color.textPrimary)
-                .minimumScaleFactor(0.7)
+                .lineLimit(1)
+                .minimumScaleFactor(0.6)
             Text(label)
-                .font(VS.Typography.body(9, weight: .bold))
-                .tracking(0.7)
+                .font(VS.Typography.body(12, weight: .medium))
                 .foregroundStyle(VS.Color.textTertiary)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(12)
-        .background(VS.Color.chip, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .padding(14)
+        .frame(maxWidth: .infinity, minHeight: 88, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: VS.Radius.metric, style: .continuous)
+                .fill(Color.white.opacity(0.05))
+        )
     }
 
-    private func garageCount(_ value: Int, _ label: String) -> some View {
-        VStack(spacing: 3) {
-            Text("\(value)").font(VS.Typography.heading(15)).foregroundStyle(VS.Color.textPrimary)
-            Text(label).font(VS.Typography.body(10)).foregroundStyle(VS.Color.textTertiary)
+    private func garageBentoCount(_ value: Int, _ label: String) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("\(value)")
+                .font(VS.Typography.heading(32, weight: .bold))
+                .foregroundStyle(VS.Color.textPrimary)
+            Text(label)
+                .font(VS.Typography.body(12, weight: .medium))
+                .foregroundStyle(VS.Color.textTertiary)
         }
-        .frame(maxWidth: .infinity)
+        .padding(14)
+        .frame(maxWidth: .infinity, minHeight: 92, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: VS.Radius.metric, style: .continuous)
+                .fill(Color.white.opacity(0.05))
+        )
     }
 }
 
@@ -609,7 +952,6 @@ private struct VehicleEditorView: View {
         "Volkswagen", "Nissan", "Hyundai", "Kia", "Mazda", "Lexus"
     ]
     private let currencies = ["QAR", "AED", "SAR", "USD", "EUR", "GBP", "PKR", "INR"]
-    private let icons = ["🚗", "🚙", "🚕", "🚌", "🚐", "🏎️", "🚓", "🚑", "🚒", "🚚", "🚛", "🛻", "🏍️", "🛵", "🚜", "🚎"]
 
     private var isActiveVehicle: Bool {
         store.currentVehicle?.id == vehicle.id
@@ -735,6 +1077,14 @@ private struct VehicleEditorView: View {
                     Button("Cancel") { dismiss() }
                         .foregroundStyle(VS.Color.textSecondary)
                 }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Edit") {
+                        Task { await save() }
+                    }
+                    .font(VS.Typography.body(16, weight: .semibold))
+                    .foregroundStyle(canSave && !isPreparingCrop && !isSaving ? VS.Color.accent : VS.Color.textTertiary)
+                    .disabled(!canSave || isPreparingCrop || isSaving)
+                }
             }
             .safeAreaInset(edge: .bottom) {
                 PrimaryCTAButton(
@@ -799,7 +1149,7 @@ private struct VehicleEditorView: View {
                     .disabled(isPreparingCrop)
 
                     if usePhoto, previewImage != nil {
-                        Button("Use emoji instead") {
+                        Button("Use car mark instead") {
                             usePhoto = false
                             removeExistingPhoto = true
                             draftPhoto = nil
@@ -818,24 +1168,18 @@ private struct VehicleEditorView: View {
             }
 
             if !usePhoto || previewImage == nil {
-                fieldLabel("Emoji")
-                LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 8), spacing: 8) {
-                    ForEach(icons, id: \.self) { item in
-                        Button {
-                            UISelectionFeedbackGenerator().selectionChanged()
-                            icon = item
+                fieldLabel("Car mark")
+                LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 3), spacing: 12) {
+                    ForEach(VehicleMarkStyle.selectable) { style in
+                        VehicleMarkPickerCell(
+                            style: style,
+                            selected: VehicleMarkStyle.resolve(icon) == style && !usePhoto
+                        ) {
+                            icon = style.storageToken
                             usePhoto = false
                             removeExistingPhoto = true
                             draftPhoto = nil
-                        } label: {
-                            FluentEmojiView(emoji: item, size: 26)
-                                .frame(width: 36, height: 36)
-                                .background(
-                                    RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                        .fill(icon == item && !usePhoto ? VS.Color.accent : VS.Color.chip)
-                                )
                         }
-                        .buttonStyle(.plain)
                     }
                 }
             }
@@ -870,7 +1214,7 @@ private struct VehicleEditorView: View {
                             .foregroundStyle(VS.Color.error)
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 14)
-                            .glassCard(radius: 12)
+                            .glassCard(elevated: true)
                     }
                     .buttonStyle(.plain)
 
@@ -888,7 +1232,7 @@ private struct VehicleEditorView: View {
 
     private func fieldLabel(_ text: String) -> some View {
         Text(text)
-            .font(VS.Typography.body(12, weight: .medium))
+            .font(VS.Typography.body(13, weight: .medium))
             .foregroundStyle(VS.Color.textTertiary)
     }
 
@@ -898,13 +1242,12 @@ private struct VehicleEditorView: View {
         text: Binding<String>,
         large: Bool = false
     ) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 10) {
             fieldLabel(label)
             TextField(placeholder, text: text)
-                .font(large ? VS.Typography.heading(20, weight: .semibold) : VS.Typography.heading(18, weight: .semibold))
+                .font(large ? VS.Typography.heading(24, weight: .semibold) : VS.Typography.heading(20, weight: .semibold))
                 .foregroundStyle(VS.Color.textPrimary)
-                .padding(14)
-                .glassCard(radius: 12)
+                .vsInputField()
         }
     }
 
@@ -915,35 +1258,23 @@ private struct VehicleEditorView: View {
         suffix: String,
         large: Bool
     ) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 10) {
             fieldLabel(label)
             HStack {
                 TextField(placeholder, text: text)
                     .keyboardType(suffix == "km" ? .numberPad : .decimalPad)
-                    .font(large ? VS.Typography.heading(28, weight: .bold) : VS.Typography.heading(20, weight: .semibold))
+                    .font(large ? VS.Typography.heading(32, weight: .bold) : VS.Typography.heading(22, weight: .semibold))
                     .foregroundStyle(VS.Color.textPrimary)
                 Text(suffix)
-                    .font(VS.Typography.body(13, weight: .medium))
+                    .font(VS.Typography.body(15, weight: .medium))
                     .foregroundStyle(VS.Color.textTertiary)
             }
-            .padding(14)
-            .glassCard(radius: 12, elevated: large)
+            .vsInputField()
         }
     }
 
     private func capsuleChip(_ title: String, selected: Bool, action: @escaping () -> Void) -> some View {
-        Button {
-            UISelectionFeedbackGenerator().selectionChanged()
-            action()
-        } label: {
-            Text(title)
-                .font(VS.Typography.body(13, weight: .semibold))
-                .padding(.horizontal, 14)
-                .padding(.vertical, 10)
-                .background(Capsule().fill(selected ? VS.Color.accent : VS.Color.chip))
-                .foregroundStyle(selected ? VS.Color.navPill : VS.Color.textSecondary)
-        }
-        .buttonStyle(.plain)
+        VSSelectableChip(title: title, selected: selected, action: action)
     }
 
     private func convertTankDisplay(to newUnit: String) {
@@ -1003,8 +1334,15 @@ private struct VehicleEditorView: View {
     }
 }
 
-private func vehicleAppearancePreview(image: UIImage?, emoji: String, size: CGFloat) -> some View {
-    Group {
+private func vehicleAppearancePreview(
+    image: UIImage?,
+    emoji: String,
+    size: CGFloat,
+    well: Color = VS.Color.accent.opacity(0.16),
+    stroke: Color = Color.white.opacity(0.12)
+) -> some View {
+    let mark = VehicleMarkStyle.resolve(emoji)
+    return Group {
         if let image {
             Image(uiImage: image)
                 .resizable()
@@ -1012,14 +1350,17 @@ private func vehicleAppearancePreview(image: UIImage?, emoji: String, size: CGFl
                 .frame(width: size, height: size)
                 .clipShape(RoundedRectangle(cornerRadius: size * 0.28, style: .continuous))
         } else {
-            FluentEmojiView(emoji: emoji, size: size * 0.55)
+            VehicleMark(style: mark, size: size * 0.88)
                 .frame(width: size, height: size)
-                .background(VS.Color.chip, in: RoundedRectangle(cornerRadius: size * 0.28, style: .continuous))
+                .background(
+                    RoundedRectangle(cornerRadius: size * 0.28, style: .continuous)
+                        .fill(well)
+                )
         }
     }
     .overlay(
         RoundedRectangle(cornerRadius: size * 0.28, style: .continuous)
-            .stroke(Color.white.opacity(0.12), lineWidth: 1)
+            .stroke(stroke, lineWidth: 1)
     )
 }
 
@@ -1035,26 +1376,13 @@ private struct AnalyticsPoint: Identifiable {
     let value: Double
 }
 
-private struct DriverHubStory: Identifiable {
-    let id: String
-    let label: String
-    let value: String
-    let detail: String
-}
-
-private struct DriverHubPurpose: Identifiable {
-    let id: String
-    let title: String
-    let value: String
-    let subtitle: String
-}
-
 struct DriverProfileView: View {
     @EnvironmentObject private var store: DataStore
     @EnvironmentObject private var avatarStore: ProfileAvatarStore
     let onProfile: () -> Void
     @State private var period: AnalyticsPeriod = .month
     @State private var showBadges = false
+    @State private var selectedBadge: DriverAchievement?
 
     private var unit: String { store.defaultDistanceUnit }
     private var currency: String { store.currentVehicle?.currency ?? "QAR" }
@@ -1108,6 +1436,7 @@ struct DriverProfileView: View {
             logs: store.fuelLogsForActiveVehicles,
             serviceLogs: store.serviceLogsForActiveVehicles,
             vehicleCount: store.vehicles.count,
+            vehicleCreatedDates: store.vehicles.map(\.createdAt),
             vehicleId: nil,
             unit: unit,
             manufacturerStandard: store.manufacturerStandard
@@ -1152,7 +1481,7 @@ struct DriverProfileView: View {
     var body: some View {
         NavigationStack {
             ScrollView {
-                VStack(alignment: .leading, spacing: VS.Spacing.section) {
+                VStack(alignment: .leading, spacing: VS.Spacing.floatStack) {
                     MainTabHeader(
                         "Driver",
                         subtitle: store.currentVehicle.map { "\($0.nickname)’s pulse" } ?? "Your driving pulse",
@@ -1160,8 +1489,9 @@ struct DriverProfileView: View {
                     )
 
                     driverHeroCard
+                    driverMonthBento
                     TrackyPickerCard()
-                    driverHubGrid
+                    driverDetailBento
                     badgesHubPreview
                     insightsSection
                     analyticsSection
@@ -1175,70 +1505,16 @@ struct DriverProfileView: View {
             .navigationDestination(isPresented: $showBadges) {
                 DriverBadgesView(achievements: achievements)
             }
+            .sheet(item: $selectedBadge) { badge in
+                BadgeDetailDrawer(badge: badge)
+                    .presentationDetents([.medium, .large])
+                    .veloseeteSheet()
+            }
         }
     }
 
     private var driverHeroCard: some View {
-        VStack(alignment: .leading, spacing: VS.Spacing.stack) {
-            HStack(alignment: .center, spacing: 14) {
-                ProfileAvatarView(image: avatarStore.image, size: 64)
-                    .overlay(Circle().strokeBorder(VS.Color.hairline, lineWidth: 1))
-
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(displayName)
-                        .font(VS.Typography.heading(22, weight: .bold))
-                        .foregroundStyle(VS.Color.textPrimary)
-                    Text(store.currentVehicle.map { "\($0.make) \($0.model)" } ?? "Add a car to personalize")
-                        .font(VS.Typography.body(13))
-                        .foregroundStyle(VS.Color.textTertiary)
-                }
-                Spacer(minLength: 0)
-
-                Button {
-                    showBadges = true
-                } label: {
-                    Text("\(unlockedCount)/\(achievements.count)")
-                        .font(VS.Typography.mono(13, weight: .semibold))
-                        .foregroundStyle(VS.Color.textSecondary)
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 6)
-                        .background(VS.Color.chip, in: Capsule())
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("\(unlockedCount) of \(achievements.count) badges unlocked")
-            }
-
-            VStack(alignment: .leading, spacing: 6) {
-                Text("All-time")
-                    .font(VS.Typography.body(12, weight: .medium))
-                    .foregroundStyle(VS.Color.textTertiary)
-                Text(DistanceFormat.formatDistance(totalKm, unit: unit))
-                    .font(VS.Typography.heading(34, weight: .bold))
-                    .foregroundStyle(VS.Color.textPrimary)
-                    .minimumScaleFactor(0.8)
-            }
-        }
-        .padding(VS.Spacing.card)
-        .glassCard(elevated: true)
-    }
-
-    /// Featured status, story carousel, then purposeful rows.
-    private var driverHubGrid: some View {
         let metrics = vehicleMetrics
-        let monthTrips = tripsThisMonth
-        let roadHours = monthTrips.reduce(0) { $0 + $1.durationSec } / 3600
-        let monthKm = monthTrips.reduce(0) { $0 + max(0, $1.distanceKm) }
-        let avgCruise = {
-            let speeds = monthTrips.map(\.avgSpeedKmh).filter { $0 > 0 }
-            guard !speeds.isEmpty else { return 0.0 }
-            return speeds.reduce(0, +) / Double(speeds.count)
-        }()
-        let longestMonth = monthTrips.map(\.distanceKm).max() ?? 0
-        let costPerKm: Double? = {
-            guard let metrics, metrics.totalDistance > 1, metrics.monthlySpend > 0 else { return nil }
-            return metrics.monthlySpend / metrics.totalDistance
-        }()
-        let fillGapDays = averageFillGapDays
         let vibe = DashboardCopy.vibe(
             efficiency: metrics?.current ?? metrics?.avgEfficiency,
             standard: store.manufacturerStandard,
@@ -1249,60 +1525,183 @@ struct DriverProfileView: View {
             standard: store.manufacturerStandard,
             sampleCount: metrics?.efficiencySampleCount ?? 0
         )
-        let stories = hubStories(
-            monthKm: monthKm,
-            roadHours: roadHours,
-            tripCount: monthTrips.count,
-            costPerKm: costPerKm,
-            monthlySpend: metrics?.monthlySpend ?? 0,
-            spendTrend: DashboardCopy.spendTrend(metrics?.spendChange),
-            fillGapDays: fillGapDays,
-            vibe: vibe
-        )
-        let purposeRows = hubPurposeRows(
-            avgCruise: avgCruise,
-            longestMonth: longestMonth,
-            fillGapDays: fillGapDays,
-            metrics: metrics
-        )
 
         return VStack(alignment: .leading, spacing: VS.Spacing.stack) {
-            VStack(alignment: .leading, spacing: 8) {
-                VSSectionHeader(title: "This month", subtitle: "Road, spend, rhythm")
+            HStack(alignment: .top, spacing: 14) {
+                ProfileAvatarView(image: avatarStore.image, size: 56)
+                    .overlay(Circle().strokeBorder(VS.Color.navPill.opacity(0.35), lineWidth: 1.5))
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(displayName)
+                        .font(VS.Typography.heading(22, weight: .bold))
+                        .foregroundStyle(VS.Color.navPill)
+                    Text(store.currentVehicle.map { "\($0.make) \($0.model)" } ?? "Add a car to personalize")
+                        .font(VS.Typography.body(13, weight: .medium))
+                        .foregroundStyle(VS.Color.navPill.opacity(0.7))
+                }
+                Spacer(minLength: 8)
+
+                Button {
+                    showBadges = true
+                } label: {
+                    Text("\(unlockedCount)/\(achievements.count)")
+                        .font(VS.Typography.mono(12, weight: .bold))
+                        .foregroundStyle(VS.Color.navPill)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
+                        .overlay(Capsule().strokeBorder(VS.Color.navPill.opacity(0.35), lineWidth: 1.5))
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("\(unlockedCount) of \(achievements.count) badges unlocked")
+            }
+
+            VStack(alignment: .leading, spacing: 6) {
+                Text("All-time")
+                    .font(VS.Typography.body(13, weight: .semibold))
+                    .foregroundStyle(VS.Color.navPill.opacity(0.65))
+                Text(DistanceFormat.formatDistance(totalKm, unit: unit))
+                    .font(VS.Typography.heading(56, weight: .bold))
+                    .foregroundStyle(VS.Color.navPill)
+                    .minimumScaleFactor(0.55)
+                    .lineLimit(1)
+                    .contentTransition(.numericText())
                 Text(status.text)
-                    .font(VS.Typography.body(13))
-                    .foregroundStyle(toneColor(status.tone))
-                Text(vibe.label)
-                    .font(VS.Typography.body(12, weight: .medium))
-                    .foregroundStyle(VS.Color.textTertiary)
+                    .font(VS.Typography.body(14, weight: .medium))
+                    .foregroundStyle(VS.Color.navPill.opacity(0.75))
             }
 
-            // One instrument strip — no carousel of identical story cards.
-            HStack(alignment: .top, spacing: 0) {
-                ForEach(Array(stories.enumerated()), id: \.element.id) { index, story in
-                    hubMetricCell(story)
-                    if index < stories.count - 1 {
-                        Rectangle()
-                            .fill(VS.Color.divider)
-                            .frame(width: 1)
-                            .padding(.vertical, 4)
-                    }
-                }
-            }
-            .padding(.vertical, 16)
-            .padding(.horizontal, 4)
-            .glassCard()
-
-            VStack(spacing: 0) {
-                ForEach(Array(purposeRows.enumerated()), id: \.element.id) { index, row in
-                    hubPurposeRow(row)
-                    if index < purposeRows.count - 1 {
-                        Divider().overlay(VS.Color.divider)
-                    }
-                }
-            }
-            .glassCard()
+            Text(vibe.label)
+                .font(VS.Typography.body(12, weight: .semibold))
+                .foregroundStyle(VS.Color.navPill)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 7)
+                .overlay(Capsule().strokeBorder(VS.Color.navPill.opacity(0.35), lineWidth: 1.5))
         }
+        .padding(VS.Spacing.card)
+        .background(
+            RoundedRectangle(cornerRadius: VS.Radius.card, style: .continuous)
+                .fill(VS.Color.accent)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: VS.Radius.card, style: .continuous))
+    }
+
+    /// Month pulse as bold 2×2 bento tiles.
+    private var driverMonthBento: some View {
+        let metrics = vehicleMetrics
+        let monthTrips = tripsThisMonth
+        let roadHours = monthTrips.reduce(0) { $0 + $1.durationSec } / 3600
+        let monthKm = monthTrips.reduce(0) { $0 + max(0, $1.distanceKm) }
+        let costPerKm: Double? = {
+            guard let metrics, metrics.totalDistance > 1, metrics.monthlySpend > 0 else { return nil }
+            return metrics.monthlySpend / metrics.totalDistance
+        }()
+        let fillGapDays = averageFillGapDays
+        let drivenDetail = monthTrips.isEmpty
+            ? "No drives yet"
+            : "\(monthTrips.count) · \(roadHours < 1 ? "<1h" : String(format: "%.0fh", roadHours))"
+
+        return VStack(alignment: .leading, spacing: VS.Spacing.stack) {
+            VSSectionHeader(title: "This month")
+
+            HStack(spacing: VS.Spacing.gutter) {
+                driverBentoTile(
+                    value: monthKm > 0 ? DistanceFormat.formatDistance(monthKm, unit: unit) : "—",
+                    label: "Driven",
+                    detail: drivenDetail
+                )
+                driverBentoTile(
+                    value: (metrics?.monthlySpend ?? 0) > 0
+                        ? CurrencyFormat.format(metrics?.monthlySpend ?? 0, currency: currency)
+                        : "—",
+                    label: "Spent",
+                    detail: costPerKm.map { "\(CurrencyFormat.format($0, currency: currency))/\(unit)" }
+                        ?? DashboardCopy.spendTrend(metrics?.spendChange)
+                )
+            }
+
+            HStack(spacing: VS.Spacing.gutter) {
+                driverBentoTile(
+                    value: metrics?.avgEfficiency.map { String(format: "%.1f", $0) } ?? "—",
+                    label: "L/100",
+                    detail: metrics?.avgEfficiency == nil ? "Needs full tanks" : "Recent average"
+                )
+                driverBentoTile(
+                    value: fillGapDays.map { String(format: "%.0fd", $0) } ?? "—",
+                    label: "Fill gap",
+                    detail: fillGapDays == nil ? "Learning rhythm" : "Between fills"
+                )
+            }
+        }
+    }
+
+    private var driverDetailBento: some View {
+        let monthTrips = tripsThisMonth
+        let avgCruise = {
+            let speeds = monthTrips.map(\.avgSpeedKmh).filter { $0 > 0 }
+            guard !speeds.isEmpty else { return 0.0 }
+            return speeds.reduce(0, +) / Double(speeds.count)
+        }()
+        let longestMonth = monthTrips.map(\.distanceKm).max() ?? 0
+        let fillGapDays = averageFillGapDays
+        let nextFill: String = {
+            guard let fillGapDays, let last = lifetimeFuelLogs.last else { return "—" }
+            let daysSince = Calendar.current.dateComponents([.day], from: last.timestamp, to: Date()).day ?? 0
+            let left = max(0, Int((fillGapDays - Double(daysSince)).rounded()))
+            return left == 0 ? "Soon" : "~\(left)d"
+        }()
+
+        return VStack(alignment: .leading, spacing: VS.Spacing.stack) {
+            VSSectionHeader(title: "Pulse")
+
+            HStack(spacing: VS.Spacing.gutter) {
+                driverBentoTile(
+                    value: avgCruise > 0 ? String(format: "%.0f", avgCruise) : "—",
+                    label: avgCruise > 0 ? "km/h cruise" : "Cruise",
+                    detail: avgCruise > 0 ? "Month average" : "Track a drive",
+                    compact: true
+                )
+                driverBentoTile(
+                    value: longestMonth > 0 ? DistanceFormat.formatDistance(longestMonth, unit: unit) : "—",
+                    label: "Longest",
+                    detail: longestMonth > 0 ? "Single drive" : "Waiting on a haul",
+                    compact: true
+                )
+                driverBentoTile(
+                    value: nextFill,
+                    label: "Next fill",
+                    detail: fillGapDays.map { "\(String(format: "%.0f", $0))-day cycle" } ?? "From habit",
+                    compact: true
+                )
+            }
+        }
+    }
+
+    private func driverBentoTile(
+        value: String,
+        label: String,
+        detail: String,
+        compact: Bool = false
+    ) -> some View {
+        VStack(alignment: .leading, spacing: compact ? 8 : 10) {
+            Spacer(minLength: 0)
+            Text(value)
+                .font(VS.Typography.heading(compact ? 28 : 40, weight: .bold))
+                .foregroundStyle(VS.Color.textPrimary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.5)
+            Text(label)
+                .font(VS.Typography.body(compact ? 12 : 13, weight: .semibold))
+                .foregroundStyle(VS.Color.textSecondary)
+                .lineLimit(1)
+            Text(detail)
+                .font(VS.Typography.body(11))
+                .foregroundStyle(VS.Color.textTertiary)
+                .lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(VS.Spacing.card)
+        .frame(maxWidth: .infinity, minHeight: compact ? 124 : 148, alignment: .leading)
+        .glassCard(elevated: true)
     }
 
     private var tripsThisMonth: [Trip] {
@@ -1324,139 +1723,11 @@ struct DriverProfileView: View {
         return gaps.reduce(0, +) / Double(gaps.count)
     }
 
-    private func hubStories(
-        monthKm: Double,
-        roadHours: Double,
-        tripCount: Int,
-        costPerKm: Double?,
-        monthlySpend: Double,
-        spendTrend: String,
-        fillGapDays: Double?,
-        vibe: EfficiencyVibe
-    ) -> [DriverHubStory] {
-        [
-            DriverHubStory(
-                id: "road",
-                label: "Driven",
-                value: monthKm > 0 ? DistanceFormat.formatDistance(monthKm, unit: unit) : "—",
-                detail: tripCount == 0
-                    ? "No drives yet"
-                    : "\(tripCount) · \(roadHours < 1 ? "<1h" : String(format: "%.0fh", roadHours))"
-            ),
-            DriverHubStory(
-                id: "cost",
-                label: "Cost /\(unit)",
-                value: costPerKm.map { CurrencyFormat.format($0, currency: currency) } ?? "—",
-                detail: monthlySpend > 0
-                    ? "\(CurrencyFormat.format(monthlySpend, currency: currency)) · \(spendTrend)"
-                    : "Needs a fill"
-            ),
-            DriverHubStory(
-                id: "rhythm",
-                label: "Fill gap",
-                value: fillGapDays.map { String(format: "%.0fd", $0) } ?? "—",
-                detail: fillGapDays == nil ? "Learning" : vibe.label
-            )
-        ]
-    }
-
-    private func hubPurposeRows(
-        avgCruise: Double,
-        longestMonth: Double,
-        fillGapDays: Double?,
-        metrics: EfficiencyMetrics?
-    ) -> [DriverHubPurpose] {
-        [
-            DriverHubPurpose(
-                id: "efficiency",
-                title: "Efficiency",
-                value: metrics?.avgEfficiency.map { String(format: "%.1f L/100", $0) } ?? "—",
-                subtitle: metrics?.avgEfficiency == nil
-                    ? "Two full tanks unlock this"
-                    : "Recent full tanks"
-            ),
-            DriverHubPurpose(
-                id: "cruise",
-                title: "Cruise",
-                value: avgCruise > 0 ? String(format: "%.0f km/h", avgCruise) : "—",
-                subtitle: avgCruise > 0 ? "Month average" : "Track a drive"
-            ),
-            DriverHubPurpose(
-                id: "longest",
-                title: "Longest",
-                value: longestMonth > 0 ? DistanceFormat.formatDistance(longestMonth, unit: unit) : "—",
-                subtitle: longestMonth > 0 ? "Single drive this month" : "Waiting on a haul"
-            ),
-            DriverHubPurpose(
-                id: "next-fill",
-                title: "Next fill",
-                value: {
-                    guard let fillGapDays, let last = lifetimeFuelLogs.last else { return "—" }
-                    let daysSince = Calendar.current.dateComponents([.day], from: last.timestamp, to: Date()).day ?? 0
-                    let left = max(0, Int((fillGapDays - Double(daysSince)).rounded()))
-                    return left == 0 ? "Soon" : "~\(left)d"
-                }(),
-                subtitle: fillGapDays == nil
-                    ? "From your refill habit"
-                    : "\(String(format: "%.0f", fillGapDays!))-day cycle"
-            )
-        ]
-    }
-
-    private func hubMetricCell(_ story: DriverHubStory) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(story.label)
-                .font(VS.Typography.body(11, weight: .medium))
-                .foregroundStyle(VS.Color.textTertiary)
-            Text(story.value)
-                .font(VS.Typography.heading(18, weight: .bold))
-                .foregroundStyle(VS.Color.textPrimary)
-                .lineLimit(1)
-                .minimumScaleFactor(0.65)
-            Text(story.detail)
-                .font(VS.Typography.body(11))
-                .foregroundStyle(VS.Color.textSecondary)
-                .lineLimit(2)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, 12)
-    }
-
-    private func hubPurposeRow(_ row: DriverHubPurpose) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: 16) {
-            VStack(alignment: .leading, spacing: 3) {
-                Text(row.title)
-                    .font(VS.Typography.body(14, weight: .medium))
-                    .foregroundStyle(VS.Color.textPrimary)
-                Text(row.subtitle)
-                    .font(VS.Typography.body(12))
-                    .foregroundStyle(VS.Color.textTertiary)
-                    .lineLimit(2)
-            }
-            Spacer(minLength: 8)
-            Text(row.value)
-                .font(VS.Typography.heading(16, weight: .bold))
-                .foregroundStyle(VS.Color.textPrimary)
-                .multilineTextAlignment(.trailing)
-        }
-        .padding(.horizontal, VS.Spacing.md)
-        .padding(.vertical, 14)
-    }
-
-    private func toneColor(_ tone: EfficiencyVibe.Tone) -> Color {
-        switch tone {
-        case .excellent: return VS.Color.accent
-        case .good: return VS.Color.accentSecondary
-        case .neutral: return VS.Color.textSecondary
-        case .watch: return VS.Color.warning
-        case .learning: return VS.Color.textTertiary
-        }
-    }
-
     private var badgesHubPreview: some View {
         DriverBadgesShelfSection(achievements: achievements) {
             showBadges = true
+        } onSelectBadge: { badge in
+            selectedBadge = badge
         }
     }
 
@@ -1476,7 +1747,7 @@ struct DriverProfileView: View {
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(VS.Spacing.card)
-                .glassCard()
+                .glassCard(elevated: true)
             } else {
                 VStack(spacing: 0) {
                     ForEach(Array(preview.enumerated()), id: \.element.id) { index, insight in
@@ -1486,7 +1757,7 @@ struct DriverProfileView: View {
                         }
                     }
                 }
-                .glassCard()
+                .glassCard(elevated: true)
             }
         }
     }
@@ -1518,7 +1789,7 @@ struct DriverProfileView: View {
                 Rectangle().fill(VS.Color.divider).frame(height: 1)
             }
 
-            HStack(spacing: 14) {
+            HStack(spacing: VS.Spacing.gutter) {
                 analyticsMetric(CurrencyFormat.format(spent, currency: currency), "Spent")
                 analyticsMetric(DistanceFormat.formatDistance(periodDistance, unit: unit), "Driven")
             }
@@ -1532,7 +1803,7 @@ struct DriverProfileView: View {
                 summaryRow("Avg efficiency", efficiency.map { String(format: "%.1f L/100", $0) } ?? "—")
             }
             .padding(VS.Spacing.card)
-            .glassCard()
+            .glassCard(elevated: true)
 
             if monthlySpend.isEmpty {
                 analyticsEmptyState
@@ -1605,18 +1876,20 @@ struct DriverProfileView: View {
     }
 
     private func analyticsMetric(_ value: String, _ label: String) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(label)
-                .font(VS.Typography.body(12, weight: .medium))
-                .foregroundStyle(VS.Color.textTertiary)
+        VStack(alignment: .leading, spacing: 10) {
+            Spacer(minLength: 0)
             Text(value)
-                .font(VS.Typography.heading(22, weight: .bold))
+                .font(VS.Typography.heading(36, weight: .bold))
                 .foregroundStyle(VS.Color.textPrimary)
-                .minimumScaleFactor(0.7)
+                .lineLimit(1)
+                .minimumScaleFactor(0.55)
+            Text(label)
+                .font(VS.Typography.body(13, weight: .medium))
+                .foregroundStyle(VS.Color.textTertiary)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
         .padding(VS.Spacing.card)
-        .glassCard()
+        .frame(maxWidth: .infinity, minHeight: 128, alignment: .leading)
+        .glassCard(elevated: true)
     }
 
     private func summaryRow(_ label: String, _ value: String) -> some View {
@@ -1650,7 +1923,7 @@ struct DriverProfileView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(VS.Spacing.card)
-        .glassCard()
+        .glassCard(elevated: true)
     }
 }
 
@@ -1659,6 +1932,7 @@ struct DriverBadgesView: View {
     @Environment(\.dismiss) private var dismiss
     let achievements: [DriverAchievement]
     @State private var filter: BadgeFilter = .all
+    @State private var selectedBadge: DriverAchievement?
 
     private enum BadgeFilter: Hashable {
         case all
@@ -1712,7 +1986,7 @@ struct DriverBadgesView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: VS.Spacing.section) {
+            VStack(alignment: .leading, spacing: VS.Spacing.floatStack) {
                 VStack(alignment: .leading, spacing: 6) {
                     Text("Collection")
                         .font(VS.Typography.heading(28, weight: .bold))
@@ -1743,21 +2017,23 @@ struct DriverBadgesView: View {
         .veloseetePage()
         .navigationBarBackButtonHidden(true)
         .toolbar {
-            ToolbarItem(placement: .topBarLeading) {
-                Button {
-                    dismiss()
-                } label: {
-                    HStack(spacing: 4) {
-                        VSIcon(icon: .caretLeft, size: 18, weight: .bold, tint: VS.Color.textSecondary)
-                        Text("Driver")
-                            .font(VS.Typography.body(15, weight: .semibold))
-                            .foregroundStyle(VS.Color.textSecondary)
-                    }
+            if #available(iOS 26.0, *) {
+                ToolbarItem(placement: .topBarLeading) {
+                    ModalBackButton(title: "Driver") { dismiss() }
                 }
-                .buttonStyle(.plain)
+                .sharedBackgroundVisibility(.hidden)
+            } else {
+                ToolbarItem(placement: .topBarLeading) {
+                    ModalBackButton(title: "Driver") { dismiss() }
+                }
             }
         }
         .toolbarBackground(.hidden, for: .navigationBar)
+        .sheet(item: $selectedBadge) { badge in
+            BadgeDetailDrawer(badge: badge)
+                .presentationDetents([.medium, .large])
+                .veloseeteSheet()
+        }
     }
 
     private var filterBar: some View {
@@ -1786,40 +2062,45 @@ struct DriverBadgesView: View {
     }
 
     private func featuredNext(_ quest: DriverAchievement) -> some View {
-        HStack(spacing: 16) {
-            BadgeHexMark(badge: quest, size: 84)
+        Button {
+            selectedBadge = quest
+        } label: {
+            HStack(spacing: 16) {
+                BadgeHexMark(badge: quest, size: 84)
 
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Closest")
-                    .font(VS.Typography.body(11, weight: .medium))
-                    .foregroundStyle(VS.Color.textTertiary)
-                Text(quest.title)
-                    .font(VS.Typography.heading(18, weight: .bold))
-                    .foregroundStyle(VS.Color.textPrimary)
-                Text(quest.detail)
-                    .font(VS.Typography.body(13))
-                    .foregroundStyle(VS.Color.textSecondary)
-                    .fixedSize(horizontal: false, vertical: true)
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Closest")
+                        .font(VS.Typography.body(11, weight: .medium))
+                        .foregroundStyle(VS.Color.textTertiary)
+                    Text(quest.title)
+                        .font(VS.Typography.heading(18, weight: .bold))
+                        .foregroundStyle(VS.Color.textPrimary)
+                    Text(quest.detail)
+                        .font(VS.Typography.body(13))
+                        .foregroundStyle(VS.Color.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
 
-                GeometryReader { geo in
-                    ZStack(alignment: .leading) {
-                        Rectangle().fill(VS.Color.chip)
-                        Rectangle()
-                            .fill(VS.Color.accent.opacity(0.85))
-                            .frame(width: max(2, geo.size.width * quest.progress))
+                    GeometryReader { geo in
+                        ZStack(alignment: .leading) {
+                            Rectangle().fill(VS.Color.chip)
+                            Rectangle()
+                                .fill(VS.Color.accent.opacity(0.85))
+                                .frame(width: max(2, geo.size.width * quest.progress))
+                        }
                     }
-                }
-                .frame(height: 2)
+                    .frame(height: 2)
 
-                Text(quest.progressLabel)
-                    .font(VS.Typography.mono(12, weight: .medium))
-                    .foregroundStyle(VS.Color.textTertiary)
+                    Text(quest.progressLabel)
+                        .font(VS.Typography.mono(12, weight: .medium))
+                        .foregroundStyle(VS.Color.textTertiary)
+                }
+                Spacer(minLength: 0)
             }
-            Spacer(minLength: 0)
+            .padding(VS.Spacing.card)
+            .glassCard(elevated: true)
+            .contentShape(Rectangle())
         }
-        .padding(VS.Spacing.card)
-        .glassCard(elevated: true)
-        .accessibilityElement(children: .combine)
+        .buttonStyle(.plain)
         .accessibilityLabel("Closest badge, \(quest.title), \(quest.progressLabel)")
     }
 
@@ -1863,37 +2144,42 @@ struct DriverBadgesView: View {
     }
 
     private func hexCell(_ badge: DriverAchievement) -> some View {
-        VStack(spacing: 10) {
-            ZStack(alignment: .bottom) {
-                BadgeHexMark(badge: badge, size: 86)
-                if !badge.unlocked, badge.progress > 0 {
-                    Text("\(Int((badge.progress * 100).rounded()))%")
-                        .font(VS.Typography.mono(9, weight: .bold))
-                        .foregroundStyle(VS.Color.navPill)
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 2)
-                        .background(VS.Color.accent, in: Capsule())
-                        .offset(y: 6)
+        Button {
+            selectedBadge = badge
+        } label: {
+            VStack(spacing: 10) {
+                ZStack(alignment: .bottom) {
+                    BadgeHexMark(badge: badge, size: 86)
+                    if !badge.unlocked, badge.progress > 0 {
+                        Text("\(Int((badge.progress * 100).rounded()))%")
+                            .font(VS.Typography.mono(9, weight: .bold))
+                            .foregroundStyle(VS.Color.navPill)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(VS.Color.accent, in: Capsule())
+                            .offset(y: 6)
+                    }
                 }
+                .padding(.bottom, badge.unlocked || badge.progress == 0 ? 0 : 4)
+
+                Text(badge.title)
+                    .font(VS.Typography.body(12, weight: .semibold))
+                    .foregroundStyle(badge.unlocked ? VS.Color.textPrimary : VS.Color.textTertiary)
+                    .multilineTextAlignment(.center)
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.85)
+
+                Text(badge.unlocked ? badge.detail : badge.progressLabel)
+                    .font(VS.Typography.body(10))
+                    .foregroundStyle(VS.Color.textTertiary)
+                    .multilineTextAlignment(.center)
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.85)
             }
-            .padding(.bottom, badge.unlocked || badge.progress == 0 ? 0 : 4)
-
-            Text(badge.title)
-                .font(VS.Typography.body(12, weight: .semibold))
-                .foregroundStyle(badge.unlocked ? VS.Color.textPrimary : VS.Color.textTertiary)
-                .multilineTextAlignment(.center)
-                .lineLimit(2)
-                .minimumScaleFactor(0.85)
-
-            Text(badge.unlocked ? badge.detail : badge.progressLabel)
-                .font(VS.Typography.body(10))
-                .foregroundStyle(VS.Color.textTertiary)
-                .multilineTextAlignment(.center)
-                .lineLimit(2)
-                .minimumScaleFactor(0.85)
+            .frame(maxWidth: .infinity, alignment: .top)
+            .contentShape(Rectangle())
         }
-        .frame(maxWidth: .infinity, alignment: .top)
-        .accessibilityElement(children: .combine)
+        .buttonStyle(.plain)
         .accessibilityLabel(
             badge.unlocked
                 ? "\(badge.title), unlocked. \(badge.detail)"
@@ -1914,7 +2200,7 @@ struct ServiceListView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: VS.Spacing.section) {
+            VStack(alignment: .leading, spacing: VS.Spacing.floatStack) {
                 MainTabHeader("Service", subtitle: store.currentVehicle?.nickname ?? "Keep it healthy", onProfile: onProfile)
 
                 serviceTrendCard
@@ -1923,26 +2209,27 @@ struct ServiceListView: View {
                     editingLog = nil; showEditor = true
                 }
 
-                VSSectionHeader(title: "History")
-                if logs.isEmpty {
-                    Button { showEditor = true } label: {
-                        VStack(spacing: 14) {
-                            VSIcon(icon: .wrench, size: 34, weight: .regular, tint: VS.Color.accent)
-                            Text("Log your first service")
-                                .font(VS.Typography.heading(16))
-                                .foregroundStyle(VS.Color.textPrimary)
-                            Text("Oil, brakes, whatever’s due — keep a trail.")
-                                .font(VS.Typography.body(13))
-                                .foregroundStyle(VS.Color.textSecondary)
-                        }.frame(maxWidth: .infinity).padding(34).glassCard()
-                    }.buttonStyle(.plain)
-                } else {
-                    VStack(spacing: 0) {
-                        ForEach(logs) { log in
-                            Button { editingLog = log; showEditor = true } label: { serviceRow(log) }.buttonStyle(.plain)
-                            if log.id != logs.last?.id { Divider().overlay(VS.Color.divider) }
-                        }
-                    }.padding(.horizontal, 14).glassCard()
+                VSSection(title: "History") {
+                    if logs.isEmpty {
+                        Button { showEditor = true } label: {
+                            VStack(spacing: 14) {
+                                VSIcon(icon: .wrench, size: 34, weight: .regular, tint: VS.Color.accent)
+                                Text("Log your first service")
+                                    .font(VS.Typography.heading(16))
+                                    .foregroundStyle(VS.Color.textPrimary)
+                                Text("Oil, brakes, whatever’s due — keep a trail.")
+                                    .font(VS.Typography.body(13))
+                                    .foregroundStyle(VS.Color.textSecondary)
+                            }.frame(maxWidth: .infinity).padding(34).glassCard(elevated: true)
+                        }.buttonStyle(.plain)
+                    } else {
+                        VStack(spacing: 0) {
+                            ForEach(logs) { log in
+                                Button { editingLog = log; showEditor = true } label: { serviceRow(log) }.buttonStyle(.plain)
+                                if log.id != logs.last?.id { Divider().overlay(VS.Color.divider) }
+                            }
+                        }.padding(VS.Spacing.card).glassCard(elevated: true)
+                    }
                 }
             }.padding(.horizontal, VS.Spacing.pageInset).padding(.bottom, 110).tracksBottomNavScroll()
         }
@@ -1957,7 +2244,7 @@ struct ServiceListView: View {
             serviceFact("Current odometer", store.currentVehicle.map { DistanceFormat.formatOdometer($0.currentOdometer, unit: store.defaultDistanceUnit) } ?? "—")
             serviceFact("Last service", latest.map { "\($0.serviceType) · \($0.timestamp.formatted(date: .abbreviated, time: .omitted))" } ?? "No records yet")
             if let latest { serviceDueRow(latest) }
-        }.padding(16).glassCard(elevated: true)
+        }.padding(VS.Spacing.card).glassCard(elevated: true)
     }
 
     private func serviceFact(_ label: String, _ value: String) -> some View {
@@ -2061,7 +2348,7 @@ struct ServiceEditorSheet: View {
                         .tint(VS.Color.accent)
                         .padding(14)
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        .glassCard(radius: 12)
+                        .glassCard(elevated: true)
                     }
 
                     VStack(alignment: .leading, spacing: 8) {
@@ -2071,7 +2358,7 @@ struct ServiceEditorSheet: View {
                             .font(VS.Typography.body(15))
                             .foregroundStyle(VS.Color.textPrimary)
                             .padding(14)
-                            .glassCard(radius: 12)
+                            .glassCard(elevated: true)
                     }
 
                     reminderSection
@@ -2089,7 +2376,7 @@ struct ServiceEditorSheet: View {
                         .font(VS.Typography.body(14, weight: .semibold))
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 14)
-                        .glassCard(radius: 12)
+                        .glassCard(elevated: true)
                     }
                 }
                 .padding(.horizontal, 20)
@@ -2157,7 +2444,7 @@ struct ServiceEditorSheet: View {
                     .font(VS.Typography.heading(18, weight: .semibold))
                     .foregroundStyle(VS.Color.textPrimary)
                     .padding(14)
-                    .glassCard(radius: 12)
+                    .glassCard(elevated: true)
             }
         }
     }
@@ -2177,7 +2464,7 @@ struct ServiceEditorSheet: View {
                 .foregroundStyle(VS.Color.textPrimary)
                 .tint(VS.Color.accent)
                 .padding(14)
-                .glassCard(radius: 12)
+                .glassCard(elevated: true)
 
             if hasNextDate {
                 DatePicker(
@@ -2189,7 +2476,7 @@ struct ServiceEditorSheet: View {
                 .datePickerStyle(.compact)
                 .tint(VS.Color.accent)
                 .padding(14)
-                .glassCard(radius: 12)
+                .glassCard(elevated: true)
                 .foregroundStyle(VS.Color.textPrimary)
             }
         }
@@ -2213,7 +2500,7 @@ struct ServiceEditorSheet: View {
                     .foregroundStyle(VS.Color.textTertiary)
             }
             .padding(14)
-            .glassCard(radius: 12)
+            .glassCard(elevated: true)
         }
     }
 
@@ -2308,6 +2595,8 @@ struct ProfileView: View {
     @State private var showDeleteAccountConfirm = false
     @State private var isDeletingAccount = false
     @State private var deleteAccountError: String?
+    @State private var showFeedback = false
+    @State private var showRoadmap = false
 
     /// What the profile header shows: locked display during replace, else store.
     private var headerAvatar: UIImage? {
@@ -2498,6 +2787,37 @@ struct ProfileView: View {
                 }
                 .listRowBackground(VS.Color.bgSecondary)
 
+                Section("Veloseete") {
+                    Button {
+                        showFeedback = true
+                    } label: {
+                        Label {
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text("Leave feedback").foregroundStyle(VS.Color.textPrimary)
+                                Text("A note to the inbox — bugs, praise, missing bits")
+                                    .font(VS.Typography.body(11)).foregroundStyle(VS.Color.textTertiary)
+                            }
+                        } icon: {
+                            VSIcon(icon: .fileText, size: 20, weight: .regular, tint: VS.Color.accent)
+                        }
+                    }
+
+                    Button {
+                        showRoadmap = true
+                    } label: {
+                        Label {
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text("Roadmap").foregroundStyle(VS.Color.textPrimary)
+                                Text("Vote upcoming work, or request a feature")
+                                    .font(VS.Typography.body(11)).foregroundStyle(VS.Color.textTertiary)
+                            }
+                        } icon: {
+                            VSIcon(icon: .chartLine, size: 20, weight: .regular, tint: VS.Color.accent)
+                        }
+                    }
+                }
+                .listRowBackground(VS.Color.bgSecondary)
+
                 Section("Legal") {
                     Button("Privacy Policy") { legalDocument = .privacy }
                     Button("Terms of Use") { legalDocument = .terms }
@@ -2552,6 +2872,12 @@ struct ProfileView: View {
             }
             .sheet(item: $legalDocument) { doc in
                 LegalDocumentView(document: doc)
+            }
+            .sheet(isPresented: $showFeedback) {
+                FeedbackComposerView()
+            }
+            .sheet(isPresented: $showRoadmap) {
+                RoadmapView()
             }
             .sheet(isPresented: $showEditAccount) {
                 EditAccountDrawer(
@@ -2646,7 +2972,7 @@ struct ProfileView: View {
                             .padding(.vertical, 14)
                             .background(VS.Color.accent)
                             .foregroundStyle(VS.Color.navPill)
-                            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                            .clipShape(RoundedRectangle(cornerRadius: VS.Radius.chip, style: .continuous))
                         }
                         .disabled(isLinking)
 
@@ -2699,7 +3025,7 @@ struct ProfileView: View {
                         }
                         .signInWithAppleButtonStyle(.white)
                         .frame(height: 52)
-                        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                        .clipShape(RoundedRectangle(cornerRadius: VS.Radius.chip, style: .continuous))
 
                         if let linkError {
                             Text(linkError)
@@ -2882,7 +3208,7 @@ private struct EditAccountDrawer: View {
                             .font(VS.Typography.heading(18, weight: .semibold))
                             .foregroundStyle(VS.Color.textPrimary)
                             .padding(14)
-                            .glassCard(radius: 12)
+                            .glassCard(elevated: true)
                     }
 
                     VStack(alignment: .leading, spacing: 10) {

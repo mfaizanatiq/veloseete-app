@@ -74,6 +74,7 @@ struct VeloseeteApp: App {
             .environmentObject(tripRecorder)
             .preferredColorScheme(.dark)
             .tint(VS.Color.accent)
+            .toggleStyle(.veloseete)
             .onOpenURL { url in
                 GIDSignIn.sharedInstance.handle(url)
             }
@@ -153,5 +154,9 @@ struct VeloseeteApp: App {
 
         UITableView.appearance().backgroundColor = UIColor(VS.Color.bgPrimary)
         UICollectionView.appearance().backgroundColor = UIColor(VS.Color.bgPrimary)
+
+        // Lime track, black handle — never white-on-lime.
+        UISwitch.appearance().onTintColor = UIColor(VS.Color.accent)
+        UISwitch.appearance().thumbTintColor = UIColor(VS.Color.navPill)
     }
 }
