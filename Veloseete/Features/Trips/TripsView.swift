@@ -1957,21 +1957,7 @@ struct TripDetailView: View {
             .veloseetePage()
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
-                    HStack(spacing: 12) {
-                        Button {
-                            Task { await prepareShare() }
-                        } label: {
-                            if isPreparingShare {
-                                ProgressView().controlSize(.small)
-                            } else {
-                                Image(systemName: "square.and.arrow.up")
-                            }
-                        }
-                        .accessibilityLabel("Share drive")
-                        .disabled(isPreparingShare)
-
-                        ModalCloseButton { dismiss() }
-                    }
+                    ModalCloseButton { dismiss() }
                 }
             }
             .sheet(isPresented: $showShareSheet) {
