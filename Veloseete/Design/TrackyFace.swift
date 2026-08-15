@@ -106,14 +106,37 @@ struct TrackyPickerCard: View {
     }
 }
 
-/// Pure SwiftUI Tracky — brand mascot / avatar expression. Not used on badges.
+/// Tracky face — prefers Higgsfield assets; Canvas fallback for locked / missing.
 struct TrackyFace: View {
     var mood: TrackyMood = .chill
     var size: CGFloat = 56
-    /// When false, omit the outer disc (e.g. already clipped into a hex).
+    /// When false, omit the outer disc (Canvas fallback only).
     var showsDisc: Bool = true
 
+    private var assetName: String? {
+        guard mood != .locked else { return nil }
+        return "tracky-\(mood.rawValue)"
+    }
+
     var body: some View {
+        Group {
+            if let assetName, UIImage(named: assetName) != nil {
+                Image(assetName)
+                    .resizable()
+                    .interpolation(.high)
+                    .scaledToFill()
+                    .frame(width: size, height: size)
+                    .clipShape(Circle())
+            } else {
+                canvasFace
+                    .clipShape(Circle())
+            }
+        }
+        .frame(width: size, height: size)
+        .accessibilityLabel("Tracky, \(mood.label)")
+    }
+
+    private var canvasFace: some View {
         Canvas { context, canvasSize in
             let s = min(canvasSize.width, canvasSize.height)
             let center = CGPoint(x: canvasSize.width / 2, y: canvasSize.height / 2)
@@ -148,8 +171,6 @@ struct TrackyFace: View {
                 )
             }
         }
-        .frame(width: size, height: size)
-        .accessibilityLabel("Tracky, \(mood.label)")
     }
 
     private func eyeRect(_ c: CGPoint, _ r: CGFloat) -> CGRect {

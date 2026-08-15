@@ -1260,7 +1260,12 @@ private struct VeloseeteMapCharacter: View {
     let isLive: Bool
     var courseDegrees: Double = -1
     var mapHeading: Double = 0
+    @AppStorage("veloseete.tracky.mood") private var trackyMoodRaw: String = TrackyMood.chill.rawValue
     @State private var pulse = false
+
+    private var trackyMood: TrackyMood {
+        TrackyMood(rawValue: trackyMoodRaw) ?? .chill
+    }
 
     private var showsCone: Bool { courseDegrees >= 0 }
 
@@ -1298,31 +1303,24 @@ private struct VeloseeteMapCharacter: View {
             }
 
             Circle()
-                .fill(Color.black.opacity(0.82))
+                .fill(Color.black.opacity(0.55))
                 .frame(width: 50, height: 50)
 
-            Circle()
-                .fill(VS.Color.accent)
-                .frame(width: 44, height: 44)
-
-            HStack(spacing: 11) {
-                Capsule()
-                    .fill(Color.black)
-                    .frame(width: 5.5, height: 7.7)
-                Capsule()
-                    .fill(Color.black)
-                    .frame(width: 5.5, height: 7.7)
-            }
+            TrackyFace(mood: trackyMood, size: 44)
+                .overlay {
+                    Circle()
+                        .strokeBorder(Color.white.opacity(0.88), lineWidth: 2)
+                }
+                .shadow(color: VS.Color.accent.opacity(0.34), radius: 11)
+                .shadow(color: .black.opacity(0.45), radius: 7, y: 4)
         }
-        .shadow(color: VS.Color.accent.opacity(0.34), radius: 11)
-        .shadow(color: .black.opacity(0.45), radius: 7, y: 4)
         .onAppear {
             guard isLive else { return }
             withAnimation(.easeOut(duration: 1.25).repeatForever(autoreverses: false)) {
                 pulse = true
             }
         }
-        .accessibilityLabel(isLive ? "Your live location" : "Your location")
+        .accessibilityLabel(isLive ? "Tracky live location, \(trackyMood.label)" : "Tracky location, \(trackyMood.label)")
     }
 }
 
