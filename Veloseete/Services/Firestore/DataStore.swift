@@ -686,6 +686,16 @@ final class DataStore: ObservableObject {
         return trip
     }
 
+    func deleteTrip(_ trip: Trip) async throws {
+        guard let userId = AuthService.shared.userId else {
+            throw NSError(domain: "Veloseete", code: 401, userInfo: [NSLocalizedDescriptionKey: "Not signed in"])
+        }
+        try await FirestoreRepository.shared.deleteTrip(tripId: trip.id, userId: userId)
+        trips.removeAll { $0.id == trip.id }
+        publishCarPlayWidgetState()
+        VehicleInsightScheduler.shared.refresh(using: self)
+    }
+
     func clear() {
         userDocument = nil
         vehicles = []

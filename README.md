@@ -34,14 +34,14 @@ Same project as the web PWA: `velocity-5e576`.
 
 Auth providers: **Email/password**, **Google**, and **Sign in with Apple** (linkable on one account).
 
-1. iOS app is registered in Firebase (`com.veloseete.app`)
+1. iOS app is registered in Firebase (`com.veloseete.ios`)
 2. Keep `Veloseete/GoogleService-Info.plist` on the machine (gitignored) — regenerate with:
    `firebase apps:sdkconfig IOS --project velocity-5e576 -o Veloseete/GoogleService-Info.plist`
 3. **Paid Apple Developer Program** is required for Sign in with Apple on device / App Store
    - Release builds use `Veloseete.entitlements` (SIWA on)
    - Debug builds use `VeloseeteDebug.entitlements` (SIWA off) so personal teams can still install Google + email
-4. Apple Developer → Identifiers → `com.veloseete.app` → enable **Sign in with Apple**
-5. Firebase Console → Authentication → Sign-in method: Email, Google, Apple (Email + Google enabled; Apple IdP created for `com.veloseete.app`)
+4. Apple Developer → Identifiers → `com.veloseete.ios` → enable **Sign in with Apple**
+5. Firebase Console → Authentication → Sign-in method: Email, Google, Apple (Email + Google enabled; Apple IdP created for `com.veloseete.ios`)
 6. For production Apple (web/OAuth secret), add Team ID + Key (.p8) under Firebase → Apple provider
 
 ## Requirements
@@ -59,9 +59,9 @@ On iOS 26, the **Veloseete Footprint** `systemSmall` widget can be added to CarP
 Before device or CarPlay Simulator testing:
 
 1. Request the **Driving Task** CarPlay entitlement from [Apple](https://developer.apple.com/carplay/).
-2. Enable the approved CarPlay capability for the `com.veloseete.app` App ID.
+2. Enable the approved CarPlay capability for the `com.veloseete.ios` App ID.
 3. Regenerate and install development and distribution provisioning profiles containing `com.apple.developer.carplay-driving-task`.
-4. Enable the `group.com.veloseete.app` App Group for both `com.veloseete.app` and `com.veloseete.app.TripWidget`, then regenerate their profiles.
+4. Enable the `group.com.veloseete.shared` App Group for both `com.veloseete.ios` and `com.veloseete.ios.TripWidget`, then regenerate their profiles.
 5. In Simulator, run Veloseete and choose **I/O → External Displays → CarPlay**.
 
 The entitlement must be approved by Apple and included in the signing profile; adding the entitlement file entry alone is not sufficient for a signed device build.

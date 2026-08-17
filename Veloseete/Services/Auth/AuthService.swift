@@ -220,16 +220,29 @@ final class AuthService: ObservableObject {
         clearPendingLink()
         try? GIDSignIn.sharedInstance.signOut()
         try Auth.auth().signOut()
+
+        // Drop local session data so the next account on this device cannot see it.
+        TripRecordingService.shared.wipeLocalStateForAccountDeletion()
+        CarPlayWidgetStateStore.clearUserData()
+        ProfileAvatarStore.shared.clearSession()
+        VehiclePhotoStore.shared.clearSession()
+        TripPermissionsStore.shared.clearSession()
+        UNUserNotificationCenter.current().removeAllPendingNotificationRequests()
+        UNUserNotificationCenter.current().removeAllDeliveredNotifications()
         DataStore.shared.clear()
     }
 
     /// Deletes Firestore data + Firebase Auth user, then clears local state.
-    /// If Firebase requires a fresh login, throws `requiresRecentLogin`.
+    ///
+    /// Order matters: we refuse to wipe cloud data unless the session is fresh enough
+    /// for Auth deletion (avoids erasing Firestore then failing on `requiresRecentLogin`).
     func deleteAccount() async throws {
         guard let user = Auth.auth().currentUser else {
             throw AuthServiceError.notSignedIn
         }
         let uid = user.uid
+
+        try await ensureRecentLoginForSensitiveAction(user)
 
         try await FirestoreRepository.shared.deleteAllUserData(userId: uid)
 
@@ -237,6 +250,8 @@ final class AuthService: ObservableObject {
         VehiclePhotoStore.shared.removeAll()
         TripRecordingService.shared.wipeLocalStateForAccountDeletion()
         CarPlayWidgetStateStore.clearUserData()
+        TripPermissionsStore.shared.reset(for: uid)
+        TripPermissionsStore.shared.clearSession()
         UNUserNotificationCenter.current().removeAllPendingNotificationRequests()
         UNUserNotificationCenter.current().removeAllDeliveredNotifications()
 
@@ -245,7 +260,13 @@ final class AuthService: ObservableObject {
         } catch {
             let ns = error as NSError
             if AuthErrorCode(rawValue: ns.code) == .requiresRecentLogin {
-                throw AuthServiceError.requiresRecentLogin
+                // Data is already wiped; sign out so a fresh sign-in can finish Auth removal if needed.
+                clearPendingLink()
+                try? GIDSignIn.sharedInstance.signOut()
+                try? Auth.auth().signOut()
+                DataStore.shared.clear()
+                applyUser(nil)
+                throw AuthServiceError.dataRemovedNeedsFreshSignIn
             }
             throw error
         }
@@ -254,6 +275,17 @@ final class AuthService: ObservableObject {
         try? GIDSignIn.sharedInstance.signOut()
         DataStore.shared.clear()
         applyUser(nil)
+    }
+
+    /// Firebase requires a recent sign-in for account deletion. Check ID-token `authDate`
+    /// before touching Firestore so a stale session cannot orphan the Auth user after a wipe.
+    private func ensureRecentLoginForSensitiveAction(_ user: User) async throws {
+        let token = try await user.getIDTokenResult(forcingRefresh: true)
+        let age = Date().timeIntervalSince(token.authDate)
+        // Firebase typically requires authentication within the last few minutes.
+        if age > 4 * 60 {
+            throw AuthServiceError.requiresRecentLogin
+        }
     }
 
     // MARK: - Internals
@@ -443,6 +475,8 @@ enum AuthServiceError: LocalizedError {
     case credentialAlreadyLinkedElsewhere
     case needsLinkWithExistingAccount(email: String?)
     case requiresRecentLogin
+    /// Cloud data wiped, but Auth deletion still needs a fresh sign-in.
+    case dataRemovedNeedsFreshSignIn
 
     var errorDescription: String? {
         switch self {
@@ -464,7 +498,9 @@ enum AuthServiceError: LocalizedError {
             }
             return "An account already exists with this email. Sign in with email/password, and we’ll link Apple/Google automatically."
         case .requiresRecentLogin:
-            return "For security, sign out, sign back in, then delete your account again."
+            return "For security, sign out, sign back in, then delete your account again. Nothing was removed yet."
+        case .dataRemovedNeedsFreshSignIn:
+            return "Your garage and cloud data were removed. Sign in once more if the account still appears, then delete again to finish closing it."
         }
     }
 }

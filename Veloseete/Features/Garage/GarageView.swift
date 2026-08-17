@@ -4,6 +4,8 @@ struct GarageView: View {
     @EnvironmentObject private var store: DataStore
     @EnvironmentObject private var auth: AuthService
     var onComplete: (() -> Void)? = nil
+    /// Full-screen first-run mode — warmer copy, no ops banner (account lives in parent chrome).
+    var isFirstRun: Bool = false
 
     @State private var step = 1
     @State private var nickname = ""
@@ -36,6 +38,7 @@ struct GarageView: View {
     private let currencies = ["QAR", "AED", "SAR", "USD", "EUR", "GBP", "PKR", "INR"]
 
     private var isSheet: Bool { onComplete != nil }
+    private var showsAccountBanner: Bool { !isSheet && !isFirstRun && store.vehicles.isEmpty }
 
     var body: some View {
         Group {
@@ -58,7 +61,7 @@ struct GarageView: View {
 
     private var sheetBody: some View {
         VStack(spacing: 0) {
-            if store.vehicles.isEmpty {
+            if showsAccountBanner {
                 accountBanner
             }
 
@@ -87,7 +90,9 @@ struct GarageView: View {
             }
 
             PrimaryCTAButton(
-                title: step == 3 ? "Add vehicle" : "Continue",
+                title: step == 3
+                    ? (isFirstRun ? "Start tracking" : "Add vehicle")
+                    : "Continue",
                 icon: step == 3 ? .checkCircle : nil,
                 isLoading: isSubmitting,
                 isEnabled: canContinue
@@ -192,8 +197,8 @@ struct GarageView: View {
     private var stepBasics: some View {
         VStack(alignment: .leading, spacing: 22) {
             titleBlock(
-                store.vehicles.isEmpty ? "Your first vehicle" : "New vehicle",
-                "Name it, pick an icon"
+                isFirstRun ? "Name your car" : (store.vehicles.isEmpty ? "Your first vehicle" : "New vehicle"),
+                isFirstRun ? "A nickname and mark is enough to start" : "Name it, pick a mark"
             )
 
             glassTextField(label: "Name", placeholder: "My car", text: $nickname, large: true)
@@ -239,7 +244,10 @@ struct GarageView: View {
 
     private var stepFuel: some View {
         VStack(alignment: .leading, spacing: 22) {
-            titleBlock("Fuel & currency", "Used for fills and spend")
+            titleBlock(
+                isFirstRun ? "How you fill up" : "Fuel & currency",
+                isFirstRun ? "Used for spends and efficiency" : "Used for fills and spend"
+            )
 
             VStack(alignment: .leading, spacing: 10) {
                 fieldLabel("Fuel type")
@@ -282,7 +290,10 @@ struct GarageView: View {
 
     private var stepOdometer: some View {
         VStack(alignment: .leading, spacing: 22) {
-            titleBlock("Odometer", "Dashboard reading right now")
+            titleBlock(
+                isFirstRun ? "Where the clock is" : "Odometer",
+                isFirstRun ? "Dashboard reading right now — you can refine later" : "Dashboard reading right now"
+            )
 
             glassNumberField(
                 label: "Current odometer",

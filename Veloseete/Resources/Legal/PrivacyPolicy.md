@@ -1,6 +1,6 @@
 # Privacy Policy
 
-**Last updated:** 29 July 2026
+**Last updated:** 16 August 2026
 
 Veloseete (“we”, “the app”) helps you track vehicles, fuel, service, and drives. This policy explains what we collect and why.
 
@@ -8,8 +8,9 @@ Veloseete (“we”, “the app”) helps you track vehicles, fuel, service, and
 
 - **Account:** name, email, and sign-in identifiers when you use email/password, Sign in with Apple, or Google.
 - **Vehicle & logs:** vehicles you add, odometer readings, fuel fills (including optional station), service records, and drive routes/stats you save.
-- **Location & motion:** used to detect drives, draw routes, estimate odometer, and optionally tag a nearby petrol station. Background location is used only when trip auto-tracking is enabled.
-- **Device storage:** profile and vehicle photos you choose to save on this iPhone; local preferences; pending trip drafts; home-screen widget snapshots via the App Group.
+- **Feedback:** product feedback, feature requests, and roadmap votes you submit in the app.
+- **Location & motion:** used to detect drives, draw routes, estimate odometer, and optionally tag a nearby petrol station. Background location is used only when trip auto-tracking is enabled. Fuel and service reminders are based on your fill and service logs (and saved trip distance for range estimates), not continuous background location by itself.
+- **Device storage:** profile and vehicle photos you choose to save on this iPhone; local preferences; pending trip drafts; home-screen widget snapshots via the App Group (including a short recent-route preview, typically up to about 40 points, kept on-device for widgets).
 - **Notifications:** local reminders for trip status, pending drive review, and predicted fuel/service windows (when you allow notifications).
 
 ## How we use data
@@ -30,7 +31,13 @@ These providers process data under their own terms and privacy policies.
 
 ## Retention & deletion
 
-Your cloud data stays while your account exists. You can delete your account in **Profile → Delete account**, which removes your Firebase Auth user and associated Firestore records we store for Veloseete, and clears local photos/preferences on this device.
+Your cloud data stays while your account exists. Deleting your account in **Profile → Delete account** removes:
+
+- Your Firebase Auth user
+- Associated Firestore records we store for Veloseete (vehicles, fuel/service logs, trips, product feedback, feature requests, roadmap votes, and your user profile document)
+- Local photos, preferences, pending trip drafts, widget snapshots, and notifications on this device
+
+For security, account deletion requires a recent sign-in. If you are asked to sign out and back in first, nothing is removed until you complete deletion after signing in again.
 
 You can also revoke location, motion, notification, and photo access in iOS Settings.
 
@@ -38,11 +45,15 @@ You can also revoke location, motion, notification, and photo access in iOS Sett
 
 - Turn off auto trip tracking to stop background location for drives.
 - Skip station tagging on refuels.
+- Delete individual drives from trip detail.
+- Sign out to clear pending trip drafts, widget snapshots, and on-screen photos for this session on this device.
 - Uninstall the app to remove on-device data (cloud data remains until you delete the account).
 
 ## Contact
 
-Questions about privacy: use the support contact you’ll publish with the App Store listing, or reach the Veloseete team via your existing support channel.
+Questions about privacy: email **m.faizan.atiq@icloud.com**.
+
+Public copy: [https://mfaizanatiq.github.io/Veloseete-iOS/privacy/](https://mfaizanatiq.github.io/Veloseete-iOS/privacy/)
 
 ## Changes
 

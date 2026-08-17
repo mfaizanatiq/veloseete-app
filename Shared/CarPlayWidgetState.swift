@@ -172,7 +172,7 @@ struct CarPlayRefuelDraft: Codable, Identifiable {
 }
 
 enum CarPlayWidgetStateStore {
-    static let appGroupID = "group.com.veloseete.app"
+    static let appGroupID = "group.com.veloseete.shared"
     static let widgetKind = "VeloseeteCarPlayWidget"
     static let fuelWidgetKind = "VeloseeteFuelPulseWidget"
     static let driveWidgetKind = "VeloseeteLiveDriveWidget"

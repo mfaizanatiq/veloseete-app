@@ -6,11 +6,9 @@
 	<array>
 		<string>Default</string>
 	</array>
-	<key>com.apple.developer.carplay-driving-task</key>
-	<true/>
 	<key>com.apple.security.application-groups</key>
 	<array>
-		<string>group.com.veloseete.app</string>
+		<string>group.com.veloseete.shared</string>
 	</array>
 </dict>
 </plist>

@@ -18,42 +18,39 @@
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
 	<string>$(MARKETING_VERSION)</string>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>CFBundleURLName</key>
+			<string>Google Sign-In</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>com.googleusercontent.apps.1090690719538-92risgqg4vsdan80orit4k3l16br8lou</string>
+			</array>
+		</dict>
+	</array>
 	<key>CFBundleVersion</key>
 	<string>$(CURRENT_PROJECT_VERSION)</string>
+	<key>GIDClientID</key>
+	<string>1090690719538-92risgqg4vsdan80orit4k3l16br8lou.apps.googleusercontent.com</string>
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
-	<key>UILaunchScreen</key>
-	<dict/>
-	<key>UIRequiredDeviceCapabilities</key>
-	<array>
-		<string>armv7</string>
-	</array>
-	<key>UISupportedInterfaceOrientations</key>
-	<array>
-		<string>UIInterfaceOrientationPortrait</string>
-	</array>
-	<key>UIStatusBarStyle</key>
-	<string>UIStatusBarStyleLightContent</string>
-	<key>UIViewControllerBasedStatusBarAppearance</key>
-	<true/>
-	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>Veloseete uses your location to track drives and tag which petrol station you refuel at.</string>
 	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
-	<string>Veloseete can detect drives in the background so trip distance stays accurate, and learn when you’re due for fuel or service.</string>
+	<string>Veloseete uses background location only to detect drives and record trip distance while auto-tracking is on. Fuel and service reminders use your fill and service logs, not continuous location.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>Veloseete uses your location to track drives and optionally tag which petrol station you refuel at.</string>
 	<key>NSMotionUsageDescription</key>
 	<string>Veloseete uses motion to detect when you are driving and avoid false trip starts.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>Veloseete uses your photo library so you can set a profile picture and vehicle photos.</string>
-	<key>ITSAppUsesNonExemptEncryption</key>
-	<false/>
 	<key>NSSupportsLiveActivities</key>
 	<true/>
 	<key>NSSupportsLiveActivitiesFrequentUpdates</key>
 	<true/>
-	<key>UIBackgroundModes</key>
-	<array>
-		<string>location</string>
-	</array>
 	<key>UIAppFonts</key>
 	<array>
 		<string>SpaceGrotesk-Regular.ttf</string>
@@ -84,20 +81,23 @@
 			</array>
 		</dict>
 	</dict>
-	<key>GIDClientID</key>
-	<string>1090690719538-7betv9lmo15m6qftsmuc9pdfqo87mf1c.apps.googleusercontent.com</string>
-	<key>CFBundleURLTypes</key>
+	<key>UIBackgroundModes</key>
 	<array>
-		<dict>
-			<key>CFBundleTypeRole</key>
-			<string>Editor</string>
-			<key>CFBundleURLName</key>
-			<string>Google Sign-In</string>
-			<key>CFBundleURLSchemes</key>
-			<array>
-				<string>com.googleusercontent.apps.1090690719538-7betv9lmo15m6qftsmuc9pdfqo87mf1c</string>
-			</array>
-		</dict>
+		<string>location</string>
 	</array>
+	<key>UILaunchScreen</key>
+	<dict/>
+	<key>UIRequiredDeviceCapabilities</key>
+	<array>
+		<string>armv7</string>
+	</array>
+	<key>UIStatusBarStyle</key>
+	<string>UIStatusBarStyleLightContent</string>
+	<key>UISupportedInterfaceOrientations</key>
+	<array>
+		<string>UIInterfaceOrientationPortrait</string>
+	</array>
+	<key>UIViewControllerBasedStatusBarAppearance</key>
+	<true/>
 </dict>
 </plist>

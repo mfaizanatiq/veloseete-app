@@ -1,6 +1,6 @@
 # Terms of Use
 
-**Last updated:** 29 July 2026
+**Last updated:** 16 August 2026
 
 By using Veloseete you agree to these terms.
 
@@ -26,7 +26,7 @@ Efficiency, odometer estimates, fuel/service predictions, and station suggestion
 
 ## Data
 
-Your use of personal data is described in the Privacy Policy. You can delete your account from Profile.
+Your use of personal data is described in the Privacy Policy. You can delete your account from Profile, and you can delete individual drives from trip detail.
 
 ## Disclaimer
 
@@ -42,4 +42,6 @@ We may update these terms. The “Last updated” date will change when we do. C
 
 ## Contact
 
-For terms questions, use the support contact you’ll publish with the App Store listing.
+For terms questions: email **m.faizan.atiq@icloud.com**.
+
+Public copy: [https://mfaizanatiq.github.io/Veloseete-iOS/terms/](https://mfaizanatiq.github.io/Veloseete-iOS/terms/)

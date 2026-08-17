@@ -38,18 +38,21 @@ targets:
         type: folder
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.veloseete.app
+        PRODUCT_BUNDLE_IDENTIFIER: com.veloseete.ios
         PRODUCT_NAME: Veloseete
         MARKETING_VERSION: "1.0.0"
-        CURRENT_PROJECT_VERSION: "1"
+        CURRENT_PROJECT_VERSION: "2"
         INFOPLIST_FILE: Veloseete/Info.plist
         GENERATE_INFOPLIST_FILE: false
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
-        DEVELOPMENT_TEAM: B97UDSSKPC
+        DEVELOPMENT_TEAM: X978QRK3WP
         CODE_SIGN_STYLE: Automatic
         CODE_SIGN_IDENTITY: "Apple Development"
-        CODE_SIGN_ENTITLEMENTS: Veloseete/Veloseete.entitlements
+        CODE_SIGN_ENTITLEMENTS: Veloseete/VeloseeteDebug.entitlements
         TARGETED_DEVICE_FAMILY: "1"
+      configs:
+        Release:
+          CODE_SIGN_ENTITLEMENTS: Veloseete/Veloseete.entitlements
     dependencies:
       - package: Firebase
         product: FirebaseAuth
@@ -78,19 +81,27 @@ targets:
       - path: VeloseeteTripWidget
         excludes:
           - Info.plist
+          - PrivacyInfo.xcprivacy
+          - "*.entitlements"
+      - path: VeloseeteTripWidget/PrivacyInfo.xcprivacy
+        buildPhase: resources
       - path: Shared
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.veloseete.app.TripWidget
+        PRODUCT_BUNDLE_IDENTIFIER: com.veloseete.ios.TripWidget
         PRODUCT_NAME: VeloseeteTripWidget
         MARKETING_VERSION: "1.0.0"
-        CURRENT_PROJECT_VERSION: "1"
+        CURRENT_PROJECT_VERSION: "2"
         INFOPLIST_FILE: VeloseeteTripWidget/Info.plist
         GENERATE_INFOPLIST_FILE: false
-        DEVELOPMENT_TEAM: B97UDSSKPC
+        DEVELOPMENT_TEAM: X978QRK3WP
         CODE_SIGN_STYLE: Automatic
         CODE_SIGN_IDENTITY: "Apple Development"
+        CODE_SIGN_ENTITLEMENTS: VeloseeteTripWidget/VeloseeteTripWidgetDebug.entitlements
         TARGETED_DEVICE_FAMILY: "1"
         SKIP_INSTALL: true
         LD_RUNPATH_SEARCH_PATHS: "$(inherited) @executable_path/Frameworks @executable_path/../../Frameworks"
         SWIFT_VERSION: "5.9"
+      configs:
+        Release:
+          CODE_SIGN_ENTITLEMENTS: VeloseeteTripWidget/VeloseeteTripWidget.entitlements

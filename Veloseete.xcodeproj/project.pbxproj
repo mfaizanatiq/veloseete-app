@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		WPRV00000000000000000001 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = WPRV00000000000000000002 /* PrivacyInfo.xcprivacy */; };
 		AA0000000000000000000001 /* TripTrackingLogic.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000002 /* TripTrackingLogic.swift */; };
 		AA0000000000000000000003 /* TripTrackingLogicTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000004 /* TripTrackingLogicTests.swift */; };
 		DM0000000000000000000001 /* DriveMoodLogic.swift in Sources */ = {isa = PBXBuildFile; fileRef = DM0000000000000000000002 /* DriveMoodLogic.swift */; };
@@ -50,6 +51,7 @@
 		BC566CBB50ED4FC839E3301F /* BottomNavChrome.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1455C6E27E977E53DE7B98E6 /* BottomNavChrome.swift */; };
 		C717BA273A6E967FDB7EE6D4 /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5C8ECCF8B347101E05AE05BF /* Theme.swift */; };
 		C993CEE9E96A91831F35B9A2 /* TripPermissionsOnboardingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE380E91E0F721685A913B2D /* TripPermissionsOnboardingView.swift */; };
+		FVON00000000000000000001 /* FirstVehicleOnboardingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FVON00000000000000000002 /* FirstVehicleOnboardingView.swift */; };
 		CC1B3A24417C167CCF243AA4 /* Media in Resources */ = {isa = PBXBuildFile; fileRef = 8CCCB0D552ADF2C858E7B307 /* Media */; };
 		CD5113461FD49DA09C3067BF /* MainTabShell.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1AC2C5E99E0603B3725F36D /* MainTabShell.swift */; };
 		E56B5D4761318FAF61ED9EF5 /* TripPermissionsStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6D1A3E4EE9B0BEB713B1D5B0 /* TripPermissionsStore.swift */; };
@@ -140,6 +142,7 @@
 		C4215F0FDD30582861414A9E /* SplashView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SplashView.swift; sourceTree = "<group>"; };
 		CAB93337EF3889E8516FA493 /* TripLiveActivityController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TripLiveActivityController.swift; sourceTree = "<group>"; };
 		CE380E91E0F721685A913B2D /* TripPermissionsOnboardingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TripPermissionsOnboardingView.swift; sourceTree = "<group>"; };
+		FVON00000000000000000002 /* FirstVehicleOnboardingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FirstVehicleOnboardingView.swift; sourceTree = "<group>"; };
 		DF837A0683DA1E47EF9113EE /* VeloseeteTripWidget.appex */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = "wrapper.app-extension"; path = VeloseeteTripWidget.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		E08E5E2146EA750B5BEBC0DE /* VeloseeteApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VeloseeteApp.swift; sourceTree = "<group>"; };
 		E107223D7E9322440515BAFE /* FirebaseBootstrap.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FirebaseBootstrap.swift; sourceTree = "<group>"; };
@@ -195,6 +198,7 @@
 			isa = PBXGroup;
 			children = (
 				CE380E91E0F721685A913B2D /* TripPermissionsOnboardingView.swift */,
+				FVON00000000000000000002 /* FirstVehicleOnboardingView.swift */,
 			);
 			path = Onboarding;
 			sourceTree = "<group>";
@@ -205,6 +209,7 @@
 				CA2A12000000000000000006 /* CarPlayStatusWidget.swift */,
 				VHW00000000000000000002 /* VeloseeteHomeWidgets.swift */,
 				2DC6CBCD403057F0E42E9DE2 /* TripLiveActivityWidget.swift */,
+				WPRV00000000000000000002 /* PrivacyInfo.xcprivacy */,
 			);
 			path = VeloseeteTripWidget;
 			sourceTree = "<group>";
@@ -514,6 +519,7 @@
 			buildConfigurationList = 1D2A517B2B79DB4EF950BC17 /* Build configuration list for PBXNativeTarget "VeloseeteTripWidget" */;
 			buildPhases = (
 				5996B499407923FDFC91A630 /* Sources */,
+				WPRV00000000000000000003 /* Resources */,
 			);
 			buildRules = (
 			);
@@ -536,11 +542,11 @@
 				LastUpgradeCheck = 1430;
 				TargetAttributes = {
 					167A01CC7974FB0668295765 = {
-						DevelopmentTeam = B97UDSSKPC;
+						DevelopmentTeam = X978QRK3WP;
 						ProvisioningStyle = Automatic;
 					};
 					EF082251D839C5091E36843B = {
-						DevelopmentTeam = B97UDSSKPC;
+						DevelopmentTeam = X978QRK3WP;
 						ProvisioningStyle = Automatic;
 					};
 					AA0000000000000000000009 = {
@@ -575,6 +581,14 @@
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
+		WPRV00000000000000000003 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				WPRV00000000000000000001 /* PrivacyInfo.xcprivacy in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		AA0000000000000000000012 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -666,6 +680,7 @@
 				1441B5F41A73A88F41EE32CD /* TripLiveActivityController.swift in Sources */,
 				48666A748C11F9368F00C94F /* TripPermissionsManager.swift in Sources */,
 				C993CEE9E96A91831F35B9A2 /* TripPermissionsOnboardingView.swift in Sources */,
+				FVON00000000000000000001 /* FirstVehicleOnboardingView.swift in Sources */,
 				E56B5D4761318FAF61ED9EF5 /* TripPermissionsStore.swift in Sources */,
 				39F11C8082D17B4AF96E17E7 /* TripRecordingService.swift in Sources */,
 				AA0000000000000000000001 /* TripTrackingLogic.swift in Sources */,
@@ -713,10 +728,10 @@
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
-				DEVELOPMENT_TEAM = B97UDSSKPC;
+				DEVELOPMENT_TEAM = X978QRK3WP;
 				GENERATE_INFOPLIST_FILE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.veloseete.app.tests;
+				PRODUCT_BUNDLE_IDENTIFIER = com.veloseete.ios.tests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_VERSION = 5.9;
 				TARGETED_DEVICE_FAMILY = 1;
@@ -729,10 +744,10 @@
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
-				DEVELOPMENT_TEAM = B97UDSSKPC;
+				DEVELOPMENT_TEAM = X978QRK3WP;
 				GENERATE_INFOPLIST_FILE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.veloseete.app.tests;
+				PRODUCT_BUNDLE_IDENTIFIER = com.veloseete.ios.tests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_VERSION = 5.9;
 				TARGETED_DEVICE_FAMILY = 1;
@@ -746,13 +761,13 @@
 				CODE_SIGN_ENTITLEMENTS = VeloseeteTripWidget/VeloseeteTripWidgetDebug.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = B97UDSSKPC;
+				CURRENT_PROJECT_VERSION = 2;
+				DEVELOPMENT_TEAM = X978QRK3WP;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = VeloseeteTripWidget/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks @executable_path/../../Frameworks";
 				MARKETING_VERSION = 1.0.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.veloseete.app.TripWidget;
+				PRODUCT_BUNDLE_IDENTIFIER = com.veloseete.ios.TripWidget;
 				PRODUCT_NAME = VeloseeteTripWidget;
 				SDKROOT = iphoneos;
 				SKIP_INSTALL = YES;
@@ -832,8 +847,8 @@
 				CODE_SIGN_ENTITLEMENTS = Veloseete/VeloseeteDebug.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = B97UDSSKPC;
+				CURRENT_PROJECT_VERSION = 2;
+				DEVELOPMENT_TEAM = X978QRK3WP;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = Veloseete/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -841,7 +856,7 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.veloseete.app;
+				PRODUCT_BUNDLE_IDENTIFIER = com.veloseete.ios;
 				PRODUCT_NAME = Veloseete;
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = 1;
@@ -855,8 +870,8 @@
 				CODE_SIGN_ENTITLEMENTS = Veloseete/Veloseete.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = B97UDSSKPC;
+				CURRENT_PROJECT_VERSION = 2;
+				DEVELOPMENT_TEAM = X978QRK3WP;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = Veloseete/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -864,7 +879,7 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.veloseete.app;
+				PRODUCT_BUNDLE_IDENTIFIER = com.veloseete.ios;
 				PRODUCT_NAME = Veloseete;
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = 1;
@@ -877,13 +892,13 @@
 				CODE_SIGN_ENTITLEMENTS = VeloseeteTripWidget/VeloseeteTripWidget.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = B97UDSSKPC;
+				CURRENT_PROJECT_VERSION = 2;
+				DEVELOPMENT_TEAM = X978QRK3WP;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = VeloseeteTripWidget/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks @executable_path/../../Frameworks";
 				MARKETING_VERSION = 1.0.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.veloseete.app.TripWidget;
+				PRODUCT_BUNDLE_IDENTIFIER = com.veloseete.ios.TripWidget;
 				PRODUCT_NAME = VeloseeteTripWidget;
 				SDKROOT = iphoneos;
 				SKIP_INSTALL = YES;

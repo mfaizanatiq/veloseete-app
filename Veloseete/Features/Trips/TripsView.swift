@@ -1808,6 +1808,9 @@ struct TripDetailView: View {
     @AppStorage("veloseete.tracky.mood") private var trackyMoodRaw: String = TrackyMood.chill.rawValue
     @State private var showShareSheet = false
     @State private var shareError: String?
+    @State private var confirmDelete = false
+    @State private var isDeleting = false
+    @State private var deleteError: String?
 
     private var routeRegion: MKCoordinateRegion {
         let coords = trip.route.isEmpty
@@ -1942,6 +1945,12 @@ struct TripDetailView: View {
                             .foregroundStyle(VS.Color.warning)
                     }
 
+                    if let deleteError {
+                        Text(deleteError)
+                            .font(VS.Typography.body(13, weight: .medium))
+                            .foregroundStyle(VS.Color.error)
+                    }
+
                     PrimaryCTAButton(
                         title: isPreparingShare ? "Preparing…" : "Share drive",
                         icon: nil,
@@ -1949,6 +1958,27 @@ struct TripDetailView: View {
                     ) {
                         Task { await prepareShare() }
                     }
+
+                    Button {
+                        confirmDelete = true
+                    } label: {
+                        HStack(spacing: 8) {
+                            if isDeleting {
+                                ProgressView().tint(VS.Color.error)
+                            } else {
+                                Image(systemName: "trash")
+                                    .font(.system(size: 14, weight: .semibold))
+                            }
+                            Text("Delete drive")
+                                .font(VS.Typography.body(14, weight: .semibold))
+                        }
+                        .foregroundStyle(VS.Color.error)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 14)
+                        .glassCard(radius: VS.Radius.card)
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(isDeleting || isPreparingShare)
                 }
                 .padding(.horizontal, VS.Spacing.sheetInset)
                 .padding(.top, 12)
@@ -1960,6 +1990,14 @@ struct TripDetailView: View {
                     ModalCloseButton { dismiss() }
                 }
             }
+            .alert("Delete this drive?", isPresented: $confirmDelete) {
+                Button("Cancel", role: .cancel) {}
+                Button("Delete", role: .destructive) {
+                    Task { await deleteTrip() }
+                }
+            } message: {
+                Text("Removes this route and stats from your account. Your dashboard odometer reading stays as entered.")
+            }
             .sheet(isPresented: $showShareSheet) {
                 if let shareImage {
                     ActivityShareSheet(items: [shareImage]) {
@@ -1968,6 +2006,21 @@ struct TripDetailView: View {
                     .presentationDetents([.medium, .large])
                 }
             }
+        }
+    }
+
+    private func deleteTrip() async {
+        guard !isDeleting else { return }
+        isDeleting = true
+        deleteError = nil
+        defer { isDeleting = false }
+        do {
+            try await store.deleteTrip(trip)
+            UINotificationFeedbackGenerator().notificationOccurred(.success)
+            dismiss()
+        } catch {
+            deleteError = error.localizedDescription
+            UINotificationFeedbackGenerator().notificationOccurred(.error)
         }
     }
 

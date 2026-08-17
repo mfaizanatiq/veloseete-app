@@ -5,6 +5,8 @@ struct RootView: View {
     @EnvironmentObject private var store: DataStore
     @EnvironmentObject private var tripPermissionsStore: TripPermissionsStore
     @State private var showSlowLoadHint = false
+    /// User chose to continue into first-vehicle setup after a sync failure.
+    @State private var forceFirstVehicleSetup = false
 
     var body: some View {
         ZStack {
@@ -26,16 +28,17 @@ struct RootView: View {
                         onRetry: showSlowLoadHint ? { Task { await reload() } } : nil
                     )
                 } else if store.vehicles.isEmpty && store.isLoaded {
-                    VStack(spacing: 0) {
-                        if let loadError = store.loadError {
-                            connectionBanner(loadError, retry: { Task { await reload() } })
-                        } else if !store.loadWarnings.isEmpty {
-                            connectionBanner(
-                                store.loadWarnings.joined(separator: "\n"),
-                                retry: { Task { await reload() } }
-                            )
-                        }
-                        GarageView()
+                    if store.loadError != nil && !forceFirstVehicleSetup {
+                        FirstVehicleSyncRecoveryView(
+                            onRetry: { Task { await reload() } },
+                            onContinueEmpty: {
+                                withAnimation(.easeOut(duration: 0.25)) {
+                                    forceFirstVehicleSetup = true
+                                }
+                            }
+                        )
+                    } else {
+                        FirstVehicleOnboardingView()
                     }
                 } else if !tripPermissionsStore.hasCompletedOnboarding {
                     TripPermissionsOnboardingView()
@@ -55,6 +58,8 @@ struct RootView: View {
         }
         .task(id: auth.user?.uid) {
             showSlowLoadHint = false
+            forceFirstVehicleSetup = false
+            tripPermissionsStore.bind(userId: auth.user?.uid)
             guard let uid = auth.user?.uid else {
                 store.clear()
                 return

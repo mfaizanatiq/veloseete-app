@@ -2821,6 +2821,7 @@ struct ProfileView: View {
                 Section("Legal") {
                     Button("Privacy Policy") { legalDocument = .privacy }
                     Button("Terms of Use") { legalDocument = .terms }
+                    Link("Contact support", destination: AppLegal.supportMailtoURL)
                 }
                 .listRowBackground(VS.Color.bgSecondary)
 
@@ -3366,6 +3367,12 @@ final class VehiclePhotoStore: ObservableObject {
         try? fileManager.removeItem(at: photoDirectory)
     }
 
+    /// Clears in-memory photos on sign-out without deleting on-disk files
+    /// (vehicle ids are unique; returning users keep their local photos).
+    func clearSession() {
+        images.removeAll()
+    }
+
     private var photoDirectory: URL {
         let base = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
         return base.appendingPathComponent("Veloseete/VehiclePhotos", isDirectory: true)
@@ -3474,6 +3481,13 @@ final class ProfileAvatarStore: ObservableObject {
         if fileManager.fileExists(atPath: url.path) {
             try fileManager.removeItem(at: url)
         }
+        image = nil
+        replacementBackup = nil
+        isReplacing = false
+    }
+
+    /// Clears the on-screen avatar for the signed-out session; disk files stay per uid.
+    func clearSession() {
         image = nil
         replacementBackup = nil
         isReplacing = false

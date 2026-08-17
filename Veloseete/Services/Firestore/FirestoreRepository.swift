@@ -387,6 +387,19 @@ final class FirestoreRepository {
         return ref.documentID
     }
 
+    func deleteTrip(tripId: String, userId: String) async throws {
+        let ref = db.collection("trips").document(tripId)
+        let snapshot = try await ref.getDocument()
+        guard snapshot.data()?["userId"] as? String == userId else {
+            throw NSError(
+                domain: "Veloseete",
+                code: 403,
+                userInfo: [NSLocalizedDescriptionKey: "This drive does not belong to your account."]
+            )
+        }
+        try await ref.delete()
+    }
+
     func fetchTrips(userId: String, source: FirestoreSource = .default) async throws -> [Trip] {
         do {
             let snap = try await db.collection("trips")
@@ -500,13 +513,46 @@ final class FirestoreRepository {
 
     // MARK: - Account deletion
 
-    /// Deletes Firestore documents owned by this user (vehicles, logs, trips, profile).
+    /// Deletes Firestore documents owned by this user (garage, logs, trips, voice, profile).
     func deleteAllUserData(userId: String) async throws {
-        let collections = ["vehicles", "fuelLogs", "serviceLogs", "trips"]
+        try await deleteRoadmapVotes(userId: userId)
+
+        let collections = [
+            "vehicles",
+            "fuelLogs",
+            "serviceLogs",
+            "trips",
+            "productFeedback",
+            "featureRequests"
+        ]
         for name in collections {
             try await deleteCollectionDocuments(collection: name, userId: userId)
         }
         try await db.collection("users").document(userId).delete()
+    }
+
+    /// Removes the user's roadmap votes and decrements item counters when possible.
+    private func deleteRoadmapVotes(userId: String) async throws {
+        let snap = try await db.collection("roadmapVotes")
+            .whereField("userId", isEqualTo: userId)
+            .getDocuments()
+        guard !snap.documents.isEmpty else { return }
+
+        for doc in snap.documents {
+            let itemId = doc.data()["itemId"] as? String
+            try await doc.reference.delete()
+            guard let itemId, !itemId.isEmpty else { continue }
+            let itemRef = db.collection("roadmapItems").document(itemId)
+            do {
+                try await itemRef.updateData([
+                    "voteCount": FieldValue.increment(Int64(-1)),
+                    "updatedAt": FieldValue.serverTimestamp()
+                ])
+            } catch {
+                // Item may already be gone; vote row is deleted either way.
+                print("[Firestore] vote cleanup: could not decrement \(itemId): \(error.localizedDescription)")
+            }
+        }
     }
 
     private func deleteCollectionDocuments(collection: String, userId: String) async throws {

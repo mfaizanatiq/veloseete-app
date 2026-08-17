@@ -1,11 +1,25 @@
 import Foundation
 import SwiftUI
 
-/// In-app legal documents + public URLs for App Store Connect later.
+/// In-app legal documents + public URLs for App Store Connect.
 enum AppLegal {
-    /// Update these when you host public pages (required by App Store Connect).
-    static let privacyPolicyURL = URL(string: "https://veloseete.com/privacy")!
-    static let termsOfUseURL = URL(string: "https://veloseete.com/terms")!
+    /// GitHub Pages (enable Pages → Deploy from branch → `/docs` on `main`).
+    /// Swap to https://veloseete.com/... when the marketing site is live.
+    static let privacyPolicyURL = URL(string: "https://mfaizanatiq.github.io/Veloseete-iOS/privacy/")!
+    static let termsOfUseURL = URL(string: "https://mfaizanatiq.github.io/Veloseete-iOS/terms/")!
+
+    /// App Store / privacy contact. Change here when you add a dedicated support inbox.
+    static let supportEmail = "m.faizan.atiq@icloud.com"
+
+    static var supportMailtoURL: URL {
+        var components = URLComponents()
+        components.scheme = "mailto"
+        components.path = supportEmail
+        components.queryItems = [
+            URLQueryItem(name: "subject", value: "Veloseete Support")
+        ]
+        return components.url!
+    }
 
     enum Document: String, Identifiable {
         case privacy
@@ -47,6 +61,7 @@ enum AppLegal {
 struct LegalDocumentView: View {
     let document: AppLegal.Document
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.openURL) private var openURL
 
     private var attributedBody: AttributedString {
         (try? AttributedString(
@@ -69,6 +84,13 @@ struct LegalDocumentView: View {
             .navigationTitle(document.title)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button("Web") {
+                        openURL(document.publicURL)
+                    }
+                    .font(VS.Typography.body(14, weight: .semibold))
+                    .foregroundStyle(VS.Color.accent)
+                }
                 ToolbarItem(placement: .topBarTrailing) {
                     ModalCloseButton { dismiss() }
                 }
