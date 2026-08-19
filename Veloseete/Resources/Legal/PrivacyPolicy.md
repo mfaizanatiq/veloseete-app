@@ -46,7 +46,7 @@ You can also revoke location, motion, notification, and photo access in iOS Sett
 - Turn off auto trip tracking to stop background location for drives.
 - Skip station tagging on refuels.
 - Delete individual drives from trip detail.
-- Sign out to clear pending trip drafts, widget snapshots, and on-screen photos for this session on this device.
+- Sign out clears widget snapshots and on-screen session data. Unconfirmed drives waiting for review stay on this device for your account and come back when you sign in again (another account on the same phone cannot see them).
 - Uninstall the app to remove on-device data (cloud data remains until you delete the account).
 
 ## Contact

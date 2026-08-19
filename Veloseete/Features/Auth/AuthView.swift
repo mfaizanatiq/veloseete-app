@@ -12,12 +12,22 @@ struct AuthView: View {
     @State private var showForgot = false
     @State private var resetEmail = ""
     @State private var resetSuccess = false
+    @State private var resetError = ""
     @State private var localError = ""
     @State private var appleNonceHash = ""
     @State private var legalDocument: AppLegal.Document?
     @FocusState private var focusedField: Field?
 
     private enum Field { case name, email, password, reset }
+
+    /// Account-linking after Apple/Google collision must use the existing password login.
+    private var isLinkingExistingAccount: Bool {
+        auth.pendingLinkEmail != nil || auth.pendingLinkCredentialActive
+    }
+
+    private var showingSignUp: Bool {
+        isSignUp && !isLinkingExistingAccount
+    }
 
     var body: some View {
         ScrollView {
@@ -27,7 +37,7 @@ struct AuthView: View {
                         .font(VS.Typography.heading(32, weight: .bold))
                         .foregroundStyle(VS.Color.textPrimary)
 
-                    Text(isSignUp ? "Create your account" : "Welcome back")
+                    Text(showingSignUp ? "Create your account" : "Welcome back")
                         .font(VS.Typography.body(15))
                         .foregroundStyle(VS.Color.textSecondary)
                 }
@@ -43,17 +53,19 @@ struct AuthView: View {
                     Rectangle().fill(VS.Color.divider).frame(height: 1)
                 }
 
-                if auth.pendingLinkEmail != nil || auth.errorMessage?.contains("link") == true {
+                if isLinkingExistingAccount {
                     pendingLinkBanner
                 }
 
                 VStack(spacing: 14) {
-                    if isSignUp {
+                    if showingSignUp {
                         authField(
                             title: "Name",
                             text: $displayName,
                             field: .name,
-                            placeholder: "Your name"
+                            placeholder: "Your name",
+                            autocapitalization: .words,
+                            textContentType: .name
                         )
                     }
 
@@ -62,7 +74,8 @@ struct AuthView: View {
                         text: $email,
                         field: .email,
                         placeholder: "you@email.com",
-                        keyboard: .emailAddress
+                        keyboard: .emailAddress,
+                        textContentType: .username
                     )
 
                     VStack(alignment: .leading, spacing: 8) {
@@ -79,7 +92,7 @@ struct AuthView: View {
                                 }
                             }
                             .focused($focusedField, equals: .password)
-                            .textContentType(isSignUp ? .newPassword : .password)
+                            .textContentType(showingSignUp ? .newPassword : .password)
                             .font(VS.Typography.body(16))
                             .foregroundStyle(VS.Color.textPrimary)
 
@@ -131,9 +144,11 @@ struct AuthView: View {
                 .disabled(auth.isLoading)
                 .buttonStyle(ScaleButtonStyle())
 
-                if !isSignUp {
+                if !showingSignUp {
                     Button("Forgot password?") {
                         resetEmail = email
+                        resetError = ""
+                        resetSuccess = false
                         showForgot = true
                     }
                     .font(VS.Typography.body(14, weight: .medium))
@@ -141,23 +156,35 @@ struct AuthView: View {
                     .frame(maxWidth: .infinity)
                 }
 
-                Button {
-                    withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
-                        isSignUp.toggle()
+                if !isLinkingExistingAccount {
+                    Button {
+                        withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
+                            isSignUp.toggle()
+                            localError = ""
+                            auth.clearErrorMessages()
+                        }
+                    } label: {
+                        HStack(spacing: 4) {
+                            Text(showingSignUp ? "Already have an account?" : "Don't have an account?")
+                                .foregroundStyle(VS.Color.textTertiary)
+                            Text(showingSignUp ? "Sign In" : "Sign Up")
+                                .foregroundStyle(VS.Color.accent)
+                                .fontWeight(.semibold)
+                        }
+                        .font(VS.Typography.body(14))
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.bottom, 16)
+                } else {
+                    Button("Cancel linking") {
+                        auth.clearPendingLink()
                         localError = ""
                     }
-                } label: {
-                    HStack(spacing: 4) {
-                        Text(isSignUp ? "Already have an account?" : "Don't have an account?")
-                            .foregroundStyle(VS.Color.textTertiary)
-                        Text(isSignUp ? "Sign In" : "Sign Up")
-                            .foregroundStyle(VS.Color.accent)
-                            .fontWeight(.semibold)
-                    }
-                    .font(VS.Typography.body(14))
+                    .font(VS.Typography.body(14, weight: .medium))
+                    .foregroundStyle(VS.Color.textSecondary)
+                    .frame(maxWidth: .infinity)
+                    .padding(.bottom, 16)
                 }
-                .frame(maxWidth: .infinity)
-                .padding(.bottom, 16)
 
                 LegalLinksRow { legalDocument = $0 }
                     .frame(maxWidth: .infinity)
@@ -177,18 +204,23 @@ struct AuthView: View {
                 email = pending
             }
         }
+        .onChange(of: auth.pendingLinkEmail) { _, pending in
+            guard let pending else { return }
+            isSignUp = false
+            if email.isEmpty { email = pending }
+        }
     }
 
     private var emailPrimaryTitle: String {
-        if auth.pendingLinkEmail != nil {
-            return isSignUp ? "Sign up & link" : "Sign in & link"
+        if isLinkingExistingAccount {
+            return "Sign in & link"
         }
-        return isSignUp ? "Sign Up" : "Sign In"
+        return showingSignUp ? "Sign Up" : "Sign In"
     }
 
     private var socialButtons: some View {
         VStack(spacing: 12) {
-            SignInWithAppleButton(.signIn) { request in
+            SignInWithAppleButton(showingSignUp ? .signUp : .signIn) { request in
                 appleNonceHash = auth.startAppleSignIn()
                 request.requestedScopes = [.fullName, .email]
                 request.nonce = appleNonceHash
@@ -198,7 +230,7 @@ struct AuthView: View {
             .signInWithAppleButtonStyle(.white)
             .frame(height: 52)
             .clipShape(RoundedRectangle(cornerRadius: VS.Radius.card, style: .continuous))
-            .disabled(auth.isLoading)
+            .disabled(auth.isLoading || isLinkingExistingAccount)
 
             Button {
                 Task { await handleGoogle() }
@@ -222,7 +254,7 @@ struct AuthView: View {
                 )
             }
             .buttonStyle(ScaleButtonStyle())
-            .disabled(auth.isLoading)
+            .disabled(auth.isLoading || isLinkingExistingAccount)
         }
     }
 
@@ -233,8 +265,8 @@ struct AuthView: View {
                 .foregroundStyle(VS.Color.textPrimary)
             Text(
                 auth.pendingLinkEmail.map {
-                    "Sign in with \($0) below — Apple/Google will attach to this account."
-                } ?? "Sign in with your email below — Apple/Google will attach to this account."
+                    "Sign in with the email password for \($0). Apple or Google will attach after you sign in."
+                } ?? "Sign in with your email and password below. Apple or Google will attach after you sign in."
             )
             .font(VS.Typography.body(12))
             .foregroundStyle(VS.Color.textSecondary)
@@ -253,7 +285,20 @@ struct AuthView: View {
                     .font(VS.Typography.body(14))
                     .foregroundStyle(VS.Color.textSecondary)
 
-                authField(title: "Email", text: $resetEmail, field: .reset, placeholder: "you@email.com", keyboard: .emailAddress)
+                authField(
+                    title: "Email",
+                    text: $resetEmail,
+                    field: .reset,
+                    placeholder: "you@email.com",
+                    keyboard: .emailAddress,
+                    textContentType: .emailAddress
+                )
+
+                if !resetError.isEmpty {
+                    Text(resetError)
+                        .font(VS.Typography.body(13))
+                        .foregroundStyle(VS.Color.error)
+                }
 
                 if resetSuccess {
                     Text("Check your inbox for the reset link.")
@@ -262,16 +307,9 @@ struct AuthView: View {
                 }
 
                 Button {
-                    Task {
-                        do {
-                            try await auth.resetPassword(email: resetEmail.trimmingCharacters(in: .whitespaces))
-                            resetSuccess = true
-                        } catch {
-                            localError = auth.errorMessage ?? "Could not send reset email."
-                        }
-                    }
+                    Task { await sendPasswordReset() }
                 } label: {
-                    Text("Send reset link")
+                    Text(auth.isLoading ? "Sending…" : "Send reset link")
                         .font(VS.Typography.heading(16))
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 14)
@@ -279,6 +317,7 @@ struct AuthView: View {
                         .foregroundStyle(VS.Color.navPill)
                         .clipShape(RoundedRectangle(cornerRadius: VS.Radius.chip, style: .continuous))
                 }
+                .disabled(auth.isLoading)
 
                 Spacer()
             }
@@ -299,7 +338,9 @@ struct AuthView: View {
         text: Binding<String>,
         field: Field,
         placeholder: String,
-        keyboard: UIKeyboardType = .default
+        keyboard: UIKeyboardType = .default,
+        autocapitalization: TextInputAutocapitalization = .never,
+        textContentType: UITextContentType? = nil
     ) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(title)
@@ -309,7 +350,8 @@ struct AuthView: View {
             TextField(placeholder, text: text)
                 .focused($focusedField, equals: field)
                 .keyboardType(keyboard)
-                .textInputAutocapitalization(.never)
+                .textInputAutocapitalization(autocapitalization)
+                .textContentType(textContentType)
                 .autocorrectionDisabled()
                 .font(VS.Typography.body(16))
                 .foregroundStyle(VS.Color.textPrimary)
@@ -324,9 +366,9 @@ struct AuthView: View {
             do {
                 try await auth.completeAppleSignIn(authorization: authorization)
             } catch {
-                if case AuthServiceError.needsLinkWithExistingAccount(let pending) = error,
-                   let pending, email.isEmpty {
-                    email = pending
+                applyLinkCollision(from: error)
+                if localError.isEmpty, let message = auth.errorMessage {
+                    localError = message
                 }
             }
         case .failure(let error):
@@ -341,22 +383,54 @@ struct AuthView: View {
         do {
             try await auth.signInWithGoogle()
         } catch {
-            if case AuthServiceError.needsLinkWithExistingAccount(let pending) = error,
-               let pending, email.isEmpty {
+            applyLinkCollision(from: error)
+            if localError.isEmpty, let message = auth.errorMessage {
+                localError = message
+            }
+        }
+    }
+
+    private func applyLinkCollision(from error: Error) {
+        if case AuthServiceError.needsLinkWithExistingAccount(let pending) = error {
+            isSignUp = false
+            if let pending, email.isEmpty {
                 email = pending
             }
         }
     }
 
-    private func submit() async {
-        localError = ""
-        let trimmedEmail = email.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmedEmail.isEmpty, !password.isEmpty else {
-            localError = "Please enter both email and password."
+    private func sendPasswordReset() async {
+        resetError = ""
+        resetSuccess = false
+        let trimmed = resetEmail.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard Self.isValidEmail(trimmed) else {
+            resetError = "Enter a valid email address."
             return
         }
-        if isSignUp {
-            guard !displayName.trimmingCharacters(in: .whitespaces).isEmpty else {
+        do {
+            try await auth.resetPassword(email: trimmed)
+            resetSuccess = true
+        } catch {
+            resetError = auth.errorMessage ?? "Could not send reset email."
+        }
+    }
+
+    private func submit() async {
+        localError = ""
+        auth.clearErrorMessages()
+        let trimmedEmail = email.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard Self.isValidEmail(trimmedEmail) else {
+            localError = "Please enter a valid email address."
+            return
+        }
+        guard !password.isEmpty else {
+            localError = "Please enter your password."
+            return
+        }
+
+        if showingSignUp {
+            let name = displayName.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !name.isEmpty else {
                 localError = "Please enter your name."
                 return
             }
@@ -365,17 +439,25 @@ struct AuthView: View {
                 return
             }
             do {
-                try await auth.signUp(
-                    email: trimmedEmail,
-                    password: password,
-                    displayName: displayName.trimmingCharacters(in: .whitespaces)
-                )
-            } catch {}
+                try await auth.signUp(email: trimmedEmail, password: password, displayName: name)
+            } catch {
+                localError = auth.errorMessage ?? error.localizedDescription
+            }
         } else {
             do {
                 try await auth.signIn(email: trimmedEmail, password: password)
-            } catch {}
+            } catch {
+                localError = auth.errorMessage ?? error.localizedDescription
+            }
         }
+    }
+
+    private static func isValidEmail(_ value: String) -> Bool {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.count >= 5, trimmed.contains("@") else { return false }
+        // Practical client check; Firebase still validates on the server.
+        let pattern = #"^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}$"#
+        return trimmed.range(of: pattern, options: [.regularExpression, .caseInsensitive]) != nil
     }
 }
 

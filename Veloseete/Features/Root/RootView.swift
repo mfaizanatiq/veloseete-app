@@ -60,6 +60,7 @@ struct RootView: View {
             showSlowLoadHint = false
             forceFirstVehicleSetup = false
             tripPermissionsStore.bind(userId: auth.user?.uid)
+            TripRecordingService.shared.bind(userId: auth.user?.uid)
             guard let uid = auth.user?.uid else {
                 store.clear()
                 return

@@ -38,13 +38,16 @@ final class AuthService: ObservableObject {
     @Published private(set) var isCheckingAuth = true
     @Published var errorMessage: String?
     @Published var isLoading = false
-    /// Set when Apple/Google hits an existing email account — sign in with email, then call `finishPendingLink()`.
+    /// Set when Apple/Google hits an existing email account — sign in with email to auto-link.
     @Published private(set) var pendingLinkEmail: String?
     @Published var infoMessage: String?
 
     private var handle: AuthStateDidChangeListenerHandle?
     private var currentNonce: String?
     private var pendingLinkCredential: AuthCredential?
+
+    /// True while an Apple/Google credential is waiting to attach after email sign-in.
+    var pendingLinkCredentialActive: Bool { pendingLinkCredential != nil }
 
     private init() {
         configureGoogleSignIn()
@@ -80,6 +83,7 @@ final class AuthService: ObservableObject {
             let result = try await Auth.auth().signIn(withEmail: email, password: password)
             try await ensureUserDocument(for: result.user, displayNameHint: nil)
             try await finishPendingLinkIfNeeded(for: result.user)
+            applyUser(Auth.auth().currentUser)
         }
     }
 
@@ -89,12 +93,11 @@ final class AuthService: ObservableObject {
             let change = result.user.createProfileChangeRequest()
             change.displayName = displayName
             try await change.commitChanges()
-            try await FirestoreRepository.shared.createUserDocument(
-                userId: result.user.uid,
-                userName: displayName,
-                currency: "QAR"
-            )
+            // Prefer ensureUserDocument so a transient Firestore miss is retried
+            // and displayName fallbacks stay consistent with Apple/Google first sign-in.
+            try await ensureUserDocument(for: result.user, displayNameHint: displayName)
             try await finishPendingLinkIfNeeded(for: result.user)
+            applyUser(Auth.auth().currentUser)
         }
     }
 
@@ -143,6 +146,7 @@ final class AuthService: ObservableObject {
                 try await signIn(with: credential, displayNameHint: preferredName.isEmpty ? nil : preferredName)
             }
             currentNonce = nil
+            applyUser(Auth.auth().currentUser)
         }
     }
 
@@ -171,6 +175,7 @@ final class AuthService: ObservableObject {
             } else {
                 try await signIn(with: credential, displayNameHint: hint)
             }
+            applyUser(Auth.auth().currentUser)
         }
     }
 
@@ -216,13 +221,19 @@ final class AuthService: ObservableObject {
         pendingLinkEmail = nil
     }
 
+    func clearErrorMessages() {
+        errorMessage = nil
+        infoMessage = nil
+    }
+
     func signOut() throws {
         clearPendingLink()
         try? GIDSignIn.sharedInstance.signOut()
         try Auth.auth().signOut()
 
-        // Drop local session data so the next account on this device cannot see it.
-        TripRecordingService.shared.wipeLocalStateForAccountDeletion()
+        // Drop session UI so the next account on this device cannot see it.
+        // Pending drive reviews stay on disk for this uid and reload on sign-in.
+        TripRecordingService.shared.detachSessionForSignOut()
         CarPlayWidgetStateStore.clearUserData()
         ProfileAvatarStore.shared.clearSession()
         VehiclePhotoStore.shared.clearSession()
@@ -349,7 +360,6 @@ final class AuthService: ObservableObject {
     }
 
     private func ensureUserDocument(for user: User, displayNameHint: String?) async throws {
-        let existing = try await FirestoreRepository.shared.fetchUser(userId: user.uid)
         let hint = displayNameHint?
             .trimmingCharacters(in: .whitespacesAndNewlines)
         let fallback = user.displayName?
@@ -359,12 +369,28 @@ final class AuthService: ObservableObject {
             .compactMap { $0 }
             .first { !$0.isEmpty } ?? "Driver"
 
+        var existing = try? await FirestoreRepository.shared.fetchUser(userId: user.uid)
         if existing == nil {
-            try await FirestoreRepository.shared.createUserDocument(
-                userId: user.uid,
-                userName: resolved,
-                currency: "QAR"
-            )
+            var lastError: Error?
+            for attempt in 1...3 {
+                do {
+                    try await FirestoreRepository.shared.createUserDocument(
+                        userId: user.uid,
+                        userName: resolved,
+                        currency: "QAR"
+                    )
+                    lastError = nil
+                    existing = try? await FirestoreRepository.shared.fetchUser(userId: user.uid)
+                    if existing != nil { break }
+                } catch {
+                    lastError = error
+                    print("[Auth] createUserDocument attempt \(attempt) failed: \(error.localizedDescription)")
+                    try? await Task.sleep(nanoseconds: UInt64(attempt) * 400_000_000)
+                }
+            }
+            if existing == nil, let lastError {
+                throw lastError
+            }
         }
 
         if (user.displayName ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
@@ -494,9 +520,9 @@ enum AuthServiceError: LocalizedError {
             return "That Apple/Google account is already used by another Veloseete login."
         case .needsLinkWithExistingAccount(let email):
             if let email, !email.isEmpty {
-                return "An account already exists for \(email). Sign in with email, and we’ll link Apple/Google automatically."
+                return "An account already exists for \(email). Sign in with that email and password to link Apple/Google."
             }
-            return "An account already exists with this email. Sign in with email/password, and we’ll link Apple/Google automatically."
+            return "An account already exists with this email. Sign in with email and password to link Apple/Google."
         case .requiresRecentLogin:
             return "For security, sign out, sign back in, then delete your account again. Nothing was removed yet."
         case .dataRemovedNeedsFreshSignIn:

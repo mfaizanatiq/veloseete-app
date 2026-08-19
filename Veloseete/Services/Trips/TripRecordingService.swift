@@ -127,12 +127,35 @@ final class TripRecordingService: NSObject, ObservableObject {
         locationManager.pausesLocationUpdatesAutomatically = false
         locationManager.showsBackgroundLocationIndicator = true
         autoTrackingEnabled = UserDefaults.standard.bool(forKey: Keys.autoTracking)
-        restorePendingSaves()
-        refreshPendingReviewReminders(forceReschedule: true)
+        // Pending drives are restored in `bind(userId:)` so they stay per-account.
 
         // Recording sessions are not restored after a terminated app, so any
         // surviving system activity would be stale while this service is idle.
         TripLiveActivityController.shared.cancel()
+    }
+
+    /// Bind the pending-review queue to the signed-in account.
+    /// Sign-out detaches memory only; the same user keeps their queue on disk.
+    func bind(userId: String?) {
+        if boundUserId == userId {
+            if userId != nil, pendingSaves.isEmpty {
+                restorePendingSaves()
+            }
+            return
+        }
+
+        if boundUserId != nil {
+            persistPendingSaves()
+        }
+
+        boundUserId = userId
+        if userId != nil {
+            restorePendingSaves()
+        } else {
+            pendingSaves = []
+            CarPlayWidgetStateStore.updatePendingTripCount(0)
+            refreshPendingReviewReminders(forceReschedule: true)
+        }
     }
 
     /// Call on launch / foreground so auto-detect survives app termination.
@@ -258,8 +281,15 @@ final class TripRecordingService: NSObject, ObservableObject {
 
     private enum Keys {
         static let autoTracking = "tripRecording.autoTrackingEnabled"
-        static let pendingSaves = "tripRecording.pendingSaves.v1"
+        /// Legacy device-global queue (pre per-account scoping).
+        static let legacyPendingSaves = "tripRecording.pendingSaves.v1"
+        static func pendingSaves(for userId: String) -> String {
+            "tripRecording.pendingSaves.v1.\(userId)"
+        }
     }
+
+    /// Account that owns the in-memory pending-review queue.
+    private var boundUserId: String?
 
     // MARK: - Public API
 
@@ -352,10 +382,33 @@ final class TripRecordingService: NSObject, ObservableObject {
         lastError = nil
     }
 
-    /// Clears queued trips / follow pose when the account is wiped.
-    func wipeLocalStateForAccountDeletion() {
+    /// Stops tracking and clears the on-screen session without deleting this
+    /// account's pending drive reviews (they reload on the next sign-in).
+    func detachSessionForSignOut() {
+        if boundUserId != nil {
+            persistPendingSaves()
+        }
+        tearDownSessionHardware(clearAutoTracking: true)
         pendingSaves = []
-        persistPendingSaves()
+        boundUserId = nil
+        CarPlayWidgetStateStore.updatePendingTripCount(0)
+        refreshPendingReviewReminders(forceReschedule: true)
+    }
+
+    /// Permanently clears queued trips when the account is deleted.
+    func wipeLocalStateForAccountDeletion() {
+        if let uid = boundUserId {
+            UserDefaults.standard.removeObject(forKey: Keys.pendingSaves(for: uid))
+        }
+        UserDefaults.standard.removeObject(forKey: Keys.legacyPendingSaves)
+        pendingSaves = []
+        boundUserId = nil
+        tearDownSessionHardware(clearAutoTracking: true)
+        CarPlayWidgetStateStore.updatePendingTripCount(0)
+        refreshPendingReviewReminders(forceReschedule: true)
+    }
+
+    private func tearDownSessionHardware(clearAutoTracking: Bool) {
         snapshot = nil
         liveRoute = []
         recordedRoute = []
@@ -370,8 +423,10 @@ final class TripRecordingService: NSObject, ObservableObject {
         stopMotionUpdates()
         TripLiveActivityController.shared.cancel()
 
-        autoTrackingEnabled = false
-        UserDefaults.standard.set(false, forKey: Keys.autoTracking)
+        if clearAutoTracking {
+            autoTrackingEnabled = false
+            UserDefaults.standard.set(false, forKey: Keys.autoTracking)
+        }
         phase = .idle
 
         followLatitude = nil
@@ -542,18 +597,46 @@ final class TripRecordingService: NSObject, ObservableObject {
     }
 
     private func restorePendingSaves() {
-        guard let data = UserDefaults.standard.data(forKey: Keys.pendingSaves) else { return }
+        guard let userId = boundUserId else {
+            pendingSaves = []
+            return
+        }
+        migrateLegacyPendingSavesIfNeeded(into: userId)
+
+        guard let data = UserDefaults.standard.data(forKey: Keys.pendingSaves(for: userId)) else {
+            pendingSaves = []
+            CarPlayWidgetStateStore.updatePendingTripCount(0)
+            refreshPendingReviewReminders(forceReschedule: true)
+            return
+        }
         do {
             pendingSaves = try JSONDecoder().decode([PendingTripSave].self, from: data)
                 .sorted { $0.endedAt > $1.endedAt }
+            CarPlayWidgetStateStore.updatePendingTripCount(pendingSaves.count)
+            refreshPendingReviewReminders(forceReschedule: true)
+            print("[TripQueue] Restored \(pendingSaves.count) pending drive(s) for user")
         } catch {
             print("[TripQueue] Could not restore pending trips: \(error.localizedDescription)")
+            pendingSaves = []
         }
     }
 
+    private func migrateLegacyPendingSavesIfNeeded(into userId: String) {
+        let key = Keys.pendingSaves(for: userId)
+        guard UserDefaults.standard.data(forKey: key) == nil,
+              let legacy = UserDefaults.standard.data(forKey: Keys.legacyPendingSaves) else { return }
+        UserDefaults.standard.set(legacy, forKey: key)
+        UserDefaults.standard.removeObject(forKey: Keys.legacyPendingSaves)
+        print("[TripQueue] Migrated legacy pending drives to account \(userId.prefix(6))…")
+    }
+
     private func persistPendingSaves() {
+        guard let userId = boundUserId else { return }
         do {
-            UserDefaults.standard.set(try JSONEncoder().encode(pendingSaves), forKey: Keys.pendingSaves)
+            UserDefaults.standard.set(
+                try JSONEncoder().encode(pendingSaves),
+                forKey: Keys.pendingSaves(for: userId)
+            )
         } catch {
             print("[TripQueue] Could not persist pending trips: \(error.localizedDescription)")
         }
