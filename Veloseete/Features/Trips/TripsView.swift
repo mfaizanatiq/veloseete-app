@@ -49,7 +49,12 @@ struct TripsView: View {
     @State private var driveDrawerExpanded = false
     @State private var driveDrawerDragOffset: CGFloat = 0
     @State private var driveDrawerGestureOwner: DriveDrawerGestureOwner?
+    @State private var showAutoTrackNudge = false
     let onProfile: () -> Void
+
+    private func autoTrackNudgePromptedKey(for userId: String) -> String {
+        "tripRecording.autoTrackPrompted.v1.\(userId)"
+    }
 
     private var filteredTrips: [Trip] {
         // Active garage only — archived cars keep their history, but it
@@ -298,6 +303,18 @@ struct TripsView: View {
                 recorder.stopMapFollowUpdates()
                 focusMap()
             }
+
+            // One-time nudge after sign-in when auto-detect is off.
+            // Without this, the trip chip can look "idle" and users assume tracking is broken.
+            showAutoTrackNudge = false
+            if recorder.autoTrackingEnabled == false,
+               let uid = AuthService.shared.userId {
+                let key = autoTrackNudgePromptedKey(for: uid)
+                if !UserDefaults.standard.bool(forKey: key) {
+                    showAutoTrackNudge = true
+                    UserDefaults.standard.set(true, forKey: key)
+                }
+            }
         }
         .onDisappear {
             recorder.stopMapFollowUpdates()
@@ -521,7 +538,23 @@ struct TripsView: View {
             HStack(alignment: .top, spacing: 12) {
                 trackingVehiclePicker(vehicle: vehicle)
                 Spacer(minLength: 8)
-                trackingAutoCapsule
+                VStack(alignment: .trailing, spacing: 6) {
+                    trackingAutoCapsule
+                    if showAutoTrackNudge && recorder.autoTrackingEnabled == false {
+                        Text("Enable auto-detect to start trips automatically.")
+                            .font(VS.Typography.body(11, weight: .semibold))
+                            .foregroundStyle(VS.Color.textTertiary)
+                            .lineLimit(2)
+                            .multilineTextAlignment(.trailing)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 7)
+                            .background(VS.Color.accent.opacity(0.12), in: Capsule())
+                            .overlay(
+                                Capsule()
+                                    .stroke(VS.Color.accent.opacity(0.28), lineWidth: 1)
+                            )
+                    }
+                }
             }
 
             // Hero odometer — the number owns the panel
@@ -607,13 +640,15 @@ struct TripsView: View {
     private var trackingAutoCapsule: some View {
         Button {
             UISelectionFeedbackGenerator().selectionChanged()
-            recorder.setAutoTracking(!recorder.autoTrackingEnabled)
+            let newValue = !recorder.autoTrackingEnabled
+            recorder.setAutoTracking(newValue)
+            if newValue { showAutoTrackNudge = false }
         } label: {
             HStack(spacing: 7) {
                 Circle()
                     .fill(recorder.autoTrackingEnabled ? VS.Color.accent : VS.Color.textTertiary.opacity(0.55))
                     .frame(width: 7, height: 7)
-                Text(recorder.autoTrackingEnabled ? "Auto on" : "Auto off")
+                Text(recorder.autoTrackingEnabled ? "Auto-detect ON" : "Auto-detect OFF")
                     .font(VS.Typography.body(12, weight: .semibold))
             }
             .foregroundStyle(VS.Color.textPrimary)
@@ -631,7 +666,7 @@ struct TripsView: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel(recorder.autoTrackingEnabled ? "Auto-detect on" : "Auto-detect off")
-        .accessibilityHint("Double tap to toggle automatic trip detection")
+        .accessibilityHint("Toggles automatic trip start")
     }
 
     @ViewBuilder
@@ -1035,9 +1070,11 @@ struct TripsView: View {
     private var phaseSubtitle: String {
         switch recorder.phase {
         case .idle:
-            return recorder.autoTrackingEnabled
-                ? "Auto-detect is on — waiting for motion/GPS"
-                : "Manual start, or toggle auto-detect"
+            if recorder.autoTrackingEnabled {
+                return "Auto-detect is ON — waiting for motion/GPS"
+            } else {
+                return "Auto-detect is OFF — tap Auto-detect OFF to enable"
+            }
         case .watching:
             return "Starts automatically when you begin driving"
         case .recording:

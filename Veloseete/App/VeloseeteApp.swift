@@ -82,7 +82,9 @@ struct VeloseeteApp: App {
                 profileAvatarStore.load(userId: authService.userId)
             }
             .onAppear {
-                tripRecorder.resumeBackgroundWatchingIfNeeded()
+                if authService.isAuthenticated {
+                    tripRecorder.resumeBackgroundWatchingIfNeeded()
+                }
                 tripRecorder.refreshPendingReviewReminders()
                 if dataStore.isLoaded {
                     VehicleInsightScheduler.shared.refresh(using: dataStore)
@@ -91,7 +93,9 @@ struct VeloseeteApp: App {
             }
             .onChange(of: scenePhase) { _, phase in
                 guard phase == .active else { return }
-                tripRecorder.resumeBackgroundWatchingIfNeeded()
+                if authService.isAuthenticated {
+                    tripRecorder.resumeBackgroundWatchingIfNeeded()
+                }
                 tripRecorder.refreshPendingReviewReminders()
                 if dataStore.isLoaded {
                     VehicleInsightScheduler.shared.refresh(using: dataStore)

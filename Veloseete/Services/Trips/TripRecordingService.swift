@@ -151,6 +151,9 @@ final class TripRecordingService: NSObject, ObservableObject {
         boundUserId = userId
         if userId != nil {
             restorePendingSaves()
+            // Sign-out disarms GPS in memory but keeps the preference on disk.
+            autoTrackingEnabled = UserDefaults.standard.bool(forKey: Keys.autoTracking)
+            resumeBackgroundWatchingIfNeeded()
         } else {
             pendingSaves = []
             CarPlayWidgetStateStore.updatePendingTripCount(0)
@@ -388,7 +391,10 @@ final class TripRecordingService: NSObject, ObservableObject {
         if boundUserId != nil {
             persistPendingSaves()
         }
-        tearDownSessionHardware(clearAutoTracking: true)
+        // Stop GPS now, but do not persist auto-track off — the same user
+        // should still be armed after the next sign-in.
+        tearDownSessionHardware(clearAutoTracking: false)
+        autoTrackingEnabled = false
         pendingSaves = []
         boundUserId = nil
         CarPlayWidgetStateStore.updatePendingTripCount(0)
@@ -450,6 +456,7 @@ final class TripRecordingService: NSObject, ObservableObject {
         phase = .watching
         beginLocationUpdates(background: true)
         beginMotionUpdates()
+        syncWidgetTracking(force: true)
     }
 
     private func stopWatching() {
@@ -675,21 +682,16 @@ final class TripRecordingService: NSObject, ObservableObject {
             return
         }
 
-        // Watching: significant-change + motion are the primary arm.
-        // Continuous GPS only after escalateWatchingGPSIfNeeded().
+        // Watching needs a live location session. Significant-change alone
+        // wakes too rarely (often after 500m+), and motion callbacks go quiet
+        // once the app is suspended — so drives never reached the auto-start hold.
         watchingGPSEscalated = false
         watchingIdleSince = nil
         applyWatchingGPSProfile(escalated: false)
-
+        locationManager.startUpdatingLocation()
+        startHeadingUpdatesIfAvailable()
         if status == .authorizedAlways {
             locationManager.startMonitoringSignificantLocationChanges()
-            // Stay on significant-change until motion/speed escalates — saves battery overnight.
-            locationManager.stopUpdatingLocation()
-            locationManager.stopUpdatingHeading()
-        } else {
-            // When-In-Use can't rely on significant-change as reliably — coarse
-            // continuous GPS with system pause allowed.
-            locationManager.startUpdatingLocation()
         }
     }
 
@@ -700,41 +702,37 @@ final class TripRecordingService: NSObject, ObservableObject {
     }
 
     private func applyWatchingGPSProfile(escalated: Bool) {
+        // Never let iOS pause the watch session — paused GPS is why auto-start
+        // silently died after the battery-saving pass.
+        locationManager.pausesLocationUpdatesAutomatically = false
         if escalated {
-            // Dense enough to catch the auto-start hold without turn-by-turn drain.
-            locationManager.pausesLocationUpdatesAutomatically = false
             locationManager.desiredAccuracy = kCLLocationAccuracyNearestTenMeters
-            locationManager.distanceFilter = 40
+            locationManager.distanceFilter = 25
         } else {
-            locationManager.pausesLocationUpdatesAutomatically = true
             locationManager.desiredAccuracy = kCLLocationAccuracyHundredMeters
-            locationManager.distanceFilter = 100
+            locationManager.distanceFilter = 50
         }
     }
 
-    /// Turn on continuous GPS while watching after a drive hint (motion / speed / cell handoff).
+    /// Tighten GPS while watching after a drive hint (motion / speed).
     private func escalateWatchingGPSIfNeeded() {
         guard phase == .watching, !watchingGPSEscalated else { return }
         watchingGPSEscalated = true
         watchingIdleSince = nil
         applyWatchingGPSProfile(escalated: true)
         locationManager.startUpdatingLocation()
+        startHeadingUpdatesIfAvailable()
     }
 
-    /// Drop continuous GPS after sitting still while still armed for auto-detect.
+    /// Drop back to coarse continuous GPS after sitting still, stay armed.
     private func deescalateWatchingGPSIfNeeded() {
         guard phase == .watching, watchingGPSEscalated else { return }
         watchingGPSEscalated = false
         watchingIdleSince = nil
         applyWatchingGPSProfile(escalated: false)
-        locationManager.stopUpdatingLocation()
-        locationManager.stopUpdatingHeading()
-        // Keep significant-change monitoring when Always-authorized.
+        locationManager.startUpdatingLocation()
         if locationManager.authorizationStatus == .authorizedAlways {
             locationManager.startMonitoringSignificantLocationChanges()
-        } else {
-            // When-In-Use: resume coarse continuous with pause allowed.
-            locationManager.startUpdatingLocation()
         }
     }
 

@@ -402,8 +402,8 @@ private struct LiveDriveWidgetView: View {
                 .minimumScaleFactor(0.85)
 
             Text(s.autoTrackingEnabled
-                 ? "Co-pilot watching — next drive auto-logs"
-                 : "Turn on auto-track in Drives")
+                 ? "Auto-detect ON — watching"
+                 : "Auto-detect OFF — enable in Drives")
                 .font(.caption)
                 .foregroundStyle(VeloseeteWidgetStyle.secondary)
                 .lineLimit(2)
