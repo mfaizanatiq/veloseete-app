@@ -21,6 +21,13 @@ if [[ ! -f "Veloseete/GoogleService-Info.plist" ]]; then
   exit 1
 fi
 
+BUNDLE_IN_PLIST="$(/usr/libexec/PlistBuddy -c 'Print :BUNDLE_ID' Veloseete/GoogleService-Info.plist 2>/dev/null || true)"
+if [[ "$BUNDLE_IN_PLIST" != "com.veloseete.ios" ]]; then
+  echo "error: GoogleService-Info.plist BUNDLE_ID is '$BUNDLE_IN_PLIST' (expected com.veloseete.ios)."
+  echo "       Download the Veloseete iOS app config from Firebase Console / CLI and replace the plist."
+  exit 1
+fi
+
 echo "==> Cleaning previous archive/export"
 rm -rf "$ARCHIVE" "$EXPORT_DIR"
 mkdir -p "$ROOT/build"
