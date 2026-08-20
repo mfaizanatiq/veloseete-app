@@ -126,7 +126,9 @@ final class TripRecordingService: NSObject, ObservableObject {
         locationManager.activityType = .automotiveNavigation
         locationManager.pausesLocationUpdatesAutomatically = false
         locationManager.showsBackgroundLocationIndicator = true
-        autoTrackingEnabled = UserDefaults.standard.bool(forKey: Keys.autoTracking)
+        // Auto-detect is restored per account in `bind(userId:)` — never from a
+        // device-global flag, or account B inherits account A's watching.
+        autoTrackingEnabled = false
         // Pending drives are restored in `bind(userId:)` so they stay per-account.
 
         // Recording sessions are not restored after a terminated app, so any
@@ -134,8 +136,8 @@ final class TripRecordingService: NSObject, ObservableObject {
         TripLiveActivityController.shared.cancel()
     }
 
-    /// Bind the pending-review queue to the signed-in account.
-    /// Sign-out detaches memory only; the same user keeps their queue on disk.
+    /// Bind the pending-review queue + auto-detect preference to the signed-in account.
+    /// Sign-out detaches memory only; the same user keeps their queue / preference on disk.
     func bind(userId: String?) {
         if boundUserId == userId {
             if userId != nil, pendingSaves.isEmpty {
@@ -149,12 +151,13 @@ final class TripRecordingService: NSObject, ObservableObject {
         }
 
         boundUserId = userId
-        if userId != nil {
+        if let userId {
             restorePendingSaves()
-            // Sign-out disarms GPS in memory but keeps the preference on disk.
-            autoTrackingEnabled = UserDefaults.standard.bool(forKey: Keys.autoTracking)
-            resumeBackgroundWatchingIfNeeded()
+            restoreAutoTrackingPreference(for: userId)
+            // Do not start watching here — wait until `configure(vehicleId:)` so
+            // auto-starts are never tagged to a previous account's car.
         } else {
+            autoTrackingEnabled = false
             pendingSaves = []
             CarPlayWidgetStateStore.updatePendingTripCount(0)
             refreshPendingReviewReminders(forceReschedule: true)
@@ -162,8 +165,9 @@ final class TripRecordingService: NSObject, ObservableObject {
     }
 
     /// Call on launch / foreground so auto-detect survives app termination.
+    /// No-ops until a vehicle is configured for the bound account.
     func resumeBackgroundWatchingIfNeeded() {
-        guard autoTrackingEnabled else { return }
+        guard autoTrackingEnabled, vehicleId != nil else { return }
         startWatchingIfNeeded()
     }
 
@@ -283,7 +287,11 @@ final class TripRecordingService: NSObject, ObservableObject {
     }
 
     private enum Keys {
-        static let autoTracking = "tripRecording.autoTrackingEnabled"
+        /// Legacy device-global auto-detect flag (pre per-account scoping).
+        static let legacyAutoTracking = "tripRecording.autoTrackingEnabled"
+        static func autoTracking(for userId: String) -> String {
+            "tripRecording.autoTrackingEnabled.v1.\(userId)"
+        }
         /// Legacy device-global queue (pre per-account scoping).
         static let legacyPendingSaves = "tripRecording.pendingSaves.v1"
         static func pendingSaves(for userId: String) -> String {
@@ -310,18 +318,20 @@ final class TripRecordingService: NSObject, ObservableObject {
         if let baselineL100, baselineL100 > 0 {
             self.baselineL100 = baselineL100
         }
-        if phase == .watching {
-            // Keep watching with new vehicle context
+        // Vehicle context is the gate for auto-detect — arm watching once we have it.
+        if autoTrackingEnabled {
+            startWatchingIfNeeded()
         }
     }
 
     func setAutoTracking(_ enabled: Bool) {
         autoTrackingEnabled = enabled
-        UserDefaults.standard.set(enabled, forKey: Keys.autoTracking)
+        persistAutoTrackingPreference()
         if enabled {
             startWatchingIfNeeded()
         } else if phase == .watching {
             stopWatching()
+            syncWidgetTracking(force: true)
         }
     }
 
@@ -388,12 +398,22 @@ final class TripRecordingService: NSObject, ObservableObject {
     /// Stops tracking and clears the on-screen session without deleting this
     /// account's pending drive reviews (they reload on the next sign-in).
     func detachSessionForSignOut() {
+        // Prefer saving an in-progress drive into the per-uid review queue over
+        // silently discarding it when the user signs out mid-trip.
+        if phase == .recording {
+            let keepAuto = autoTrackingEnabled
+            autoTrackingEnabled = false
+            finishRecording(autoEnded: false)
+            autoTrackingEnabled = keepAuto
+            persistAutoTrackingPreference()
+        }
         if boundUserId != nil {
             persistPendingSaves()
         }
-        // Stop GPS now, but do not persist auto-track off — the same user
-        // should still be armed after the next sign-in.
+        // Stop GPS now, but do not wipe this account's auto-detect preference —
+        // the same user should still be armed after the next sign-in.
         tearDownSessionHardware(clearAutoTracking: false)
+        clearVehicleContext()
         autoTrackingEnabled = false
         pendingSaves = []
         boundUserId = nil
@@ -405,11 +425,14 @@ final class TripRecordingService: NSObject, ObservableObject {
     func wipeLocalStateForAccountDeletion() {
         if let uid = boundUserId {
             UserDefaults.standard.removeObject(forKey: Keys.pendingSaves(for: uid))
+            UserDefaults.standard.removeObject(forKey: Keys.autoTracking(for: uid))
         }
         UserDefaults.standard.removeObject(forKey: Keys.legacyPendingSaves)
+        UserDefaults.standard.removeObject(forKey: Keys.legacyAutoTracking)
         pendingSaves = []
         boundUserId = nil
         tearDownSessionHardware(clearAutoTracking: true)
+        clearVehicleContext()
         CarPlayWidgetStateStore.updatePendingTripCount(0)
         refreshPendingReviewReminders(forceReschedule: true)
     }
@@ -431,7 +454,10 @@ final class TripRecordingService: NSObject, ObservableObject {
 
         if clearAutoTracking {
             autoTrackingEnabled = false
-            UserDefaults.standard.set(false, forKey: Keys.autoTracking)
+            if let uid = boundUserId {
+                UserDefaults.standard.set(false, forKey: Keys.autoTracking(for: uid))
+            }
+            UserDefaults.standard.removeObject(forKey: Keys.legacyAutoTracking)
         }
         phase = .idle
 
@@ -446,10 +472,17 @@ final class TripRecordingService: NSObject, ObservableObject {
         )
     }
 
+    private func clearVehicleContext() {
+        vehicleId = nil
+        vehicleName = "Vehicle"
+        driverName = ""
+        baseOdometer = 0
+    }
+
     // MARK: - Watching / recording internals
 
     private func startWatchingIfNeeded() {
-        guard autoTrackingEnabled else { return }
+        guard autoTrackingEnabled, vehicleId != nil else { return }
         guard phase == .idle || phase == .watching else { return }
         // Session takes over GPS ownership from the map.
         mapFollowOwnedUpdates = false
@@ -635,6 +668,31 @@ final class TripRecordingService: NSObject, ObservableObject {
         UserDefaults.standard.set(legacy, forKey: key)
         UserDefaults.standard.removeObject(forKey: Keys.legacyPendingSaves)
         print("[TripQueue] Migrated legacy pending drives to account \(userId.prefix(6))…")
+    }
+
+    private func restoreAutoTrackingPreference(for userId: String) {
+        let key = Keys.autoTracking(for: userId)
+        if UserDefaults.standard.object(forKey: key) != nil {
+            autoTrackingEnabled = UserDefaults.standard.bool(forKey: key)
+            return
+        }
+        // One-time migrate: credit the first account that signs in after the
+        // device-global flag era, then clear the global key so account B cannot inherit it.
+        if UserDefaults.standard.object(forKey: Keys.legacyAutoTracking) != nil {
+            let legacy = UserDefaults.standard.bool(forKey: Keys.legacyAutoTracking)
+            UserDefaults.standard.set(legacy, forKey: key)
+            UserDefaults.standard.removeObject(forKey: Keys.legacyAutoTracking)
+            autoTrackingEnabled = legacy
+            print("[TripQueue] Migrated legacy auto-detect=\(legacy) to account \(userId.prefix(6))…")
+            return
+        }
+        autoTrackingEnabled = false
+    }
+
+    private func persistAutoTrackingPreference() {
+        guard let userId = boundUserId else { return }
+        UserDefaults.standard.set(autoTrackingEnabled, forKey: Keys.autoTracking(for: userId))
+        UserDefaults.standard.removeObject(forKey: Keys.legacyAutoTracking)
     }
 
     private func persistPendingSaves() {

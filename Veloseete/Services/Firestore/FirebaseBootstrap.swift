@@ -32,8 +32,9 @@ enum FirebaseBootstrap {
         print("[Firebase] Configured programmatic DEBUG fallback — project \(options.projectID ?? "?")")
         enablePersistentCache()
         #else
-        assertionFailure("GoogleService-Info.plist missing from Release bundle")
-        print("[Firebase] FATAL: GoogleService-Info.plist is required for Release")
+        // Never ship a Release binary that can limp along without Firebase —
+        // Auth.auth() would crash on first use with a confusing system assert.
+        fatalError("[Firebase] GoogleService-Info.plist is required for Release builds")
         #endif
     }
 

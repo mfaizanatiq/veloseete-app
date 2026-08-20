@@ -16,6 +16,11 @@ enum TripLocationPermissionStatus: Equatable {
         self == .whenInUse || self == .always
     }
 
+    /// Background auto-detect needs Always — When-In-Use cannot reliably wake for drives.
+    var supportsBackgroundAutoTrack: Bool {
+        self == .always
+    }
+
     var needsSettings: Bool {
         self == .denied || self == .restricted
     }

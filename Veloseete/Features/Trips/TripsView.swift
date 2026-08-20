@@ -305,14 +305,14 @@ struct TripsView: View {
             }
 
             // One-time nudge after sign-in when auto-detect is off.
-            // Without this, the trip chip can look "idle" and users assume tracking is broken.
+            // Persist "prompted" only on Enable / Dismiss — not on appear —
+            // so a quick glance does not burn the tip forever.
             showAutoTrackNudge = false
             if recorder.autoTrackingEnabled == false,
                let uid = AuthService.shared.userId {
                 let key = autoTrackNudgePromptedKey(for: uid)
                 if !UserDefaults.standard.bool(forKey: key) {
                     showAutoTrackNudge = true
-                    UserDefaults.standard.set(true, forKey: key)
                 }
             }
         }
@@ -541,18 +541,25 @@ struct TripsView: View {
                 VStack(alignment: .trailing, spacing: 6) {
                     trackingAutoCapsule
                     if showAutoTrackNudge && recorder.autoTrackingEnabled == false {
-                        Text("Enable auto-detect to start trips automatically.")
-                            .font(VS.Typography.body(11, weight: .semibold))
-                            .foregroundStyle(VS.Color.textTertiary)
-                            .lineLimit(2)
-                            .multilineTextAlignment(.trailing)
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 7)
-                            .background(VS.Color.accent.opacity(0.12), in: Capsule())
-                            .overlay(
-                                Capsule()
-                                    .stroke(VS.Color.accent.opacity(0.28), lineWidth: 1)
-                            )
+                        Button {
+                            markAutoTrackNudgePrompted()
+                            showAutoTrackNudge = false
+                        } label: {
+                            Text("Enable auto-detect to start trips automatically.")
+                                .font(VS.Typography.body(11, weight: .semibold))
+                                .foregroundStyle(VS.Color.textTertiary)
+                                .lineLimit(2)
+                                .multilineTextAlignment(.trailing)
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 7)
+                                .background(VS.Color.accent.opacity(0.12), in: Capsule())
+                                .overlay(
+                                    Capsule()
+                                        .stroke(VS.Color.accent.opacity(0.28), lineWidth: 1)
+                                )
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("Dismiss auto-detect tip")
                     }
                 }
             }
@@ -641,8 +648,18 @@ struct TripsView: View {
         Button {
             UISelectionFeedbackGenerator().selectionChanged()
             let newValue = !recorder.autoTrackingEnabled
+            if newValue {
+                tripPermissions.refreshStatuses()
+                guard tripPermissions.locationStatus.supportsBackgroundAutoTrack else {
+                    showTripPermissions = true
+                    return
+                }
+            }
             recorder.setAutoTracking(newValue)
-            if newValue { showAutoTrackNudge = false }
+            if newValue {
+                markAutoTrackNudgePrompted()
+                showAutoTrackNudge = false
+            }
         } label: {
             HStack(spacing: 7) {
                 Circle()
@@ -666,7 +683,12 @@ struct TripsView: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel(recorder.autoTrackingEnabled ? "Auto-detect on" : "Auto-detect off")
-        .accessibilityHint("Toggles automatic trip start")
+        .accessibilityHint("Toggles automatic trip start. Requires Always location access.")
+    }
+
+    private func markAutoTrackNudgePrompted() {
+        guard let uid = AuthService.shared.userId else { return }
+        UserDefaults.standard.set(true, forKey: autoTrackNudgePromptedKey(for: uid))
     }
 
     @ViewBuilder
