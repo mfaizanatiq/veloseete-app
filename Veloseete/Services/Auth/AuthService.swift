@@ -50,7 +50,7 @@ final class AuthService: ObservableObject {
     var pendingLinkCredentialActive: Bool { pendingLinkCredential != nil }
 
     private init() {
-        configureGoogleSignIn()
+        try? configureGoogleSignIn()
         // Keychain restore is synchronous — don't wait on the network for first paint.
         applyUser(Auth.auth().currentUser)
         handle = Auth.auth().addStateDidChangeListener { [weak self] _, user in
@@ -154,7 +154,7 @@ final class AuthService: ObservableObject {
 
     func signInWithGoogle(linking: Bool = false) async throws {
         try await runAuth {
-            configureGoogleSignIn()
+            try configureGoogleSignIn()
             guard let presenter = UIApplication.shared.veloseeteTopViewController else {
                 throw AuthServiceError.missingPresenter
             }
@@ -407,10 +407,27 @@ final class AuthService: ObservableObject {
         }
     }
 
-    private func configureGoogleSignIn() {
-        let clientID = FirebaseApp.app()?.options.clientID
-            ?? Bundle.main.object(forInfoDictionaryKey: "GIDClientID") as? String
-        guard let clientID, !clientID.isEmpty else { return }
+    private func configureGoogleSignIn() throws {
+        // Prefer Info.plist GIDClientID — it must match CFBundleURLSchemes or Google
+        // Sign-In can crash / fail after OAuth redirect. FirebaseApp.clientID is only
+        // a fallback when GoogleService-Info is present and aligned.
+        let plistClientID = (Bundle.main.object(forInfoDictionaryKey: "GIDClientID") as? String)?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let firebaseClientID = FirebaseApp.app()?.options.clientID?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+
+        let clientID: String
+        if let plistClientID, !plistClientID.isEmpty {
+            if let firebaseClientID, !firebaseClientID.isEmpty, plistClientID != firebaseClientID {
+                print("[Auth] Google clientID mismatch — using Info.plist over Firebase GoogleService-Info")
+            }
+            clientID = plistClientID
+        } else if let firebaseClientID, !firebaseClientID.isEmpty {
+            clientID = firebaseClientID
+        } else {
+            throw AuthServiceError.invalidGoogleCredential
+        }
+
         GIDSignIn.sharedInstance.configuration = GIDConfiguration(
             clientID: clientID,
             serverClientID: Self.googleServerClientID
@@ -533,12 +550,10 @@ enum AuthServiceError: LocalizedError {
 
 extension UIApplication {
     var veloseeteTopViewController: UIViewController? {
-        connectedScenes
-            .compactMap { $0 as? UIWindowScene }
-            .flatMap(\.windows)
-            .first { $0.isKeyWindow }?
-            .rootViewController?
-            .veloseeteTopMost()
+        let scenes = connectedScenes.compactMap { $0 as? UIWindowScene }
+        let preferred = scenes.first { $0.activationState == .foregroundActive } ?? scenes.first
+        let window = preferred?.windows.first { $0.isKeyWindow } ?? preferred?.windows.first
+        return window?.rootViewController?.veloseeteTopMost()
     }
 }
 

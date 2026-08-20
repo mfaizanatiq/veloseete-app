@@ -17,15 +17,16 @@ enum FirebaseBootstrap {
 
         #if DEBUG
         // Local/dev fallback only — Release builds must ship GoogleService-Info.plist.
+        // Must match the paid-team app `com.veloseete.ios` (not legacy `com.veloseete.app`).
         let options = FirebaseOptions(
-            googleAppID: "1:1090690719538:ios:9f5299b05e4b451bbec12b",
+            googleAppID: "1:1090690719538:ios:10c3a8e8271fa659bec12b",
             gcmSenderID: "1090690719538"
         )
         options.apiKey = "AIzaSyDFxFjV2ED9aX-adXe5_jjx9JxEywnFMQ0"
         options.projectID = "velocity-5e576"
         options.storageBucket = "velocity-5e576.firebasestorage.app"
-        options.bundleID = Bundle.main.bundleIdentifier ?? "com.veloseete.app"
-        options.clientID = "1090690719538-7betv9lmo15m6qftsmuc9pdfqo87mf1c.apps.googleusercontent.com"
+        options.bundleID = Bundle.main.bundleIdentifier ?? "com.veloseete.ios"
+        options.clientID = "1090690719538-92risgqg4vsdan80orit4k3l16br8lou.apps.googleusercontent.com"
 
         FirebaseApp.configure(options: options)
         print("[Firebase] Configured programmatic DEBUG fallback — project \(options.projectID ?? "?")")
