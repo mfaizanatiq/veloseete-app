@@ -84,17 +84,23 @@ enum VehicleMarkStyle: String, CaseIterable, Identifiable {
 }
 
 /// Veloseete car marks — soft matte lime 3D icons (brand lime + black glass/wheels).
-/// Prefers assets `vehicle-{style}`; Canvas silhouette is fallback only.
+/// Prefers assets `vehicle-{style}` (picker) or `vehicle-{style}-map` (Uber-style top-down for maps).
 struct VehicleMark: View {
+    enum Viewpoint {
+        /// Garage / picker — front three-quarter.
+        case mark
+        /// Live map puck — bird’s-eye top-down (Uber-style), nose = travel direction.
+        case map
+    }
+
     var style: VehicleMarkStyle = .sedan
     var size: CGFloat = 44
-
-    private var assetName: String { "vehicle-\(style.rawValue)" }
+    var viewpoint: Viewpoint = .mark
 
     var body: some View {
         Group {
-            if UIImage(named: assetName) != nil {
-                Image(assetName)
+            if let uiImage = UIImage(named: resolvedAssetName) {
+                Image(uiImage: uiImage)
                     .resizable()
                     .interpolation(.high)
                     .scaledToFit()
@@ -113,6 +119,15 @@ struct VehicleMark: View {
         }
         .frame(width: size, height: size)
         .accessibilityLabel(style.label)
+    }
+
+    /// Prefer map asset; fall back to garage front-three-quarter mark (never Tracky).
+    private var resolvedAssetName: String {
+        let mapName = "vehicle-\(style.rawValue)-map"
+        if viewpoint == .map, UIImage(named: mapName) != nil {
+            return mapName
+        }
+        return "vehicle-\(style.rawValue)"
     }
 
     private var bodyFill: Color { Color(hex: 0x0A0C0A) }

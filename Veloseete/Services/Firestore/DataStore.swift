@@ -5,9 +5,19 @@ struct OdometerEstimate: Equatable {
     var verifiedKm: Double
     var verifiedAt: Date
     var verifiedSource: String
-    var trackedSinceKm: Double
+    /// Confirmed (saved) GPS trips since the verified anchor.
+    var confirmedTrackedKm: Double
+    /// Finished drives waiting in My Drives — real km, not yet in history.
+    var pendingTrackedKm: Double
 
+    /// Confirmed + pending distance since the last fuel/service reading.
+    var trackedSinceKm: Double { confirmedTrackedKm + pendingTrackedKm }
+
+    /// Best live picture of the dash: verified reading + all GPS since then.
     var estimatedKm: Double { verifiedKm + trackedSinceKm }
+
+    /// True when unconfirmed drives are part of the estimate.
+    var includesPending: Bool { pendingTrackedKm > 0.05 }
 }
 
 @MainActor
@@ -73,7 +83,9 @@ final class DataStore: ObservableObject {
         return fuelLogs.filter { $0.vehicleId == id }
     }
 
-    /// Physical fuel/service readings are anchors. GPS trips only advance an estimate.
+    /// Physical fuel/service readings are anchors. GPS trips (confirmed + pending
+    /// review) advance the estimate so a day of driving still tracks the dash
+    /// before you confirm every leg.
     func odometerEstimate(vehicleId: String, through date: Date = Date()) -> OdometerEstimate? {
         guard let vehicle = vehicles.first(where: { $0.id == vehicleId }) else { return nil }
 
@@ -87,7 +99,12 @@ final class DataStore: ObservableObject {
         let verifiedAt = anchor?.0 ?? vehicle.createdAt
         let verifiedKm = anchor?.1 ?? vehicle.currentOdometer
         let source = anchor?.2 ?? "Vehicle reading"
-        let tracked = trips
+
+        let confirmed = trips
+            .filter { $0.vehicleId == vehicleId && $0.endedAt > verifiedAt && $0.endedAt <= date }
+            .reduce(0) { $0 + $1.distanceKm }
+
+        let pending = TripRecordingService.shared.pendingSaves
             .filter { $0.vehicleId == vehicleId && $0.endedAt > verifiedAt && $0.endedAt <= date }
             .reduce(0) { $0 + $1.distanceKm }
 
@@ -95,7 +112,8 @@ final class DataStore: ObservableObject {
             verifiedKm: verifiedKm,
             verifiedAt: verifiedAt,
             verifiedSource: source,
-            trackedSinceKm: tracked
+            confirmedTrackedKm: confirmed,
+            pendingTrackedKm: pending
         )
     }
 

@@ -401,7 +401,7 @@ struct DetailsListView: View {
             VStack(alignment: .leading, spacing: VS.Spacing.floatStack) {
                 MainTabHeader(
                     "Garage",
-                    subtitle: currentVehicle.map { $0.nickname } ?? "Cars in the mix",
+                    subtitle: currentVehicle.map { $0.nickname } ?? TrackyVoice.Soft.garageSubtitle,
                     onProfile: onProfile
                 ) {
                     Button {
@@ -791,14 +791,14 @@ struct DetailsListView: View {
     private var garageEmptyActive: some View {
         VStack(spacing: 14) {
             VSIcon(icon: .car, size: 40, weight: .regular, tint: VS.Color.accent)
-            Text("No cars yet")
+            Text(TrackyVoice.Soft.emptyGarageTitle)
                 .font(VS.Typography.heading(18))
                 .foregroundStyle(VS.Color.textPrimary)
-            Text("Add a car to connect drives, fuel, and service.")
+            Text(TrackyVoice.Soft.emptyGarageBody)
                 .font(VS.Typography.body(14))
                 .foregroundStyle(VS.Color.textSecondary)
                 .multilineTextAlignment(.center)
-            Button("Add your first car") { showAddVehicle = true }
+            Button(TrackyVoice.Soft.emptyGarageCTA) { showAddVehicle = true }
                 .font(VS.Typography.heading(14))
                 .foregroundStyle(VS.Color.navPill)
                 .padding(.horizontal, 18)
@@ -836,7 +836,7 @@ struct DetailsListView: View {
 
             HStack(spacing: VS.Spacing.gutter) {
                 garageBentoCount(drives, "Drives")
-                garageBentoCount(refuels, "Refuels")
+                garageBentoCount(refuels, TrackyVoice.Soft.fillsLabel)
             }
 
             Button {
@@ -1218,7 +1218,7 @@ private struct VehicleEditorView: View {
                     }
                     .buttonStyle(.plain)
 
-                    Text("Hides this car from the garage. Drives, fuel and service stay saved.")
+                    Text(TrackyVoice.Calm.archiveVehicleMessage)
                         .font(VS.Typography.body(12))
                         .foregroundStyle(VS.Color.textTertiary)
                 }
@@ -1738,10 +1738,10 @@ struct DriverProfileView: View {
 
             if preview.isEmpty {
                 VStack(alignment: .leading, spacing: 6) {
-                    Text("Nothing yet")
+                    Text(TrackyVoice.Soft.emptyInsightsTitle)
                         .font(VS.Typography.heading(16))
                         .foregroundStyle(VS.Color.textPrimary)
-                    Text("A few fills and tracked drives unlock notes here.")
+                    Text(TrackyVoice.Soft.emptyInsightsBody)
                         .font(VS.Typography.body(13))
                         .foregroundStyle(VS.Color.textSecondary)
                 }
@@ -1914,10 +1914,10 @@ struct DriverProfileView: View {
 
     private var analyticsEmptyState: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text("No trend yet")
+            Text(TrackyVoice.Soft.emptyTrendsTitle)
                 .font(VS.Typography.heading(16))
                 .foregroundStyle(VS.Color.textPrimary)
-            Text("A couple of fills unlock spend and efficiency charts.")
+            Text(TrackyVoice.Soft.emptyTrendsBody)
                 .font(VS.Typography.body(13))
                 .foregroundStyle(VS.Color.textSecondary)
         }
@@ -2201,11 +2201,11 @@ struct ServiceListView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: VS.Spacing.floatStack) {
-                MainTabHeader("Service", subtitle: store.currentVehicle?.nickname ?? "Keep it healthy", onProfile: onProfile)
+                MainTabHeader("Service", subtitle: store.currentVehicle?.nickname ?? TrackyVoice.Soft.serviceSubtitle, onProfile: onProfile)
 
                 serviceTrendCard
 
-                PrimaryCTAButton(title: "Log service", icon: .wrench) {
+                PrimaryCTAButton(title: TrackyVoice.Soft.logServiceCTA, icon: .wrench) {
                     editingLog = nil; showEditor = true
                 }
 
@@ -2214,10 +2214,10 @@ struct ServiceListView: View {
                         Button { showEditor = true } label: {
                             VStack(spacing: 14) {
                                 VSIcon(icon: .wrench, size: 34, weight: .regular, tint: VS.Color.accent)
-                                Text("Log your first service")
+                                Text(TrackyVoice.Soft.emptyServiceTitle)
                                     .font(VS.Typography.heading(16))
                                     .foregroundStyle(VS.Color.textPrimary)
-                                Text("Oil, brakes, whatever’s due — keep a trail.")
+                                Text(TrackyVoice.Soft.emptyServiceBody)
                                     .font(VS.Typography.body(13))
                                     .foregroundStyle(VS.Color.textSecondary)
                             }.frame(maxWidth: .infinity).padding(34).glassCard(elevated: true)
@@ -2384,7 +2384,7 @@ struct ServiceEditorSheet: View {
                 .padding(.bottom, 28)
             }
             .veloseetePage()
-            .navigationTitle(log == nil ? "Log Service" : "Edit Service")
+            .navigationTitle(log == nil ? TrackyVoice.Soft.logServiceNav : TrackyVoice.Soft.editServiceNav)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
@@ -2394,7 +2394,7 @@ struct ServiceEditorSheet: View {
             }
             .safeAreaInset(edge: .bottom) {
                 PrimaryCTAButton(
-                    title: log == nil ? "Save service" : "Save changes",
+                    title: log == nil ? TrackyVoice.Soft.saveService : TrackyVoice.Calm.saveFillChanges,
                     icon: .wrench,
                     isLoading: saving,
                     isEnabled: canSave
@@ -2409,7 +2409,7 @@ struct ServiceEditorSheet: View {
                 Button("Delete", role: .destructive) { Task { await delete() } }
                 Button("Cancel", role: .cancel) {}
             } message: {
-                Text("This removes the record from both iOS and the web app.")
+                Text(TrackyVoice.Calm.deleteServiceMessage)
             }
         }
         .presentationDetents([.large])
@@ -2762,8 +2762,8 @@ struct ProfileView: View {
                     } label: {
                         Label {
                             VStack(alignment: .leading, spacing: 3) {
-                                Text("Manage trip permissions").foregroundStyle(VS.Color.textPrimary)
-                                Text("Location, motion and notifications")
+                                Text(TrackyVoice.Calm.managePermissions).foregroundStyle(VS.Color.textPrimary)
+                                Text(TrackyVoice.Calm.managePermissionsDetail)
                                     .font(VS.Typography.body(11)).foregroundStyle(VS.Color.textTertiary)
                             }
                         } icon: {
@@ -2776,8 +2776,8 @@ struct ProfileView: View {
                     } label: {
                         Label {
                             VStack(alignment: .leading, spacing: 3) {
-                                Text("Replay onboarding").foregroundStyle(VS.Color.textPrimary)
-                                Text("See the Veloseete introduction again")
+                                Text(TrackyVoice.Calm.replayOnboarding).foregroundStyle(VS.Color.textPrimary)
+                                Text(TrackyVoice.Calm.replayOnboardingDetail)
                                     .font(VS.Typography.body(11)).foregroundStyle(VS.Color.textTertiary)
                             }
                         } icon: {
@@ -2793,8 +2793,8 @@ struct ProfileView: View {
                     } label: {
                         Label {
                             VStack(alignment: .leading, spacing: 3) {
-                                Text("Leave feedback").foregroundStyle(VS.Color.textPrimary)
-                                Text("A note to the inbox — bugs, praise, missing bits")
+                                Text(TrackyVoice.Calm.leaveFeedback).foregroundStyle(VS.Color.textPrimary)
+                                Text(TrackyVoice.Calm.leaveFeedbackDetail)
                                     .font(VS.Typography.body(11)).foregroundStyle(VS.Color.textTertiary)
                             }
                         } icon: {
@@ -2807,8 +2807,8 @@ struct ProfileView: View {
                     } label: {
                         Label {
                             VStack(alignment: .leading, spacing: 3) {
-                                Text("Roadmap").foregroundStyle(VS.Color.textPrimary)
-                                Text("Vote upcoming work, or request a feature")
+                                Text(TrackyVoice.Calm.roadmap).foregroundStyle(VS.Color.textPrimary)
+                                Text(TrackyVoice.Calm.roadmapDetail)
                                     .font(VS.Typography.body(11)).foregroundStyle(VS.Color.textTertiary)
                             }
                         } icon: {
@@ -2826,7 +2826,7 @@ struct ProfileView: View {
                 .listRowBackground(VS.Color.bgSecondary)
 
                 Section {
-                    Button("Sign out", role: .destructive) {
+                    Button(TrackyVoice.Calm.signOut, role: .destructive) {
                         try? auth.signOut()
                         dismiss()
                     }
@@ -2837,7 +2837,7 @@ struct ProfileView: View {
                             ProgressView()
                                 .tint(VS.Color.error)
                         } else {
-                            Text("Delete account")
+                            Text(TrackyVoice.Calm.deleteAccount)
                         }
                     }
                     .disabled(isDeletingAccount)
@@ -2896,7 +2896,7 @@ struct ProfileView: View {
                     }
                 }
             }
-            .alert("Delete account?", isPresented: $showDeleteAccountConfirm) {
+            .alert(TrackyVoice.Calm.deleteAccountTitle, isPresented: $showDeleteAccountConfirm) {
                 Button("Cancel", role: .cancel) {}
                 Button("Delete forever", role: .destructive) {
                     Task { await deleteAccount() }

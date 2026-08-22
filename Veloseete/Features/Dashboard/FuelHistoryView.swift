@@ -66,7 +66,7 @@ struct FuelHistoryView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: VS.Spacing.lg) {
                     if groups.isEmpty {
-                        Text("No fills logged yet.")
+                        Text(TrackyVoice.Soft.emptyHistory)
                             .font(VS.Typography.body(14))
                             .foregroundStyle(VS.Color.textTertiary)
                             .frame(maxWidth: .infinity)
@@ -84,7 +84,7 @@ struct FuelHistoryView: View {
                 .padding(.bottom, 28)
             }
             .veloseetePage()
-            .navigationTitle("Fill history")
+            .navigationTitle(TrackyVoice.Soft.fillHistory)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {

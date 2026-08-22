@@ -39,15 +39,8 @@ final class VehicleInsightScheduler {
         let estimate = store.odometerEstimate(vehicleId: vehicle.id)
         let services = store.serviceLogs.filter { $0.vehicleId == vehicle.id }
 
-        // Drives still waiting for review are real driving the confirmed
-        // estimate can't see — but discount them slightly so a backlog of
-        // noisy pending trips can't falsely declare the tank empty.
-        let anchorDate = estimate?.verifiedAt ?? .distantPast
-        let unreviewedKm = TripRecordingService.shared.pendingSaves
-            .filter { $0.vehicleId == vehicle.id && $0.endedAt > anchorDate }
-            .reduce(0) { $0 + $1.distanceKm }
-        let creditedUnreviewed = unreviewedKm * 0.85
-        let estimatedOdometer = (estimate?.estimatedKm).map { $0 + creditedUnreviewed }
+        // Estimate already credits pending review km — use it directly for fuel/service.
+        let estimatedOdometer = estimate?.estimatedKm
 
         if let fuel = FuelInsightLogic.predictNextFill(
             logs: logs,
@@ -674,13 +667,13 @@ private enum InsightNotificationCopy {
         switch urgency {
         case .empty:
             return pick([
-                Line(title: "\(vehicleName) is running on fumes", body: "Your driving pattern says the tank is essentially empty.\(rangeNote) Fill up before you push it."),
-                Line(title: "Fuel now — not later", body: "\(vehicleName) has almost nothing left based on km since your last fill.\(rangeNote)"),
+                Line(title: "\(vehicleName) — tank’s almost empty", body: "Based on km since your last fill.\(rangeNote) Stop for fuel soon."),
+                Line(title: "Fuel now on \(vehicleName)", body: "Pattern says there’s almost nothing left.\(rangeNote)"),
             ])
         case .low:
             return pick([
-                Line(title: "Low fuel on \(vehicleName)", body: "Based on your fill history and km driven, you're in the low zone.\(rangeNote) Plan a stop soon."),
-                Line(title: "Tank's getting light ⛽", body: "\(vehicleName) is down to the last stretch of this fill.\(rangeNote)"),
+                Line(title: "Low fuel on \(vehicleName)", body: "You’re in the low zone.\(rangeNote) Plan a stop."),
+                Line(title: "Tank’s getting light", body: "\(vehicleName) is on the last stretch of this fill.\(rangeNote)"),
             ])
         case .watch, .none:
             return Line(
@@ -699,21 +692,21 @@ private enum InsightNotificationCopy {
         let type = serviceType.lowercased()
         if let daysRemaining, daysRemaining <= 0 {
             return pick([
-                Line(title: "It's \(type) time. It's overdue.", body: "\(vehicleName) has been very patient with you. Book it today?"),
-                Line(title: "\(vehicleName) needs you 🔧", body: "The \(type) is due. Ignoring this notification won't fix the car. I checked."),
+                Line(title: "\(type.capitalized) is overdue", body: "\(vehicleName) is due. Book it when you can."),
+                Line(title: "\(vehicleName) needs \(type)", body: "This one’s past due — don’t leave it hanging."),
             ])
         }
         if let kmRemaining, kmRemaining <= 150 {
             return pick([
-                Line(title: "Almost \(type) time!", body: String(format: "~%.0f km left on %@. So close. Don't ghost it now.", max(kmRemaining, 0), vehicleName)),
+                Line(title: "Almost \(type) time", body: String(format: "~%.0f km left on %@. Don’t ghost it now.", max(kmRemaining, 0), vehicleName)),
             ])
         }
         if let daysRemaining {
             return pick([
-                Line(title: "\(type.capitalized) in ~\(daysRemaining) days", body: "\(vehicleName) is counting on you. Literally. I'm counting the days for it."),
+                Line(title: "\(type.capitalized) in ~\(daysRemaining) days", body: "\(vehicleName) has a \(type) coming up. Heads-up."),
             ])
         }
-        return Line(title: "Service soon-ish 🔧", body: "\(vehicleName) has a \(type) coming up. You've been warned. Nicely. For now.")
+        return Line(title: "Service coming up", body: "\(vehicleName) has a \(type) on the horizon.")
     }
 
     private static func pick(_ lines: [Line]) -> Line {

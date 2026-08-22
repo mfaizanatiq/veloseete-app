@@ -47,7 +47,7 @@ final class DriveMoodLogicTests: XCTestCase {
         )
 
         XCTAssertLessThan(after.driveScore, 78)
-        XCTAssertEqual(after.lastEvent, "Harsh accel")
+        XCTAssertEqual(after.lastEvent, "Hard accel")
         XCTAssertTrue(["watch", "heavy"].contains(after.moodRaw))
     }
 

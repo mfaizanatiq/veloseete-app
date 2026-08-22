@@ -648,35 +648,35 @@ enum InsightGenerator {
                 id: "first-fill", emoji: "⛽", title: "First fill", category: .fuel,
                 current: Double(fillCount), target: 1, unitLabel: "fills",
                 earnedDetail: "Pump logged",
-                lockedDetail: "Log your first refuel",
+                lockedDetail: "Log your first fill",
                 unlockedAt: nthDate(fillDates, 1)
             ),
             quest(
                 id: "five-fills", emoji: "⛽", title: "Pump starter", category: .fuel,
                 current: Double(fillCount), target: 5, unitLabel: "fills",
-                earnedDetail: "\(fillCount) refuels logged",
-                lockedDetail: "Log 5 refuels",
+                earnedDetail: "\(fillCount) fills logged",
+                lockedDetail: "Log 5 fills",
                 unlockedAt: nthDate(fillDates, 5)
             ),
             quest(
                 id: "ten-fills", emoji: "⛽", title: "Fill ledger", category: .fuel,
                 current: Double(fillCount), target: 10, unitLabel: "fills",
-                earnedDetail: "\(fillCount) refuels in the book",
-                lockedDetail: "Reach 10 refuel entries",
+                earnedDetail: "\(fillCount) fills in the book",
+                lockedDetail: "Reach 10 fill entries",
                 unlockedAt: nthDate(fillDates, 10)
             ),
             quest(
                 id: "twenty-five-fills", emoji: "🏆", title: "Pump regular", category: .fuel,
                 current: Double(fillCount), target: 25, unitLabel: "fills",
                 earnedDetail: "\(fillCount) fills strong",
-                lockedDetail: "Log 25 refuels",
+                lockedDetail: "Log 25 fills",
                 unlockedAt: nthDate(fillDates, 25)
             ),
             quest(
                 id: "fifty-fills", emoji: "✨", title: "Fuel historian", category: .fuel,
                 current: Double(fillCount), target: 50, unitLabel: "fills",
                 earnedDetail: "Half-century of fills",
-                lockedDetail: "Hit 50 refuel logs",
+                lockedDetail: "Hit 50 fill logs",
                 unlockedAt: nthDate(fillDates, 50)
             ),
             quest(

@@ -433,14 +433,16 @@ struct TripPermissionsOnboardingView: View {
     private var bottomBar: some View {
         VStack(spacing: 10) {
             PrimaryCTAButton(
-                title: page == .permissions ? "Start exploring" : "Keep going",
+                title: page == .permissions
+                    ? TrackyVoice.Soft.permissionsStartExploring
+                    : TrackyVoice.Soft.permissionsKeepGoing,
                 icon: page == .permissions ? .checkCircle : nil
             ) {
                 if page == .permissions { complete() } else { advance() }
             }
 
             if page == .permissions {
-                Button("I’ll do this later") { complete() }
+                Button(TrackyVoice.Soft.permissionsLater) { complete() }
                     .font(VS.Typography.body(13, weight: .semibold))
                     .foregroundStyle(VS.Color.textSecondary)
             }

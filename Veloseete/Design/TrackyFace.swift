@@ -53,7 +53,7 @@ struct TrackyPickerCard: View {
             showMoodDrawer = true
         } label: {
             VStack(spacing: 14) {
-                Text("Tracky")
+                Text(TrackyVoice.Soft.trackysMoodTitle)
                     .font(VS.Typography.heading(15, weight: .bold))
                     .foregroundStyle(VS.Color.textTertiary)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -73,9 +73,10 @@ struct TrackyPickerCard: View {
                         .foregroundStyle(VS.Color.textPrimary)
                         .contentTransition(.opacity)
 
-                    Text("Map co-pilot · tap to change")
+                    Text(TrackyVoice.Soft.trackyCardHint)
                         .font(VS.Typography.body(13))
                         .foregroundStyle(VS.Color.textTertiary)
+                        .multilineTextAlignment(.center)
                 }
             }
             .padding(.horizontal, VS.Spacing.card)
@@ -86,8 +87,11 @@ struct TrackyPickerCard: View {
         }
         .buttonStyle(.plain)
         .glassCard(elevated: true)
-        .accessibilityLabel("Tracky, \(trackyMood.label)")
-        .accessibilityHint("Opens mood picker")
+        .accessibilityLabel("\(TrackyVoice.Soft.trackysMoodTitle), \(trackyMood.label)")
+        .accessibilityHint("Opens Tracky’s mood picker")
+        .onChange(of: trackyMoodRaw) { _, newValue in
+            TrackyAppIcon.apply(mood: TrackyMood(rawValue: newValue) ?? .chill)
+        }
         .sheet(isPresented: $showMoodDrawer) {
             TrackyMoodDrawer(
                 selectedRaw: $trackyMoodRaw,
@@ -123,10 +127,10 @@ private struct TrackyMoodDrawer: View {
                     .frame(width: 64, height: 64)
 
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Tracky mood")
+                    Text(TrackyVoice.Soft.trackysMoodTitle)
                         .font(VS.Typography.heading(20, weight: .bold))
                         .foregroundStyle(VS.Color.textPrimary)
-                    Text("Shows on your map co-pilot")
+                    Text(TrackyVoice.Soft.trackyDrawerSubtitle)
                         .font(VS.Typography.body(13))
                         .foregroundStyle(VS.Color.textTertiary)
                 }
@@ -197,6 +201,7 @@ private struct TrackyMoodDrawer: View {
             withAnimation(.snappy(duration: 0.22)) {
                 selectedRaw = mood.rawValue
             }
+            TrackyAppIcon.apply(mood: mood)
         } label: {
             VStack(spacing: 8) {
                 TrackyFace(mood: mood, size: 44)

@@ -12,5 +12,7 @@
 	<true/>
 	<key>destination</key>
 	<string>upload</string>
+	<key>manageAppVersionAndBuildNumber</key>
+	<false/>
 </dict>
 </plist>

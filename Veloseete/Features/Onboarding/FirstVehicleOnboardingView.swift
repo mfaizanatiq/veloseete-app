@@ -131,7 +131,7 @@ struct FirstVehicleOnboardingView: View {
 
             Spacer(minLength: 16)
 
-            Text("START HERE")
+            Text(TrackyVoice.Soft.firstVehicleEyebrow)
                 .font(VS.Typography.body(11, weight: .bold))
                 .tracking(1.5)
                 .foregroundStyle(VS.Color.accent)
@@ -142,7 +142,7 @@ struct FirstVehicleOnboardingView: View {
                 .foregroundStyle(VS.Color.textPrimary)
                 .padding(.top, 10)
 
-            Text("Nickname it, pick a mark, and Veloseete can remember every drive, fill, and service from here.")
+            Text(TrackyVoice.Soft.firstVehicleBody)
                 .font(VS.Typography.body(15))
                 .foregroundStyle(VS.Color.textSecondary)
                 .lineSpacing(4)

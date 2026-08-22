@@ -7,6 +7,8 @@ struct TripConfirmSheet: View {
     @Environment(\.dismiss) private var dismiss
 
     let pending: PendingTripSave
+    /// Called after a successful confirm with the next pending drive for this car, if any.
+    var onConfirmed: ((PendingTripSave?) -> Void)? = nil
 
     @State private var isSaving = false
     @State private var errorMessage: String?
@@ -14,6 +16,25 @@ struct TripConfirmSheet: View {
     private var distanceValue: String {
         let km = pending.distanceKm
         return String(format: km >= 100 ? "%.0f" : "%.1f", km)
+    }
+
+    private var queuePeers: [PendingTripSave] {
+        recorder.pendingSaves
+            .filter { $0.vehicleId == pending.vehicleId }
+            .sorted { $0.endedAt < $1.endedAt }
+    }
+
+    private var queueIndex: Int? {
+        queuePeers.firstIndex(where: { $0.id == pending.id }).map { $0 + 1 }
+    }
+
+    private var estimate: OdometerEstimate? {
+        store.odometerEstimate(vehicleId: pending.vehicleId)
+    }
+
+    /// Estimate after this confirm — same total (pending → confirmed), for clarity.
+    private var estimateKm: Double? {
+        estimate?.estimatedKm
     }
 
     var body: some View {
@@ -31,9 +52,16 @@ struct TripConfirmSheet: View {
                     }
 
                     VStack(alignment: .leading, spacing: 8) {
-                        Text(pending.vehicleName)
-                            .font(VS.Typography.body(14, weight: .semibold))
-                            .foregroundStyle(VS.Color.textTertiary)
+                        HStack(spacing: 8) {
+                            Text(pending.vehicleName)
+                                .font(VS.Typography.body(14, weight: .semibold))
+                                .foregroundStyle(VS.Color.textTertiary)
+                            if let queueIndex, queuePeers.count > 1 {
+                                Text("· \(queueIndex) of \(queuePeers.count)")
+                                    .font(VS.Typography.body(13, weight: .semibold))
+                                    .foregroundStyle(VS.Color.warning)
+                            }
+                        }
 
                         HStack(alignment: .firstTextBaseline, spacing: 8) {
                             Text(distanceValue)
@@ -46,7 +74,7 @@ struct TripConfirmSheet: View {
                                 .foregroundStyle(VS.Color.textTertiary)
                         }
 
-                        Text("Review drive")
+                        Text(TrackyVoice.confirmHeadline())
                             .font(VS.Typography.heading(18, weight: .bold))
                             .foregroundStyle(VS.Color.textPrimary)
 
@@ -61,25 +89,47 @@ struct TripConfirmSheet: View {
                         confirmMetric(String(format: "%.0f", pending.maxSpeedKmh), "Top km/h")
                     }
 
-                    HStack(spacing: 12) {
-                        VSIcon(icon: .gauge, size: 22, weight: .duotone, tint: VS.Color.accent)
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("Adds to your estimate")
-                                .font(VS.Typography.heading(15, weight: .bold))
-                                .foregroundStyle(VS.Color.textPrimary)
-                            Text("Verified odometer only changes when you enter the number in your car — usually at the next refuel.")
-                                .font(VS.Typography.body(13, weight: .medium))
-                                .foregroundStyle(VS.Color.textTertiary)
-                                .fixedSize(horizontal: false, vertical: true)
+                    if let estimateKm {
+                        HStack(spacing: 12) {
+                            VSIcon(icon: .gauge, size: 22, weight: .duotone, tint: VS.Color.accent)
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(TrackyVoice.confirmEstimateTitle(km: estimateKm))
+                                    .font(VS.Typography.heading(15, weight: .bold))
+                                    .foregroundStyle(VS.Color.textPrimary)
+                                Text(TrackyVoice.confirmEstimateBody())
+                                    .font(VS.Typography.body(13, weight: .medium))
+                                    .foregroundStyle(VS.Color.textTertiary)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
                         }
+                        .padding(16)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(VS.Color.chip, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 22, style: .continuous)
+                                .stroke(VS.Color.hairline, lineWidth: 1)
+                        )
+                    } else {
+                        HStack(spacing: 12) {
+                            VSIcon(icon: .gauge, size: 22, weight: .duotone, tint: VS.Color.accent)
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(TrackyVoice.confirmFallbackTitle())
+                                    .font(VS.Typography.heading(15, weight: .bold))
+                                    .foregroundStyle(VS.Color.textPrimary)
+                                Text(TrackyVoice.confirmFallbackBody())
+                                    .font(VS.Typography.body(13, weight: .medium))
+                                    .foregroundStyle(VS.Color.textTertiary)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+                        }
+                        .padding(16)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(VS.Color.chip, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 22, style: .continuous)
+                                .stroke(VS.Color.hairline, lineWidth: 1)
+                        )
                     }
-                    .padding(16)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(VS.Color.chip, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 22, style: .continuous)
-                            .stroke(VS.Color.hairline, lineWidth: 1)
-                    )
 
                     if let errorMessage {
                         Text(errorMessage)
@@ -88,14 +138,14 @@ struct TripConfirmSheet: View {
                     }
 
                     PrimaryCTAButton(
-                        title: "Confirm & save",
+                        title: TrackyVoice.confirmCTA(hasNext: queuePeers.count > 1),
                         icon: .checkCircle,
                         isLoading: isSaving
                     ) {
                         Task { await save() }
                     }
 
-                    Button("Discard") {
+                    Button(TrackyVoice.discardCTA()) {
                         recorder.discardPending(id: pending.id)
                         dismiss()
                     }
@@ -153,7 +203,12 @@ struct TripConfirmSheet: View {
         do {
             _ = try await store.saveTrip(pending, odometer: pending.suggestedOdometer, applyOdometer: false)
             recorder.markPendingSaved(id: pending.id)
+            let next = recorder.pendingSaves
+                .filter { $0.vehicleId == pending.vehicleId }
+                .sorted { $0.endedAt < $1.endedAt }
+                .first
             dismiss()
+            onConfirmed?(next)
         } catch {
             errorMessage = error.localizedDescription
             isSaving = false

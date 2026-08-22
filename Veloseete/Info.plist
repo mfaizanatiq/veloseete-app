@@ -33,6 +33,75 @@
 	</array>
 	<key>CFBundleVersion</key>
 	<string>$(CURRENT_PROJECT_VERSION)</string>
+	<key>CFBundleIcons</key>
+	<dict>
+		<key>CFBundlePrimaryIcon</key>
+		<dict>
+			<key>CFBundleIconFiles</key>
+			<array/>
+			<key>CFBundleIconName</key>
+			<string>AppIcon</string>
+		</dict>
+		<key>CFBundleAlternateIcons</key>
+		<dict>
+			<key>AppIcon-proud</key>
+			<dict>
+				<key>CFBundleIconFiles</key>
+				<array/>
+				<key>CFBundleIconName</key>
+				<string>AppIcon-proud</string>
+			</dict>
+			<key>AppIcon-fueled</key>
+			<dict>
+				<key>CFBundleIconFiles</key>
+				<array/>
+				<key>CFBundleIconName</key>
+				<string>AppIcon-fueled</string>
+			</dict>
+			<key>AppIcon-focused</key>
+			<dict>
+				<key>CFBundleIconFiles</key>
+				<array/>
+				<key>CFBundleIconName</key>
+				<string>AppIcon-focused</string>
+			</dict>
+			<key>AppIcon-night</key>
+			<dict>
+				<key>CFBundleIconFiles</key>
+				<array/>
+				<key>CFBundleIconName</key>
+				<string>AppIcon-night</string>
+			</dict>
+			<key>AppIcon-dawn</key>
+			<dict>
+				<key>CFBundleIconFiles</key>
+				<array/>
+				<key>CFBundleIconName</key>
+				<string>AppIcon-dawn</string>
+			</dict>
+			<key>AppIcon-grit</key>
+			<dict>
+				<key>CFBundleIconFiles</key>
+				<array/>
+				<key>CFBundleIconName</key>
+				<string>AppIcon-grit</string>
+			</dict>
+			<key>AppIcon-legend</key>
+			<dict>
+				<key>CFBundleIconFiles</key>
+				<array/>
+				<key>CFBundleIconName</key>
+				<string>AppIcon-legend</string>
+			</dict>
+			<key>AppIcon-cozy</key>
+			<dict>
+				<key>CFBundleIconFiles</key>
+				<array/>
+				<key>CFBundleIconName</key>
+				<string>AppIcon-cozy</string>
+			</dict>
+		</dict>
+	</dict>
 	<key>GIDClientID</key>
 	<string>1090690719538-92risgqg4vsdan80orit4k3l16br8lou.apps.googleusercontent.com</string>
 	<key>ITSAppUsesNonExemptEncryption</key>

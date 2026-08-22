@@ -2,14 +2,28 @@ import CoreLocation
 import Foundation
 
 enum TripTrackingLogic {
+    /// Highway / background GPS often reports 30–60 m; 45 m was dropping real fixes.
     static func accepts(horizontalAccuracy: Double) -> Bool {
-        horizontalAccuracy >= 0 && horizontalAccuracy <= 45
+        horizontalAccuracy >= 0 && horizontalAccuracy <= 65
     }
 
+    /// Accepts real driving segments, including sparse highway updates.
+    /// Rejects teleports (impossible speed) and absurd gaps.
     static func acceptedSegmentDistance(from previous: CLLocation, to current: CLLocation) -> Double {
         let distance = current.distance(from: previous)
         let elapsed = current.timestamp.timeIntervalSince(previous.timestamp)
-        guard distance > 2, distance < 200, elapsed > 0, elapsed < 30 else { return 0 }
+        guard distance > 2, elapsed > 0 else { return 0 }
+
+        // ~200 km/h — anything faster is a GPS jump, not a car.
+        let maxPlausibleSpeedMps = 55.0
+        if distance / elapsed > maxPlausibleSpeedMps { return 0 }
+
+        // Background delivery can pause briefly (tunnels, suspension). Keep a
+        // generous gap so a 3–4 hour drive does not shed whole highway stretches.
+        let maxGapMeters = 2_500.0
+        let maxGapSeconds = 180.0
+        guard distance <= maxGapMeters, elapsed <= maxGapSeconds else { return 0 }
+
         return distance
     }
 
@@ -20,14 +34,55 @@ enum TripTrackingLogic {
         return updated
     }
 
+    /// Uniform stride downsample — fine for UI after spacing-based thinning.
     static func downsample(_ points: [TripCoordinate], maximum: Int = 200) -> [TripCoordinate] {
-        guard points.count > maximum else { return points }
-        let step = max(1, points.count / (maximum - 20))
-        var reduced = points.enumerated().compactMap { index, point in
-            index % step == 0 ? point : nil
+        guard points.count > maximum, maximum >= 2 else { return points }
+        let step = max(1, (points.count - 1) / (maximum - 1))
+        var reduced: [TripCoordinate] = []
+        reduced.reserveCapacity(maximum)
+        var index = 0
+        while index < points.count {
+            reduced.append(points[index])
+            index += step
         }
-        if let last = points.last, reduced.last != last { reduced.append(last) }
+        if let last = points.last, reduced.last != last {
+            reduced.append(last)
+        }
         return reduced
+    }
+
+    /// Prefer keeping geometry: drop points closer than `minSpacingMeters`, then
+    /// fall back to uniform downsample only if still over `maximum`.
+    static func thinForPersistence(
+        _ points: [TripCoordinate],
+        minSpacingMeters: Double = 25,
+        maximum: Int = 2_000
+    ) -> [TripCoordinate] {
+        guard points.count > 2 else { return points }
+        var thinned: [TripCoordinate] = [points[0]]
+        thinned.reserveCapacity(min(points.count, maximum))
+        var lastKept = points[0]
+        for point in points.dropFirst() {
+            if approximateDistanceMeters(from: lastKept, to: point) >= minSpacingMeters {
+                thinned.append(point)
+                lastKept = point
+            }
+        }
+        if let last = points.last, thinned.last != last {
+            thinned.append(last)
+        }
+        return downsample(thinned, maximum: maximum)
+    }
+
+    /// Live recording buffer: keep shape under memory pressure without the old
+    /// every-Nth crush to ~1.2k points that erased multi-hour highways.
+    static func compactLiveRoute(
+        _ points: [TripCoordinate],
+        softCap: Int = 8_000,
+        compactedMaximum: Int = 4_000
+    ) -> [TripCoordinate] {
+        guard points.count > softCap else { return points }
+        return thinForPersistence(points, minSpacingMeters: 35, maximum: compactedMaximum)
     }
 
     /// Removes isolated GPS spikes from legacy routes for map presentation only.
@@ -64,7 +119,7 @@ enum TripTrackingLogic {
     static func mapDisplayRoute(
         id: String,
         points: [TripCoordinate],
-        maximumPoints: Int = 96
+        maximumPoints: Int = 220
     ) -> [TripCoordinate] {
         let key = "\(id)|\(points.count)|\(maximumPoints)"
         if let cached = displayCache.object(forKey: key as NSString) {
@@ -76,7 +131,7 @@ enum TripTrackingLogic {
     }
 
     /// Equirectangular approximation — fast enough for spike detection / UI, no CLLocation alloc.
-    private static func approximateDistanceMeters(from lhs: TripCoordinate, to rhs: TripCoordinate) -> Double {
+    static func approximateDistanceMeters(from lhs: TripCoordinate, to rhs: TripCoordinate) -> Double {
         let meanLat = (lhs.latitude + rhs.latitude) * 0.5 * .pi / 180
         let dLat = (rhs.latitude - lhs.latitude) * 111_320
         let dLng = (rhs.longitude - lhs.longitude) * 111_320 * cos(meanLat)

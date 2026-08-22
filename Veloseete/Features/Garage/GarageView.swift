@@ -291,8 +291,8 @@ struct GarageView: View {
     private var stepOdometer: some View {
         VStack(alignment: .leading, spacing: 22) {
             titleBlock(
-                isFirstRun ? "Where the clock is" : "Odometer",
-                isFirstRun ? "Dashboard reading right now — you can refine later" : "Dashboard reading right now"
+                isFirstRun ? TrackyVoice.Soft.odometerStepTitle : TrackyVoice.Calm.currentOdometer,
+                isFirstRun ? TrackyVoice.Soft.odometerStepBody : "Dashboard reading right now"
             )
 
             glassNumberField(

@@ -296,7 +296,7 @@ final class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegat
             }
 
             let refuel = CPListItem(
-                text: "Log refuel",
+                text: TrackyVoice.Calm.logFillCarPlay,
                 detailText: "Continue exact entry on iPhone",
                 image: UIImage(systemName: "fuelpump.fill")
             )
@@ -516,7 +516,7 @@ final class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegat
             estimatedOdometer: estimatedOdometer
         )
         presentMessage(
-            "Refuel ready on iPhone. Enter the receipt amount, liters, and dashboard odometer while parked."
+            TrackyVoice.Calm.logFillCarPlayBody
         )
     }
 

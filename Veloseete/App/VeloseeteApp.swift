@@ -82,6 +82,7 @@ struct VeloseeteApp: App {
                 profileAvatarStore.load(userId: authService.userId)
             }
             .onAppear {
+                TrackyAppIcon.syncFromStorage()
                 if authService.isAuthenticated {
                     tripRecorder.resumeBackgroundWatchingIfNeeded()
                 }
@@ -93,6 +94,7 @@ struct VeloseeteApp: App {
             }
             .onChange(of: scenePhase) { _, phase in
                 guard phase == .active else { return }
+                TrackyAppIcon.syncFromStorage()
                 if authService.isAuthenticated {
                     tripRecorder.resumeBackgroundWatchingIfNeeded()
                 }

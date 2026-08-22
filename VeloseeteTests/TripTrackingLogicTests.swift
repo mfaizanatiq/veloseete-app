@@ -5,9 +5,9 @@ import XCTest
 final class TripTrackingLogicTests: XCTestCase {
     func testAccuracyBoundary() {
         XCTAssertTrue(TripTrackingLogic.accepts(horizontalAccuracy: 0))
-        XCTAssertTrue(TripTrackingLogic.accepts(horizontalAccuracy: 45))
+        XCTAssertTrue(TripTrackingLogic.accepts(horizontalAccuracy: 65))
         XCTAssertFalse(TripTrackingLogic.accepts(horizontalAccuracy: -1))
-        XCTAssertFalse(TripTrackingLogic.accepts(horizontalAccuracy: 45.1))
+        XCTAssertFalse(TripTrackingLogic.accepts(horizontalAccuracy: 65.1))
     }
 
     func testValidSegmentAccumulatesDistance() {
@@ -16,12 +16,28 @@ final class TripTrackingLogicTests: XCTestCase {
         XCTAssertGreaterThan(TripTrackingLogic.acceptedSegmentDistance(from: start, to: end), 40)
     }
 
-    func testJumpAndStaleSegmentsAreRejected() {
+    func testJumpAndTeleportSegmentsAreRejected() {
         let start = location(latitude: 25.2854, longitude: 51.5310, seconds: 0)
+        // ~1.6 km in 4s ≈ 400 m/s — impossible for a car.
         let jump = location(latitude: 25.30, longitude: 51.5310, seconds: 4)
-        let stale = location(latitude: 25.2859, longitude: 51.5310, seconds: 35)
         XCTAssertEqual(TripTrackingLogic.acceptedSegmentDistance(from: start, to: jump), 0)
-        XCTAssertEqual(TripTrackingLogic.acceptedSegmentDistance(from: start, to: stale), 0)
+    }
+
+    func testHighwaySparseUpdateIsAccepted() {
+        // ~278 m in 10s ≈ 100 km/h — common when Core Location batches highway fixes.
+        // The old 200 m / 30 s caps rejected this and destroyed long-drive maps.
+        let start = location(latitude: 25.2854, longitude: 51.5310, seconds: 0)
+        let end = location(latitude: 25.2879, longitude: 51.5310, seconds: 10)
+        let distance = TripTrackingLogic.acceptedSegmentDistance(from: start, to: end)
+        XCTAssertGreaterThan(distance, 250)
+        XCTAssertLessThan(distance, 320)
+    }
+
+    func testBackgroundGapWithPlausibleSpeedIsAccepted() {
+        // 900 m in 45s ≈ 72 km/h after a brief GPS pause.
+        let start = location(latitude: 25.2854, longitude: 51.5310, seconds: 0)
+        let end = location(latitude: 25.2935, longitude: 51.5310, seconds: 45)
+        XCTAssertGreaterThan(TripTrackingLogic.acceptedSegmentDistance(from: start, to: end), 800)
     }
 
     func testRouteKeepsDistinctPointsAndDropsDuplicates() {
@@ -41,6 +57,20 @@ final class TripTrackingLogicTests: XCTestCase {
         XCTAssertEqual(reduced.first, route.first)
         XCTAssertEqual(reduced.last, route.last)
         XCTAssertLessThan(reduced.count, route.count)
+    }
+
+    func testThinForPersistenceKeepsShapeBetterThanCrush() {
+        var route: [TripCoordinate] = []
+        for index in 0..<1_200 {
+            let lat = 25.0 + Double(index) * 0.00008
+            let lng = index < 600 ? 51.0 : 51.0 + Double(index - 600) * 0.00008
+            route.append(TripCoordinate(latitude: lat, longitude: lng))
+        }
+        let thinned = TripTrackingLogic.thinForPersistence(route, minSpacingMeters: 25, maximum: 800)
+        XCTAssertEqual(thinned.first, route.first)
+        XCTAssertEqual(thinned.last, route.last)
+        XCTAssertGreaterThan(thinned.count, 200)
+        XCTAssertLessThanOrEqual(thinned.count, 800)
     }
 
     func testPendingTripQueueItemSurvivesPersistenceRoundTrip() throws {

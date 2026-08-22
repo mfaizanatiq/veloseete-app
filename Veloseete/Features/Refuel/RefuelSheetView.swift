@@ -188,7 +188,7 @@ struct RefuelSheetView: View {
                 .padding(.bottom, 28)
             }
             .veloseetePage()
-            .navigationTitle(isEditing ? "Edit Refuel" : "Add Refuel")
+            .navigationTitle(isEditing ? TrackyVoice.Calm.editFillNav : TrackyVoice.Calm.addFillNav)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
@@ -198,7 +198,7 @@ struct RefuelSheetView: View {
             }
             .safeAreaInset(edge: .bottom) {
                 PrimaryCTAButton(
-                    title: isEditing ? "Save changes" : "Save refuel",
+                    title: isEditing ? TrackyVoice.Calm.saveFillChanges : TrackyVoice.Calm.saveFill,
                     icon: .gasPump,
                     isLoading: isSubmitting,
                     isEnabled: canSubmit
@@ -381,6 +381,12 @@ struct RefuelSheetView: View {
                 .font(VS.Typography.heading(32, weight: .bold))
                 .foregroundStyle(VS.Color.textPrimary)
                 .vsInputField()
+
+            if let estimate, estimate.includesPending {
+                Text(TrackyVoice.Calm.estimateIncludesPending)
+                    .font(VS.Typography.body(12, weight: .medium))
+                    .foregroundStyle(VS.Color.textTertiary)
+            }
 
             if let varianceKm {
                 HStack(spacing: 8) {

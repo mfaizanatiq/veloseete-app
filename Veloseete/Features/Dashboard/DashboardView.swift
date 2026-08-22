@@ -82,7 +82,7 @@ struct DashboardView: View {
         let vehicleLogs = store.fuelLogsForCurrentVehicle
         return HStack(spacing: 8) {
             VSIcon(icon: .cloud, size: 12, weight: .bold, tint: VS.Color.textTertiary)
-            Text("\(store.vehicles.count) cars · \(vehicleLogs.count) refuels synced")
+            Text(TrackyVoice.Soft.syncChip(cars: store.vehicles.count, fills: vehicleLogs.count))
                 .font(VS.Typography.body(11, weight: .medium))
             Spacer()
             if let email = AuthService.shared.user?.email {
@@ -108,7 +108,7 @@ struct DashboardView: View {
     private func recentSection(_ logs: [FuelLog]) -> some View {
         VStack(alignment: .leading, spacing: VS.Spacing.stack) {
             HStack(alignment: .firstTextBaseline) {
-                VSSectionHeader(title: "Recent fills")
+                VSSectionHeader(title: TrackyVoice.Soft.recentFills)
                 Spacer(minLength: 8)
                 if !logs.isEmpty {
                     Button {
@@ -116,7 +116,7 @@ struct DashboardView: View {
                         showHistory = true
                     } label: {
                         HStack(spacing: 4) {
-                            Text("See all")
+                            Text(TrackyVoice.Soft.seeAllFills)
                                 .font(VS.Typography.body(13, weight: .semibold))
                             Image(systemName: "chevron.right")
                                 .font(.system(size: 10, weight: .bold))
@@ -130,10 +130,10 @@ struct DashboardView: View {
             if logs.isEmpty {
                 VStack(spacing: 14) {
                     FluentEmojiView(emoji: "⛽", size: 48)
-                    Text("First fill’s the charm")
+                    Text(TrackyVoice.Soft.emptyFuelsTitle)
                         .font(VS.Typography.heading(16))
                         .foregroundStyle(VS.Color.textPrimary)
-                    Text("Track a refill — spend and efficiency kick in.")
+                    Text(TrackyVoice.Soft.emptyFuelsBody)
                         .font(VS.Typography.body(13))
                         .foregroundStyle(VS.Color.textSecondary)
                         .multilineTextAlignment(.center)
@@ -226,7 +226,7 @@ struct HeroCard: View {
             if let efficiency, let manufacturerStandard, manufacturerStandard > 0 {
                 brochureGauge(current: efficiency, standard: manufacturerStandard)
             } else if efficiency == nil {
-                Text("A few fills and this car’s personality shows up.")
+                Text(TrackyVoice.Soft.fuelsHeroHint)
                     .font(VS.Typography.body(13))
                     .foregroundStyle(VS.Color.navPill.opacity(0.6))
             }

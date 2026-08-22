@@ -258,7 +258,7 @@ struct PrimaryCTAButton: View {
     var action: () -> Void
 
     init(
-        title: String = "+ Add Refuel",
+        title: String = TrackyVoice.Soft.addFillCTA,
         icon: VSIconName? = .gasPump,
         isLoading: Bool = false,
         isEnabled: Bool = true,

@@ -32,6 +32,11 @@ private enum DriveDrawerGestureOwner {
     case scrolling
 }
 
+private enum TrackingStatusPriority {
+    case pending(count: Int, km: Double, samples: [PendingTripSave])
+    case fuel(title: String, detail: String, tint: Color)
+}
+
 struct TripsView: View {
     @EnvironmentObject private var avatarStore: ProfileAvatarStore
     @EnvironmentObject private var store: DataStore
@@ -49,7 +54,6 @@ struct TripsView: View {
     @State private var driveDrawerExpanded = false
     @State private var driveDrawerDragOffset: CGFloat = 0
     @State private var driveDrawerGestureOwner: DriveDrawerGestureOwner?
-    @State private var showAutoTrackNudge = false
     let onProfile: () -> Void
 
     private func autoTrackNudgePromptedKey(for userId: String) -> String {
@@ -214,6 +218,7 @@ struct TripsView: View {
                     showsUserCharacter: usesLocationFocalMap,
                     courseDegrees: recorder.followCourseDegrees,
                     characterCoordinate: mapCharacterCoordinate,
+                    vehicleStyle: VehicleMarkStyle.resolve(store.currentVehicle?.icon),
                     locksMinimumPitch: mode == .tracking || selectedTrip != nil,
                     position: $mapPosition
                 )
@@ -235,7 +240,9 @@ struct TripsView: View {
             .ignoresSafeArea()
 
             VStack(spacing: 0) {
+                // Must not eat taps meant for the map or the top segment.
                 Spacer(minLength: 0)
+                    .allowsHitTesting(false)
 
                 Group {
                     if mode == .tracking {
@@ -248,40 +255,66 @@ struct TripsView: View {
                 }
                 .floatingInFrame(bottomClearance: VS.Spacing.frameGutter + 78)
             }
-        }
-        .overlay(alignment: .topLeading) {
-            VStack(alignment: .leading, spacing: 10) {
-                modePicker
-                    .frame(maxWidth: 255)
 
-                HStack(spacing: 7) {
-                    Circle()
-                        .fill(recorder.phase == .recording ? VS.Color.success : VS.Color.textTertiary)
-                        .frame(width: 7, height: 7)
-                    Text(recorder.phase == .recording ? "LIVE ROUTE" : (mode == .tracking ? "READY TO TRACK" : "SELECT A DRIVE"))
-                        .font(VS.Typography.body(10, weight: .bold))
+            // Top chrome in the ZStack (not an overlay) so MapKit can't steal hits.
+            // safeAreaPadding keeps Tracking / My Drives below the status bar.
+            VStack(spacing: 0) {
+                HStack(alignment: .top, spacing: 12) {
+                    VStack(alignment: .leading, spacing: 10) {
+                        modePicker
+                            .frame(maxWidth: 255)
+
+                        HStack(spacing: 7) {
+                            Circle()
+                                .fill(recorder.phase == .recording ? VS.Color.success : VS.Color.textTertiary)
+                                .frame(width: 7, height: 7)
+                            Text(TrackyVoice.mapChip(
+                                recording: recorder.phase == .recording,
+                                trackingMode: mode == .tracking
+                            ))
+                                .font(VS.Typography.body(10, weight: .bold))
+                        }
+                        .foregroundStyle(VS.Color.textPrimary)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 7)
+                        .background {
+                            Capsule()
+                                .fill(.regularMaterial)
+                                .overlay {
+                                    Capsule()
+                                        .fill(Color.black.opacity(0.42))
+                                }
+                                .overlay {
+                                    Capsule()
+                                        .stroke(Color.white.opacity(0.18), lineWidth: 1)
+                                }
+                        }
+                        .clipShape(Capsule())
+                        .shadow(color: .black.opacity(0.28), radius: 10, y: 3)
+                    }
+
+                    Spacer(minLength: 0)
+                        .allowsHitTesting(false)
+
+                    Button {
+                        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                        onProfile()
+                    } label: {
+                        ProfileAvatarView(image: avatarStore.image, size: 40)
+                            .overlay(Circle().stroke(VS.Color.accent.opacity(0.24), lineWidth: 1))
+                    }
+                    .buttonStyle(ScaleButtonStyle())
+                    .accessibilityLabel("Open profile")
                 }
-                .foregroundStyle(VS.Color.textPrimary)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 7)
-                .background(.ultraThinMaterial, in: Capsule())
-                .overlay(Capsule().stroke(Color.white.opacity(0.12), lineWidth: 1))
+                .padding(.leading, VS.Spacing.frameGutter + 6)
+                .padding(.trailing, 16)
+                .padding(.top, 8)
+                .safeAreaPadding(.top)
+
+                Spacer(minLength: 0)
+                    .allowsHitTesting(false)
             }
-            .padding(.leading, VS.Spacing.frameGutter + 6)
-            .padding(.top, 10)
-        }
-        .overlay(alignment: .topTrailing) {
-            Button {
-                UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                onProfile()
-            } label: {
-                ProfileAvatarView(image: avatarStore.image, size: 40)
-                    .overlay(Circle().stroke(VS.Color.accent.opacity(0.24), lineWidth: 1))
-            }
-            .buttonStyle(ScaleButtonStyle())
-            .accessibilityLabel("Open profile")
-            .padding(.top, 8)
-            .padding(.trailing, 16)
+            .zIndex(20)
         }
         .background(VS.Color.bgPrimary)
         .onAppear {
@@ -304,17 +337,7 @@ struct TripsView: View {
                 focusMap()
             }
 
-            // One-time nudge after sign-in when auto-detect is off.
-            // Persist "prompted" only on Enable / Dismiss — not on appear —
-            // so a quick glance does not burn the tip forever.
-            showAutoTrackNudge = false
-            if recorder.autoTrackingEnabled == false,
-               let uid = AuthService.shared.userId {
-                let key = autoTrackNudgePromptedKey(for: uid)
-                if !UserDefaults.standard.bool(forKey: key) {
-                    showAutoTrackNudge = true
-                }
-            }
+            // Auto-detect tip is the capsule only — no panel banner.
         }
         .onDisappear {
             recorder.stopMapFollowUpdates()
@@ -328,7 +351,12 @@ struct TripsView: View {
             .veloseeteSheet()
         }
         .sheet(item: $reviewPendingTrip) { pending in
-            TripConfirmSheet(pending: pending)
+            TripConfirmSheet(pending: pending) { next in
+                guard let next else { return }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+                    reviewPendingTrip = next
+                }
+            }
         }
         .sheet(item: $detailTrip, onDismiss: {
             selectedTripId = nil
@@ -391,7 +419,7 @@ struct TripsView: View {
 
     /// Keeps the camera focal point inside the map area that is actually visible
     /// between the top controls and the live bottom panel.
-    private var mapTopObstruction: CGFloat { 118 }
+    private var mapTopObstruction: CGFloat { 148 }
 
     private var mapBottomObstruction: CGFloat {
         let floatChrome = VS.Spacing.frameGutter * 2 + 78
@@ -402,12 +430,31 @@ struct TripsView: View {
     }
 
     private var trackingPanelHeight: CGFloat {
-        let fuelExtra: CGFloat = trackingFuelWarning != nil ? 48 : 0
+        let railExtra: CGFloat = trackingStatusPriority != nil ? 56 : 0
+        let errorExtra: CGFloat = recorder.lastError == nil ? 0 : 36
         switch recorder.phase {
-        case .recording: return 400 + fuelExtra
-        case .confirming: return 328 + fuelExtra
-        default: return 296 + fuelExtra
+        // Room for metrics + GPS line + optional error + Pause/End — never clip CTAs.
+        case .recording: return 448 + errorExtra
+        case .confirming: return 320 + railExtra
+        default: return 276 + railExtra
         }
+    }
+
+    /// One alert at a time — recording suppresses banners (live metrics own the panel).
+    /// Priority: pending review → fuel watch. Auto-detect tip lives only on the capsule.
+    private var trackingStatusPriority: TrackingStatusPriority? {
+        guard recorder.phase != .recording else { return nil }
+        guard let vehicleId = trackingVehicle?.id else { return nil }
+
+        let pending = recorder.pendingSaves.filter { $0.vehicleId == vehicleId }
+        if !pending.isEmpty {
+            let km = pending.reduce(0.0) { $0 + $1.distanceKm }
+            return .pending(count: pending.count, km: km, samples: pending)
+        }
+        if let warning = trackingFuelWarning {
+            return .fuel(title: warning.title, detail: warning.detail, tint: warning.tint)
+        }
+        return nil
     }
 
     private var modePicker: some View {
@@ -448,8 +495,22 @@ struct TripsView: View {
             }
         }
         .padding(4)
-        .background(VS.Color.chip, in: Capsule())
-        .overlay(Capsule().stroke(VS.Color.hairline, lineWidth: 1))
+        .background {
+            Capsule()
+                .fill(.regularMaterial)
+                .overlay {
+                    Capsule()
+                        .fill(Color.black.opacity(0.42))
+                }
+                .overlay {
+                    Capsule()
+                        .stroke(Color.white.opacity(0.18), lineWidth: 1)
+                }
+        }
+        .clipShape(Capsule())
+        .shadow(color: .black.opacity(0.28), radius: 12, y: 4)
+        .contentShape(Capsule())
+        .accessibilityElement(children: .contain)
     }
 
     private var trackingMode: some View {
@@ -463,12 +524,16 @@ struct TripsView: View {
 
             trackingPanelBody
                 .padding(.horizontal, 16)
-                .padding(.bottom, 14)
+                .padding(.bottom, 18)
         }
-        .frame(height: trackingPanelHeight, alignment: .top)
+        // Size to content — fixed height was clipping Pause / End when GPS error showed.
+        .fixedSize(horizontal: false, vertical: true)
+        .frame(maxWidth: .infinity, alignment: .top)
         .background(panelBackground)
         .clipShape(RoundedRectangle(cornerRadius: VS.Radius.panel, style: .continuous))
         .animation(.snappy(duration: 0.28), value: recorder.phase)
+        .animation(.snappy(duration: 0.28), value: recorder.pendingSaves.count)
+        .animation(.snappy(duration: 0.28), value: recorder.lastError)
     }
 
     private var trackingVehicle: Vehicle? {
@@ -524,48 +589,24 @@ struct TripsView: View {
         let vehicle = trackingVehicle
         let vehicleId = vehicle?.id
         let estimate = vehicleId.flatMap { store.odometerEstimate(vehicleId: $0) }
-        let odoKm = estimate?.estimatedKm
-            ?? vehicle?.currentOdometer
-            ?? 0
+        let liveKm = recorder.phase == .recording ? (recorder.snapshot?.distanceKm ?? 0) : 0
+        let odoKm = (estimate?.estimatedKm ?? vehicle?.currentOdometer ?? 0) + liveKm
         let usesMiles = store.defaultDistanceUnit == "mi"
         let odoValue = String(format: "%.0f", usesMiles ? odoKm * 0.621371 : odoKm)
         let odoUnit = usesMiles ? "mi" : "km"
         let monthKm = vehicleId.map(monthDrivenKm(for:)) ?? 0
         let monthLabel = DistanceFormat.formatDistance(monthKm, unit: store.defaultDistanceUnit)
 
-        return VStack(alignment: .leading, spacing: 16) {
-            // Identity — Dashboard hero language
+        return VStack(alignment: .leading, spacing: 14) {
+            // Identity — car + auto-detect capsule only
             HStack(alignment: .top, spacing: 12) {
                 trackingVehiclePicker(vehicle: vehicle)
                 Spacer(minLength: 8)
-                VStack(alignment: .trailing, spacing: 6) {
-                    trackingAutoCapsule
-                    if showAutoTrackNudge && recorder.autoTrackingEnabled == false {
-                        Button {
-                            markAutoTrackNudgePrompted()
-                            showAutoTrackNudge = false
-                        } label: {
-                            Text("Enable auto-detect to start trips automatically.")
-                                .font(VS.Typography.body(11, weight: .semibold))
-                                .foregroundStyle(VS.Color.textTertiary)
-                                .lineLimit(2)
-                                .multilineTextAlignment(.trailing)
-                                .padding(.horizontal, 10)
-                                .padding(.vertical, 7)
-                                .background(VS.Color.accent.opacity(0.12), in: Capsule())
-                                .overlay(
-                                    Capsule()
-                                        .stroke(VS.Color.accent.opacity(0.28), lineWidth: 1)
-                                )
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityLabel("Dismiss auto-detect tip")
-                    }
-                }
+                trackingAutoCapsule
             }
 
-            // Hero odometer — the number owns the panel
-            VStack(alignment: .leading, spacing: 6) {
+            // Hero odometer — big type owns the panel (Ladder / Any Distance energy)
+            VStack(alignment: .leading, spacing: 8) {
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
                     Text(odoValue)
                         .font(VS.Typography.heading(60, weight: .bold))
@@ -573,45 +614,31 @@ struct TripsView: View {
                         .minimumScaleFactor(0.48)
                         .lineLimit(1)
                         .contentTransition(.numericText())
+                        .animation(.snappy(duration: 0.22), value: odoValue)
                     Text(odoUnit)
                         .font(VS.Typography.heading(20, weight: .bold))
-                        .foregroundStyle(VS.Color.textTertiary)
+                        .foregroundStyle(liveKm > 0.05 ? VS.Color.accent : VS.Color.textTertiary)
                 }
 
                 HStack(spacing: 8) {
-                    Text(estimate != nil ? "Odometer · estimated" : "Odometer")
+                    Text(odometerCaption(estimate: estimate, liveKm: liveKm))
                         .font(VS.Typography.body(13, weight: .medium))
                         .foregroundStyle(VS.Color.textTertiary)
                     if recorder.phase == .recording {
-                        Text("·")
-                            .foregroundStyle(VS.Color.textTertiary)
-                        Text(phaseTitle)
-                            .font(VS.Typography.body(13, weight: .semibold))
-                            .foregroundStyle(VS.Color.success)
+                        trackingLivePill(
+                            paused: recorder.snapshot?.isPaused == true
+                        )
                     }
                 }
 
-                Text("\(monthLabel) this month")
-                    .font(VS.Typography.body(14, weight: .medium))
+                Text(TrackyVoice.monthLine(monthLabel))
+                    .font(VS.Typography.body(14, weight: .semibold))
                     .foregroundStyle(VS.Color.textSecondary)
             }
 
-            if let warning = trackingFuelWarning {
-                HStack(spacing: 10) {
-                    VSIcon(icon: .gasPump, size: 15, weight: .fill, tint: warning.tint)
-                    Text(warning.title)
-                        .font(VS.Typography.heading(13, weight: .bold))
-                        .foregroundStyle(VS.Color.textPrimary)
-                    Spacer(minLength: 4)
-                    Text(warning.detail)
-                        .font(VS.Typography.body(12, weight: .semibold))
-                        .foregroundStyle(warning.tint)
-                        .lineLimit(1)
-                }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 10)
-                .background(warning.tint.opacity(0.12), in: Capsule())
-                .overlay(Capsule().stroke(warning.tint.opacity(0.28), lineWidth: 1))
+            // Single status rail (pending > fuel). Hidden while recording.
+            if let rail = trackingStatusPriority {
+                trackingStatusRail(rail)
             }
 
             if let snap = recorder.snapshot, recorder.phase == .recording {
@@ -623,8 +650,9 @@ struct TripsView: View {
 
                 HStack(spacing: 6) {
                     Circle()
-                        .fill(recorder.liveRoute.isEmpty ? VS.Color.warning : VS.Color.success)
+                        .fill(recorder.liveRoute.isEmpty ? VS.Color.warning : VS.Color.accent)
                         .frame(width: 7, height: 7)
+                        .opacity(recorder.liveRoute.isEmpty ? 1 : pulseOpacity)
                     Text(routeStatusText)
                         .font(VS.Typography.body(12, weight: .semibold))
                         .foregroundStyle(VS.Color.textTertiary)
@@ -644,6 +672,111 @@ struct TripsView: View {
         }
     }
 
+    @ViewBuilder
+    private func trackingStatusRail(_ rail: TrackingStatusPriority) -> some View {
+        switch rail {
+        case let .pending(count, km, samples):
+            Button {
+                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                withAnimation(.spring(response: 0.42, dampingFraction: 0.9)) {
+                    mode = .drives
+                    driveDrawerExpanded = true
+                }
+                if count == 1, let only = samples.first {
+                    reviewPendingTrip = only
+                }
+            } label: {
+                HStack(spacing: 10) {
+                    VSIcon(icon: .roadHorizon, size: 16, weight: .fill, tint: VS.Color.warning)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(TrackyVoice.pendingTitle(count: count))
+                            .font(VS.Typography.heading(14, weight: .bold))
+                            .foregroundStyle(VS.Color.textPrimary)
+                        Text(TrackyVoice.pendingSubtitle(
+                            distanceLabel: DistanceFormat.formatDistance(km, unit: store.defaultDistanceUnit)
+                        ))
+                            .font(VS.Typography.body(12, weight: .medium))
+                            .foregroundStyle(VS.Color.textTertiary)
+                            .lineLimit(1)
+                    }
+                    Spacer(minLength: 4)
+                    Text(TrackyVoice.pendingCTA(count: count))
+                        .font(VS.Typography.heading(12, weight: .bold))
+                        .foregroundStyle(VS.Color.navPill)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 7)
+                        .background(VS.Color.accent, in: Capsule())
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 12)
+                .background(VS.Color.warning.opacity(0.12), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 18, style: .continuous)
+                        .stroke(VS.Color.warning.opacity(0.28), lineWidth: 1)
+                )
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(TrackyVoice.Soft.pendingSection)
+
+        case let .fuel(title, detail, tint):
+            HStack(spacing: 10) {
+                VSIcon(icon: .gasPump, size: 15, weight: .fill, tint: tint)
+                Text(TrackyVoice.fuelTitle(title))
+                    .font(VS.Typography.heading(13, weight: .bold))
+                    .foregroundStyle(VS.Color.textPrimary)
+                Spacer(minLength: 4)
+                Text(detail)
+                    .font(VS.Typography.body(12, weight: .semibold))
+                    .foregroundStyle(tint)
+                    .lineLimit(1)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
+            .background(tint.opacity(0.12), in: Capsule())
+            .overlay(Capsule().stroke(tint.opacity(0.28), lineWidth: 1))
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel("\(title), \(detail)")
+        }
+    }
+
+    private func odometerCaption(estimate: OdometerEstimate?, liveKm: Double) -> String {
+        TrackyVoice.odometerCaption(
+            live: liveKm > 0.05,
+            pendingIn: estimate?.includesPending == true
+        )
+    }
+
+    private var pulseOpacity: Double {
+        // Soft pulse without a Timer — driven by snapshot updates while recording.
+        let tick = Int((recorder.snapshot?.durationSec ?? 0) * 2)
+        return tick % 2 == 0 ? 1.0 : 0.45
+    }
+
+    private func trackingLivePill(paused: Bool) -> some View {
+        HStack(spacing: 6) {
+            Circle()
+                .fill(paused ? VS.Color.warning : VS.Color.accent)
+                .frame(width: 6, height: 6)
+                .opacity(paused ? 1 : pulseOpacity)
+            Text(paused ? "PAUSED" : "LIVE")
+                .font(VS.Typography.mono(10, weight: .bold))
+                .foregroundStyle(paused ? VS.Color.warning : VS.Color.navPill)
+        }
+        .padding(.horizontal, 9)
+        .padding(.vertical, 5)
+        .background(
+            (paused ? VS.Color.warning : VS.Color.accent).opacity(paused ? 0.18 : 1),
+            in: Capsule()
+        )
+        .overlay(
+            Capsule().stroke(
+                (paused ? VS.Color.warning : VS.Color.accent).opacity(paused ? 0.45 : 0),
+                lineWidth: 1
+            )
+        )
+        .accessibilityLabel(paused ? "Paused" : "Live recording")
+    }
+
     private var trackingAutoCapsule: some View {
         Button {
             UISelectionFeedbackGenerator().selectionChanged()
@@ -658,15 +791,14 @@ struct TripsView: View {
             recorder.setAutoTracking(newValue)
             if newValue {
                 markAutoTrackNudgePrompted()
-                showAutoTrackNudge = false
             }
         } label: {
             HStack(spacing: 7) {
                 Circle()
                     .fill(recorder.autoTrackingEnabled ? VS.Color.accent : VS.Color.textTertiary.opacity(0.55))
                     .frame(width: 7, height: 7)
-                Text(recorder.autoTrackingEnabled ? "Auto-detect ON" : "Auto-detect OFF")
-                    .font(VS.Typography.body(12, weight: .semibold))
+                Text(TrackyVoice.autoCapsule(isOn: recorder.autoTrackingEnabled))
+                    .font(VS.Typography.body(12, weight: .bold))
             }
             .foregroundStyle(VS.Color.textPrimary)
             .padding(.horizontal, 12)
@@ -682,7 +814,7 @@ struct TripsView: View {
             )
         }
         .buttonStyle(.plain)
-        .accessibilityLabel(recorder.autoTrackingEnabled ? "Auto-detect on" : "Auto-detect off")
+        .accessibilityLabel(TrackyVoice.autoAccessibility(isOn: recorder.autoTrackingEnabled))
         .accessibilityHint("Toggles automatic trip start. Requires Always location access.")
     }
 
@@ -773,7 +905,9 @@ struct TripsView: View {
                             weight: .fill,
                             tint: VS.Color.textPrimary
                         )
-                        Text(recorder.snapshot?.isPaused == true ? "Resume" : "Pause")
+                        Text(recorder.snapshot?.isPaused == true
+                             ? TrackyVoice.resumeCTA()
+                             : TrackyVoice.pauseCTA())
                             .font(VS.Typography.heading(16, weight: .bold))
                     }
                     .foregroundStyle(VS.Color.textPrimary)
@@ -783,11 +917,11 @@ struct TripsView: View {
                 }
                 .buttonStyle(.plain)
 
-                PrimaryCTAButton(title: "End drive", icon: .stop) {
+                PrimaryCTAButton(title: TrackyVoice.endCTA(), icon: .stop) {
                     recorder.endTrip()
                 }
             } else {
-                PrimaryCTAButton(title: "Start drive", icon: .play) {
+                PrimaryCTAButton(title: TrackyVoice.startCTA(), icon: .play) {
                     guard tripPermissions.locationStatus.isUsable else {
                         showTripPermissions = true
                         return
@@ -814,7 +948,7 @@ struct TripsView: View {
                             .foregroundStyle(VS.Color.textPrimary)
                         Text(filteredPendingTrips.isEmpty
                              ? driveRollupLine
-                             : "\(filteredPendingTrips.count) awaiting your review")
+                             : TrackyVoice.drivesAwaiting(filteredPendingTrips.count))
                             .font(VS.Typography.body(13, weight: .medium))
                             .foregroundStyle(VS.Color.textTertiary)
                             .lineLimit(2)
@@ -843,7 +977,7 @@ struct TripsView: View {
                     LazyVStack(spacing: 10) {
                         if !filteredPendingTrips.isEmpty {
                             HStack(spacing: 8) {
-                                Text("Review required")
+                                Text(TrackyVoice.reviewRequired())
                                     .font(VS.Typography.heading(13, weight: .bold))
                                     .foregroundStyle(VS.Color.warning)
                                 Text("\(filteredPendingTrips.count)")
@@ -864,7 +998,7 @@ struct TripsView: View {
                                         } else {
                                             VSIcon(icon: .checkCircle, size: 13, weight: .bold, tint: VS.Color.navPill)
                                         }
-                                        Text(isConfirmingAll ? "Confirming…" : "Confirm all")
+                                        Text(isConfirmingAll ? "Locking in…" : TrackyVoice.confirmAll())
                                             .font(VS.Typography.heading(12, weight: .bold))
                                             .foregroundStyle(VS.Color.navPill)
                                     }
@@ -1038,6 +1172,7 @@ struct TripsView: View {
                 showsUserCharacter: mode == .tracking,
                 courseDegrees: recorder.followCourseDegrees,
                 characterCoordinate: mapCharacterCoordinate,
+                vehicleStyle: VehicleMarkStyle.resolve(store.currentVehicle?.icon),
                 locksMinimumPitch: mode == .tracking || selectedTrip != nil,
                 position: $mapPosition
             )
@@ -1047,7 +1182,10 @@ struct TripsView: View {
                 Circle()
                     .fill(recorder.phase == .recording ? VS.Color.success : VS.Color.textTertiary)
                     .frame(width: 7, height: 7)
-                Text(recorder.phase == .recording ? "LIVE ROUTE" : (mode == .tracking ? "READY TO TRACK" : "ROUTE MAP"))
+                Text(TrackyVoice.mapChip(
+                    recording: recorder.phase == .recording,
+                    trackingMode: mode == .tracking
+                ))
                     .font(VS.Typography.body(10, weight: .bold))
             }
             .foregroundStyle(VS.Color.textPrimary)
@@ -1081,29 +1219,18 @@ struct TripsView: View {
     }
 
     private var phaseTitle: String {
-        switch recorder.phase {
-        case .idle: return "Trip tracking"
-        case .watching: return "Watching for drives"
-        case .recording: return recorder.snapshot?.isPaused == true ? "Paused" : "Recording"
-        case .confirming: return "Confirm drive"
-        }
+        TrackyVoice.phaseTitle(
+            phase: recorder.phase,
+            isPaused: recorder.snapshot?.isPaused == true
+        )
     }
 
     private var phaseSubtitle: String {
-        switch recorder.phase {
-        case .idle:
-            if recorder.autoTrackingEnabled {
-                return "Auto-detect is ON — waiting for motion/GPS"
-            } else {
-                return "Auto-detect is OFF — tap Auto-detect OFF to enable"
-            }
-        case .watching:
-            return "Starts automatically when you begin driving"
-        case .recording:
-            return "Live Activity + GPS route · \(recorder.snapshot?.source ?? "manual")"
-        case .confirming:
-            return "Review distance and odometer"
-        }
+        TrackyVoice.phaseSubtitle(
+            phase: recorder.phase,
+            autoOn: recorder.autoTrackingEnabled,
+            source: recorder.snapshot?.source
+        )
     }
 
     private func liveMetric(_ value: String, _ label: String) -> some View {
@@ -1111,20 +1238,22 @@ struct TripsView: View {
             Text(value)
                 .font(VS.Typography.heading(22, weight: .bold))
                 .foregroundStyle(VS.Color.textPrimary)
+                .contentTransition(.numericText())
             Text(label.uppercased())
-                .font(VS.Typography.body(11, weight: .bold))
-                .foregroundStyle(VS.Color.textTertiary)
+                .font(VS.Typography.mono(10, weight: .bold))
+                .foregroundStyle(VS.Color.accent.opacity(0.85))
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(12)
-        .metricInset()
+        .background(VS.Color.chip, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .stroke(VS.Color.accent.opacity(0.22), lineWidth: 1)
+        )
     }
 
     private var routeStatusText: String {
-        guard let accuracy = recorder.lastLocationAccuracy else { return "Acquiring precise GPS…" }
-        if accuracy <= 15 { return "Strong GPS · ±\(Int(accuracy)) m" }
-        if accuracy <= 30 { return "Good GPS · ±\(Int(accuracy)) m" }
-        return "Weak GPS · ±\(Int(accuracy)) m"
+        TrackyVoice.routeStatus(accuracy: recorder.lastLocationAccuracy)
     }
 
     private func formatDuration(_ sec: Double) -> String {
@@ -1289,10 +1418,10 @@ struct TripsView: View {
     private var emptyState: some View {
         VStack(spacing: 14) {
             VSIcon(icon: .mapTrifold, size: 40, weight: .regular, tint: VS.Color.accent)
-            Text("No drives yet")
+            Text(TrackyVoice.emptyDrivesTitle())
                 .font(VS.Typography.heading(18))
                 .foregroundStyle(VS.Color.textPrimary)
-            Text("Start a drive or turn on auto-detect — routes, distance, and top speed land here.")
+            Text(TrackyVoice.emptyDrivesBody())
                 .font(VS.Typography.body(13))
                 .foregroundStyle(VS.Color.textSecondary)
                 .multilineTextAlignment(.center)
@@ -1303,7 +1432,7 @@ struct TripsView: View {
                 } label: {
                     HStack(spacing: 8) {
                         VSIcon(icon: .mapPin, size: 18, weight: .fill, tint: VS.Color.navPill)
-                        Text("Set up trip tracking")
+                        Text(TrackyVoice.Soft.setUpTracking)
                             .font(VS.Typography.heading(15))
                     }
                     .foregroundStyle(VS.Color.navPill)
@@ -1323,7 +1452,7 @@ struct TripsView: View {
     private func region(for trip: Trip) -> MKCoordinateRegion? {
         let coords = trip.route.isEmpty
             ? [trip.startCoordinate, trip.endCoordinate].compactMap { $0 }
-            : TripTrackingLogic.mapDisplayRoute(id: trip.id, points: trip.route, maximumPoints: 120)
+            : TripTrackingLogic.mapDisplayRoute(id: trip.id, points: trip.route, maximumPoints: 240)
         guard !coords.isEmpty else { return nil }
         return region(for: coords)
     }
@@ -1331,7 +1460,7 @@ struct TripsView: View {
     private func drawerAwareRegion(for trip: Trip, shiftForPitch: Bool = true) -> MKCoordinateRegion? {
         let coordinates = trip.route.isEmpty
             ? [trip.startCoordinate, trip.endCoordinate].compactMap { $0 }
-            : TripTrackingLogic.mapDisplayRoute(id: trip.id, points: trip.route, maximumPoints: 120)
+            : TripTrackingLogic.mapDisplayRoute(id: trip.id, points: trip.route, maximumPoints: 240)
         guard !coordinates.isEmpty else { return nil }
         return drawerAwareRegion(for: coordinates, shiftForPitch: shiftForPitch)
     }
@@ -1402,6 +1531,8 @@ struct TripsMapCanvas: View {
     let courseDegrees: Double
     /// Recorder follow pose — keeps the avatar on our route, not MapKit's lagging user location.
     let characterCoordinate: CLLocationCoordinate2D?
+    /// Car mark for the live map puck (Uber-style top-down asset).
+    var vehicleStyle: VehicleMarkStyle = .sedan
     /// When false (historic overview), allow flat camera so multi-city history can fit.
     var locksMinimumPitch: Bool = true
     @Binding var position: MapCameraPosition
@@ -1415,7 +1546,8 @@ struct TripsMapCanvas: View {
                         VeloseeteMapCharacter(
                             isLive: isActivelyRecording,
                             courseDegrees: courseDegrees,
-                            mapHeading: mapHeading
+                            mapHeading: mapHeading,
+                            vehicleStyle: vehicleStyle
                         )
                     }
                 } else {
@@ -1423,7 +1555,8 @@ struct TripsMapCanvas: View {
                         VeloseeteMapCharacter(
                             isLive: isActivelyRecording,
                             courseDegrees: courseDegrees,
-                            mapHeading: mapHeading
+                            mapHeading: mapHeading,
+                            vehicleStyle: vehicleStyle
                         )
                     }
                 }
@@ -1464,7 +1597,7 @@ struct TripsMapCanvas: View {
                 let selectedRoute = TripTrackingLogic.mapDisplayRoute(
                     id: selected.id,
                     points: selected.route,
-                    maximumPoints: 160
+                    maximumPoints: 240
                 )
                 if selectedRoute.count >= 2 {
                     let coords = selectedRoute.map {
@@ -1560,91 +1693,45 @@ struct TripsMapCanvas: View {
     private static let enforcedPitch: Double = 58
 }
 
-/// Soft wedge showing look / travel direction behind the map character.
-private struct FieldOfViewCone: Shape {
-    /// Full opening angle of the cone, in degrees.
-    var span: Double = 78
-
-    func path(in rect: CGRect) -> Path {
-        let center = CGPoint(x: rect.midX, y: rect.midY)
-        let radius = min(rect.width, rect.height) / 2
-        let half = span / 2
-        // 0° screen-up is “forward”; Map annotations stay screen-aligned.
-        let start = Angle.degrees(-90 - half)
-        let end = Angle.degrees(-90 + half)
-        var path = Path()
-        path.move(to: center)
-        path.addArc(center: center, radius: radius, startAngle: start, endAngle: end, clockwise: false)
-        path.closeSubpath()
-        return path
-    }
-}
-
 private struct VeloseeteMapCharacter: View {
     let isLive: Bool
     var courseDegrees: Double = -1
     var mapHeading: Double = 0
-    @AppStorage("veloseete.tracky.mood") private var trackyMoodRaw: String = TrackyMood.chill.rawValue
+    var vehicleStyle: VehicleMarkStyle = .sedan
     @State private var pulse = false
 
-    private var trackyMood: TrackyMood {
-        TrackyMood(rawValue: trackyMoodRaw) ?? .chill
-    }
-
-    private var showsCone: Bool { courseDegrees >= 0 }
+    private var showsHeading: Bool { courseDegrees >= 0 }
 
     /// Rotate absolute course into screen space (annotations stay upright).
-    private var coneRotation: Double { courseDegrees - mapHeading }
+    private var bodyRotation: Double { courseDegrees - mapHeading }
 
     var body: some View {
         ZStack {
-            if showsCone {
-                FieldOfViewCone()
-                    .fill(
-                        RadialGradient(
-                            colors: [
-                                VS.Color.accent.opacity(isLive ? 0.55 : 0.38),
-                                VS.Color.accent.opacity(isLive ? 0.22 : 0.14),
-                                VS.Color.accent.opacity(0.0)
-                            ],
-                            center: .center,
-                            startRadius: 6,
-                            endRadius: 78
-                        )
-                    )
-                    .frame(width: 156, height: 156)
-                    .rotationEffect(.degrees(coneRotation))
-                    .allowsHitTesting(false)
-                    .accessibilityHidden(true)
-            }
-
             if isLive {
                 Circle()
-                    .fill(VS.Color.accent.opacity(0.24))
-                    .frame(width: 58, height: 58)
-                    .scaleEffect(pulse ? 1.15 : 0.88)
-                    .opacity(pulse ? 0.15 : 0.8)
+                    .fill(VS.Color.accent.opacity(0.22))
+                    .frame(width: 72, height: 72)
+                    .scaleEffect(pulse ? 1.18 : 0.9)
+                    .opacity(pulse ? 0.12 : 0.7)
             }
 
-            Circle()
-                .fill(Color.black.opacity(0.55))
-                .frame(width: 50, height: 50)
-
-            TrackyFace(mood: trackyMood, size: 44)
-                .overlay {
-                    Circle()
-                        .strokeBorder(Color.white.opacity(0.88), lineWidth: 2)
-                }
-                .shadow(color: VS.Color.accent.opacity(0.34), radius: 11)
-                .shadow(color: .black.opacity(0.45), radius: 7, y: 4)
+            VehicleMark(style: vehicleStyle, size: 64, viewpoint: .map)
+                .shadow(color: .black.opacity(0.45), radius: 5, y: 2)
+                .shadow(color: VS.Color.accent.opacity(0.2), radius: 8)
         }
+        // Nose of the map asset points up; rotate so travel direction matches course.
+        .rotationEffect(.degrees(showsHeading ? bodyRotation : 0))
         .onAppear {
             guard isLive else { return }
             withAnimation(.easeOut(duration: 1.25).repeatForever(autoreverses: false)) {
                 pulse = true
             }
         }
-        .accessibilityLabel(isLive ? "Tracky live location, \(trackyMood.label)" : "Tracky location, \(trackyMood.label)")
+        .accessibilityLabel(
+            isLive
+                ? "\(vehicleStyle.label) live location"
+                : "\(vehicleStyle.label) location"
+        )
     }
 }
 
@@ -1681,7 +1768,7 @@ struct PendingDriveRowView: View {
                     Text(unit == "mi" ? "mi" : "km")
                         .font(VS.Typography.heading(14, weight: .bold))
                         .foregroundStyle(VS.Color.textTertiary)
-                    Text("REVIEW")
+                    Text(TrackyVoice.Soft.pendingBadge)
                         .font(VS.Typography.body(9, weight: .bold))
                         .foregroundStyle(VS.Color.navPill)
                         .padding(.horizontal, 8)
@@ -1715,7 +1802,7 @@ struct PendingDriveRowView: View {
         )
         .contentShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("Review required. \(dayTitle), \(DistanceFormat.formatDistance(pending.distanceKm, unit: unit)), \(durationFormatted)")
+        .accessibilityLabel("\(TrackyVoice.Soft.pendingSection). \(dayTitle), \(DistanceFormat.formatDistance(pending.distanceKm, unit: unit)), \(durationFormatted)")
         .accessibilityHint("Opens this drive for confirmation")
     }
 }
@@ -1874,7 +1961,7 @@ struct TripDetailView: View {
     private var routeRegion: MKCoordinateRegion {
         let coords = trip.route.isEmpty
             ? [trip.startCoordinate, trip.endCoordinate].compactMap { $0 }
-            : TripTrackingLogic.mapDisplayRoute(id: trip.id, points: trip.route, maximumPoints: 160)
+            : TripTrackingLogic.mapDisplayRoute(id: trip.id, points: trip.route, maximumPoints: 240)
         guard !coords.isEmpty else {
             return MKCoordinateRegion(
                 center: CLLocationCoordinate2D(latitude: 25.2854, longitude: 51.5310),
@@ -1966,10 +2053,12 @@ struct TripDetailView: View {
                     HStack(spacing: 12) {
                         VSIcon(icon: .checkCircle, size: 22, weight: .fill, tint: VS.Color.success)
                         VStack(alignment: .leading, spacing: 4) {
-                            Text("In odometer estimate")
+                            Text(TrackyVoice.Soft.inEstimateTitle)
                                 .font(VS.Typography.heading(15, weight: .bold))
                                 .foregroundStyle(VS.Color.textPrimary)
-                            Text("Adds \(DistanceFormat.formatDistance(trip.distanceKm, unit: unit)) until your next verified dashboard reading.")
+                            Text(TrackyVoice.Soft.inEstimateBody(
+                                distance: DistanceFormat.formatDistance(trip.distanceKm, unit: unit)
+                            ))
                                 .font(VS.Typography.body(13, weight: .medium))
                                 .foregroundStyle(VS.Color.textTertiary)
                                 .fixedSize(horizontal: false, vertical: true)
@@ -2011,7 +2100,7 @@ struct TripDetailView: View {
                     }
 
                     PrimaryCTAButton(
-                        title: isPreparingShare ? "Preparing…" : "Share drive",
+                        title: isPreparingShare ? "Preparing…" : TrackyVoice.Soft.shareDrive,
                         icon: nil,
                         isLoading: isPreparingShare
                     ) {
@@ -2049,13 +2138,13 @@ struct TripDetailView: View {
                     ModalCloseButton { dismiss() }
                 }
             }
-            .alert("Delete this drive?", isPresented: $confirmDelete) {
+            .alert(TrackyVoice.Calm.deleteDriveTitle, isPresented: $confirmDelete) {
                 Button("Cancel", role: .cancel) {}
-                Button("Delete", role: .destructive) {
+                Button(TrackyVoice.Calm.deleteDrive, role: .destructive) {
                     Task { await deleteTrip() }
                 }
             } message: {
-                Text("Removes this route and stats from your account. Your dashboard odometer reading stays as entered.")
+                Text(TrackyVoice.Calm.deleteDriveMessage)
             }
             .sheet(isPresented: $showShareSheet) {
                 if let shareImage {
@@ -2119,7 +2208,7 @@ struct TripDetailView: View {
 
     private var routeMap: some View {
         Map(initialPosition: .region(routeRegion)) {
-            let displayRoute = TripTrackingLogic.mapDisplayRoute(id: trip.id, points: trip.route, maximumPoints: 160)
+            let displayRoute = TripTrackingLogic.mapDisplayRoute(id: trip.id, points: trip.route, maximumPoints: 240)
             if displayRoute.count >= 2 {
                 MapPolyline(coordinates: displayRoute.map {
                     CLLocationCoordinate2D(latitude: $0.latitude, longitude: $0.longitude)

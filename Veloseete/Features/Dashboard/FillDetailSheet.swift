@@ -101,12 +101,12 @@ struct FillDetailSheet: View {
                 isPresented: $confirmDelete,
                 titleVisibility: .visible
             ) {
-                Button("Delete fill", role: .destructive) {
+                Button(TrackyVoice.Calm.deleteFill, role: .destructive) {
                     Task { await deleteLog() }
                 }
                 Button("Cancel", role: .cancel) {}
             } message: {
-                Text("This removes the fill from your history and recalculates efficiency.")
+                Text(TrackyVoice.Calm.deleteFillMessage)
             }
         }
         .presentationDetents([.large])
@@ -264,7 +264,7 @@ struct FillDetailSheet: View {
 
     private var actions: some View {
         VStack(spacing: 14) {
-            PrimaryCTAButton(title: "Edit this fill", icon: .gasPump) {
+            PrimaryCTAButton(title: TrackyVoice.Calm.editThisFill, icon: .gasPump) {
                 UIImpactFeedbackGenerator(style: .light).impactOccurred()
                 showEdit = true
             }

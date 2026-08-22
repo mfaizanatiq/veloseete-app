@@ -39,7 +39,7 @@ final class TripLiveActivityController {
             driveScore: 78,
             estL100: baselineL100,
             moodRaw: "smooth",
-            lastEvent: "Ready when you roll",
+            lastEvent: TrackyVoice.Calm.readyWhenYouRoll,
             thirst: 0.22
         )
 

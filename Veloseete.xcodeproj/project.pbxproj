@@ -19,6 +19,7 @@
 		1574D0723187993724C96B13 /* CarPlayWidgetState.swift in Sources */ = {isa = PBXBuildFile; fileRef = E2E878ED454B527898AF4684 /* CarPlayWidgetState.swift */; };
 		1A5D817177D5BC15C604CB3B /* AsyncTimeout.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6C5F335DEF9B24B466266874 /* AsyncTimeout.swift */; };
 		1BFAEF08CA04CA7ED8E6CDCD /* CarPlayWidgetState.swift in Sources */ = {isa = PBXBuildFile; fileRef = E2E878ED454B527898AF4684 /* CarPlayWidgetState.swift */; };
+		1D03B537B7062949EED3484A /* TrackyAppIcon.swift in Sources */ = {isa = PBXBuildFile; fileRef = EA60AD59312CDA0CAD8B0DED /* TrackyAppIcon.swift */; };
 		227B734C66FBE4FC57266372 /* RoadmapView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F909F8428467D2FCCFA1BECC /* RoadmapView.swift */; };
 		2F760FF970E4AD6FE049318D /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 8B9AF387A39FE0EF0C2CA016 /* PrivacyInfo.xcprivacy */; };
 		33EF7235CAC444208BD0316C /* VeloseeteApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = E08E5E2146EA750B5BEBC0DE /* VeloseeteApp.swift */; };
@@ -26,6 +27,7 @@
 		39F11C8082D17B4AF96E17E7 /* TripRecordingService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B70FF38C17A056E74CA59B04 /* TripRecordingService.swift */; };
 		3F60DBC1AFD8915F677AB407 /* AuthService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 873D378B91DBE12238CE4761 /* AuthService.swift */; };
 		42D402FF910A17B280189C8B /* FluentEmoji.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3F39C3DE6C6DA1496C373F94 /* FluentEmoji.swift */; };
+		4751855DD79F57DA1389826F /* TrackyVoice.swift in Sources */ = {isa = PBXBuildFile; fileRef = DAB2E7CE206F543F63624394 /* TrackyVoice.swift */; };
 		48666A748C11F9368F00C94F /* TripPermissionsManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = F694C2983FF8F289315A17B5 /* TripPermissionsManager.swift */; };
 		553179B906447ACE5654AA56 /* TripActivityAttributes.swift in Sources */ = {isa = PBXBuildFile; fileRef = F45D0247EE51C0E3F476BACF /* TripActivityAttributes.swift */; };
 		57A042468492884909112FF7 /* RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50AD3F71588767E33C7983BD /* RootView.swift */; };
@@ -136,6 +138,7 @@
 		CE380E91E0F721685A913B2D /* TripPermissionsOnboardingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TripPermissionsOnboardingView.swift; sourceTree = "<group>"; };
 		CECB87EF1C2524122779C0BC /* FuelHistoryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FuelHistoryView.swift; sourceTree = "<group>"; };
 		D4D7EFA2C49C87D69768474B /* StationMapPickerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StationMapPickerView.swift; sourceTree = "<group>"; };
+		DAB2E7CE206F543F63624394 /* TrackyVoice.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackyVoice.swift; sourceTree = "<group>"; };
 		DBA345DF372C9272BC8A2B8D /* TrackyFace.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackyFace.swift; sourceTree = "<group>"; };
 		DD1A985D5F90998FB2473488 /* GoogleService-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = "GoogleService-Info.plist"; sourceTree = "<group>"; };
 		DEEE441633AEEDFC2B879020 /* CarPlayStatusWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CarPlayStatusWidget.swift; sourceTree = "<group>"; };
@@ -143,6 +146,7 @@
 		E08E5E2146EA750B5BEBC0DE /* VeloseeteApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VeloseeteApp.swift; sourceTree = "<group>"; };
 		E107223D7E9322440515BAFE /* FirebaseBootstrap.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FirebaseBootstrap.swift; sourceTree = "<group>"; };
 		E2E878ED454B527898AF4684 /* CarPlayWidgetState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CarPlayWidgetState.swift; sourceTree = "<group>"; };
+		EA60AD59312CDA0CAD8B0DED /* TrackyAppIcon.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackyAppIcon.swift; sourceTree = "<group>"; };
 		F45D0247EE51C0E3F476BACF /* TripActivityAttributes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TripActivityAttributes.swift; sourceTree = "<group>"; };
 		F595F55B263EA98F91E920CC /* AppLegal.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppLegal.swift; sourceTree = "<group>"; };
 		F694C2983FF8F289315A17B5 /* TripPermissionsManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TripPermissionsManager.swift; sourceTree = "<group>"; };
@@ -381,7 +385,9 @@
 				A55172652626FF9444AE42A4 /* DriverBadgeChrome.swift */,
 				3F39C3DE6C6DA1496C373F94 /* FluentEmoji.swift */,
 				5C8ECCF8B347101E05AE05BF /* Theme.swift */,
+				EA60AD59312CDA0CAD8B0DED /* TrackyAppIcon.swift */,
 				DBA345DF372C9272BC8A2B8D /* TrackyFace.swift */,
+				DAB2E7CE206F543F63624394 /* TrackyVoice.swift */,
 				7F3FDF18656D6A596D783A1C /* VehicleMark.swift */,
 				5BEBBFE3A0702FEF839CEEE5 /* VSIcon.swift */,
 			);
@@ -595,7 +601,9 @@
 				EA06885ED0D30094F081C3D3 /* StationLookup.swift in Sources */,
 				0FBC6F3EC7E7A7710B828833 /* StationMapPickerView.swift in Sources */,
 				C717BA273A6E967FDB7EE6D4 /* Theme.swift in Sources */,
+				1D03B537B7062949EED3484A /* TrackyAppIcon.swift in Sources */,
 				0C868AF1FCBD7A4E6732F5A8 /* TrackyFace.swift in Sources */,
+				4751855DD79F57DA1389826F /* TrackyVoice.swift in Sources */,
 				99BC245D41EA70E257B86FA5 /* TripActivityAttributes.swift in Sources */,
 				AC24231325EF9C9C5C9934B4 /* TripConfirmSheet.swift in Sources */,
 				1441B5F41A73A88F41EE32CD /* TripLiveActivityController.swift in Sources */,
@@ -642,7 +650,7 @@
 				CODE_SIGN_ENTITLEMENTS = VeloseeteTripWidget/VeloseeteTripWidgetDebug.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 6;
+				CURRENT_PROJECT_VERSION = 19;
 				DEVELOPMENT_TEAM = X978QRK3WP;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = VeloseeteTripWidget/Info.plist;
@@ -725,10 +733,11 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = YES;
 				CODE_SIGN_ENTITLEMENTS = Veloseete/VeloseeteDebug.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 6;
+				CURRENT_PROJECT_VERSION = 19;
 				DEVELOPMENT_TEAM = X978QRK3WP;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = Veloseete/Info.plist;
@@ -748,10 +757,11 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = YES;
 				CODE_SIGN_ENTITLEMENTS = Veloseete/Veloseete.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 6;
+				CURRENT_PROJECT_VERSION = 19;
 				DEVELOPMENT_TEAM = X978QRK3WP;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = Veloseete/Info.plist;
@@ -773,7 +783,7 @@
 				CODE_SIGN_ENTITLEMENTS = VeloseeteTripWidget/VeloseeteTripWidget.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 6;
+				CURRENT_PROJECT_VERSION = 19;
 				DEVELOPMENT_TEAM = X978QRK3WP;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = VeloseeteTripWidget/Info.plist;

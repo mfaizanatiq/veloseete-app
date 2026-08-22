@@ -268,10 +268,10 @@ struct DriverBadgesShelfSection: View {
 
     private var emptyShelf: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text("No medals yet")
+            Text(TrackyVoice.Soft.emptyBadgesTitle)
                 .font(VS.Typography.body(15, weight: .semibold))
                 .foregroundStyle(VS.Color.textPrimary)
-            Text("Drive and fill — earned marks land on this shelf.")
+            Text(TrackyVoice.Soft.emptyBadgesBody)
                 .font(VS.Typography.body(13))
                 .foregroundStyle(VS.Color.textSecondary)
         }

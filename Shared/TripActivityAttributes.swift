@@ -17,7 +17,7 @@ public struct TripActivityAttributes: ActivityAttributes {
         public var estL100: Double
         /// `smooth` | `watch` | `heavy` | `paused` | `saved`
         public var moodRaw: String
-        /// Short glanceable cue, e.g. "Harsh accel".
+        /// Short glanceable cue, e.g. "Hard accel".
         public var lastEvent: String
         /// 0…1 thirst / intensity for the efficiency track (0 = thrifty).
         public var thirst: Double

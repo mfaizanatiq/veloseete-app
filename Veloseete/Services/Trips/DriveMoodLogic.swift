@@ -63,9 +63,9 @@ enum DriveMoodLogic {
                 let inTraffic = clampedSpeed < 8 && previous.speedKmh < 8
 
                 if !inTraffic, delta >= harshAccelKmhPerSec {
-                    registerHarsh(&state, event: "Harsh accel", at: at, penalty: 7)
+                    registerHarsh(&state, event: TrackyVoice.Calm.hardAccel, at: at, penalty: 7)
                 } else if !inTraffic, delta <= harshBrakeKmhPerSec {
-                    registerHarsh(&state, event: "Hard brake", at: at, penalty: 5)
+                    registerHarsh(&state, event: TrackyVoice.Calm.hardBrake, at: at, penalty: 5)
                 } else if abs(delta) < 3.5 || inTraffic {
                     state.smoothSeconds += dt
                     // Gentle recovery while calm.

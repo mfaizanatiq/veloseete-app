@@ -104,9 +104,10 @@ final class TripRecordingService: NSObject, ObservableObject {
     private var watchingIdleSince: Date?
 
     private let liveRoutePublishInterval: TimeInterval = 2.5
-    private let liveRouteDisplayMax = 180
-    private let recordedRouteSoftCap = 2_500
-    private let recordedRouteCompacted = 1_200
+    private let liveRouteDisplayMax = 220
+    /// Soft cap before live compaction — high enough for multi-hour drives.
+    private let recordedRouteSoftCap = 8_000
+    private let recordedRouteCompacted = 4_000
     /// After this long below driving speed, drop continuous GPS back to coarse watch.
     private let watchingDeescalateHold: TimeInterval = 90
 
@@ -313,7 +314,13 @@ final class TripRecordingService: NSObject, ObservableObject {
     ) {
         self.vehicleId = vehicleId
         self.vehicleName = vehicleName
-        self.baseOdometer = currentOdometer
+        // Prefer smart estimate (fuel/service + confirmed + pending) over the
+        // last written garage reading so multi-leg days stay aligned.
+        if let estimate = DataStore.shared.odometerEstimate(vehicleId: vehicleId) {
+            self.baseOdometer = estimate.estimatedKm
+        } else {
+            self.baseOdometer = currentOdometer
+        }
         self.driverName = driverName.trimmingCharacters(in: .whitespacesAndNewlines)
         if let baselineL100, baselineL100 > 0 {
             self.baselineL100 = baselineL100
@@ -503,11 +510,16 @@ final class TripRecordingService: NSObject, ObservableObject {
     }
 
     private func beginRecording(source: String) {
-        guard vehicleId != nil else {
+        guard let vehicleId else {
             lastError = "Pick a vehicle so auto-detected drives can be saved."
             return
         }
         self.source = source
+        // Anchor this leg to the smart estimate (verified + confirmed + other
+        // pending), not a stale garage reading — so a day of drives stacks.
+        if let estimate = DataStore.shared.odometerEstimate(vehicleId: vehicleId) {
+            baseOdometer = estimate.estimatedKm
+        }
         // Recording owns GPS — map follow must not think it still owns updates.
         mapFollowOwnedUpdates = false
         startedAt = Date()
@@ -596,7 +608,10 @@ final class TripRecordingService: NSObject, ObservableObject {
             return
         }
 
-        let routeForSave = downsample(recordedRoute)
+        let routeForSave = TripTrackingLogic.thinForPersistence(recordedRoute)
+        // baseOdometer was refreshed at beginRecording from the smart estimate
+        // (including earlier pending legs). This suggested reading is for
+        // display / optional apply — confirm does not rewrite verified odometer.
         let pending = PendingTripSave(
             id: UUID(),
             vehicleId: vehicleId ?? "",
@@ -878,9 +893,16 @@ final class TripRecordingService: NSObject, ObservableObject {
         let acceptedSegment: Double
         if let last = lastLocation {
             acceptedSegment = TripTrackingLogic.acceptedSegmentDistance(from: last, to: location)
-            distanceMeters += acceptedSegment
         } else {
             acceptedSegment = 0
+        }
+
+        // Rejected fixes must not move the anchor — otherwise the next accepted
+        // point draws a spike from the last good route vertex to a jumped origin.
+        guard recordedRoute.isEmpty || acceptedSegment > 0 else { return }
+
+        if let _ = lastLocation {
+            distanceMeters += acceptedSegment
         }
 
         let speed = max(0, location.speed)
@@ -900,19 +922,15 @@ final class TripRecordingService: NSObject, ObservableObject {
 
         lastLocation = location
         let point = TripCoordinate(latitude: location.coordinate.latitude, longitude: location.coordinate.longitude)
-        // Keep the route and its distance calculation on the same acceptance path.
-        // Previously rejected GPS jumps still appeared as sharp spikes on the map.
-        let shouldAppendRoutePoint = recordedRoute.isEmpty || acceptedSegment > 0
-        if shouldAppendRoutePoint {
-            recordedRoute = TripTrackingLogic.appending(point, to: recordedRoute)
-            if recordedRoute.count > recordedRouteSoftCap {
-                recordedRoute = TripTrackingLogic.downsample(
-                    recordedRoute,
-                    maximum: recordedRouteCompacted
-                )
-            }
-            publishLiveRouteIfNeeded(force: false)
+        recordedRoute = TripTrackingLogic.appending(point, to: recordedRoute)
+        if recordedRoute.count > recordedRouteSoftCap {
+            recordedRoute = TripTrackingLogic.compactLiveRoute(
+                recordedRoute,
+                softCap: recordedRouteSoftCap,
+                compactedMaximum: recordedRouteCompacted
+            )
         }
+        publishLiveRouteIfNeeded(force: false)
         publishSnapshot()
         updateLiveActivity(force: false)
     }
@@ -1101,7 +1119,7 @@ final class TripRecordingService: NSObject, ObservableObject {
     }
 
     private func downsample(_ points: [TripCoordinate]) -> [TripCoordinate] {
-        TripTrackingLogic.downsample(points)
+        TripTrackingLogic.thinForPersistence(points)
     }
 
     private func scheduleDriveNotification(title: String, body: String) {
@@ -1161,10 +1179,10 @@ private enum DriveNotificationCopy {
 
     static func start(vehicleName: String) -> Line {
         pick([
-            Line(title: "Drive time! 🚗", body: "\(vehicleName) is on the move. I'm watching. I'm always watching."),
-            Line(title: "There you are!", body: "I knew \(vehicleName) couldn't sit still. Tracking started — don't mess this up."),
-            Line(title: "Ooh, we're moving!", body: "\(vehicleName) is rolling. Every km counts. I'm counting them."),
-            Line(title: "Trip started!", body: "Me and \(vehicleName) are on it. You just drive. We believe in you. Mostly."),
+            Line(title: "Drive time", body: "\(vehicleName) is on the move. I'm watching."),
+            Line(title: "There you are", body: "I knew \(vehicleName) couldn't sit still. Tracking started."),
+            Line(title: "We're moving", body: "\(vehicleName) is rolling. Every km counts — I'm on it."),
+            Line(title: "Drive started", body: "You drive. I’ll count. We believe in you. Mostly."),
         ])
     }
 
@@ -1181,23 +1199,23 @@ private enum DriveNotificationCopy {
     static func ready(distanceKm: Double, duration: String) -> Line {
         let stats = String(format: "%.1f km in %@", distanceKm, duration)
         return pick([
-            Line(title: "Drive complete! 🎉", body: "\(stats). Saved to My Drives whenever you're ready."),
-            Line(title: "Look at you go!", body: "\(stats). Nice one — review it in My Drives when you have a sec."),
-            Line(title: "You did it!", body: "\(stats). It's in My Drives. No rush."),
-            Line(title: "Nailed it!", body: "\(stats). Logged and waiting quietly in My Drives."),
+            Line(title: "Drive complete", body: "\(stats). Waiting in My Drives whenever you're ready."),
+            Line(title: "Look at you go", body: "\(stats). Nice one — confirm it in My Drives when you have a sec."),
+            Line(title: "You did it", body: "\(stats). It's in My Drives. No rush."),
+            Line(title: "Nailed it", body: "\(stats). Logged and waiting quietly in My Drives."),
         ])
     }
 
     static func pendingReview(count: Int) -> Line {
         if count == 1 {
             return pick([
-                Line(title: "One drive still open", body: "Whenever you're free, confirm it in My Drives."),
-                Line(title: "Quick reminder", body: "There's a drive in My Drives ready when you are."),
+                Line(title: "One drive still open", body: "It's in My Drives. Confirm when you can."),
+                Line(title: "Quick reminder", body: "One open drive waiting on you in My Drives."),
             ])
         }
         return pick([
-            Line(title: "\(count) drives to confirm", body: "No rush — just a heads-up they're waiting in My Drives."),
-            Line(title: "A few drives piled up", body: "\(count) in My Drives. Confirm when you get a chance."),
+            Line(title: "\(count) drives waiting on you", body: "No rush — they're in My Drives."),
+            Line(title: "A few drives piled up", body: "\(count) to confirm when you get a chance."),
             Line(title: "My Drives needs a minute", body: "\(count) unconfirmed drives. Tap when you're ready."),
         ])
     }

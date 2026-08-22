@@ -37,9 +37,12 @@ struct AuthView: View {
                         .font(VS.Typography.heading(32, weight: .bold))
                         .foregroundStyle(VS.Color.textPrimary)
 
-                    Text(showingSignUp ? "Create your account" : "Welcome back")
+                    Text(showingSignUp ? TrackyVoice.Soft.createAccount : TrackyVoice.Soft.welcomeBack)
                         .font(VS.Typography.body(15))
                         .foregroundStyle(VS.Color.textSecondary)
+                    Text(TrackyVoice.Soft.authTagline)
+                        .font(VS.Typography.body(13))
+                        .foregroundStyle(VS.Color.textTertiary)
                 }
                 .padding(.top, 48)
 
@@ -47,7 +50,7 @@ struct AuthView: View {
 
                 HStack(spacing: 12) {
                     Rectangle().fill(VS.Color.divider).frame(height: 1)
-                    Text("or email")
+                    Text(TrackyVoice.Soft.orEmail)
                         .font(VS.Typography.body(12, weight: .medium))
                         .foregroundStyle(VS.Color.textTertiary)
                     Rectangle().fill(VS.Color.divider).frame(height: 1)
