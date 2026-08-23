@@ -26,6 +26,8 @@ struct Vehicle: Identifiable, Equatable {
     /// Display/entry unit for fuel volume: `"L"` or `"gal"` (US gallon). Stored litres stay canonical.
     var fuelVolumeUnit: String
     var icon: String?
+    /// Optional paint id (`VehiclePaintColor.rawValue`). Nil / unknown → brand lime.
+    var paintColor: String?
     var createdAt: Date
     /// Soft-removed from the garage. History stays on this vehicleId; other cars are untouched.
     var isArchived: Bool
@@ -203,6 +205,7 @@ extension Vehicle {
                 FirestoreDecode.string(data["fuelVolumeUnit"], fallback: "")
             ) ?? VolumeFormat.defaultUnit(currency: FirestoreDecode.string(data["currency"], fallback: "QAR")),
             icon: data["icon"] as? String,
+            paintColor: data["paintColor"] as? String,
             createdAt: FirestoreDecode.date(data["createdAt"]),
             isArchived: archived,
             archivedAt: data["archivedAt"] == nil || data["archivedAt"] is NSNull

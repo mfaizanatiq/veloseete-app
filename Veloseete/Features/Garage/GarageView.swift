@@ -3,6 +3,7 @@ import SwiftUI
 struct GarageView: View {
     @EnvironmentObject private var store: DataStore
     @EnvironmentObject private var auth: AuthService
+    @EnvironmentObject private var recorder: TripRecordingService
     var onComplete: (() -> Void)? = nil
     /// Full-screen first-run mode — warmer copy, no ops banner (account lives in parent chrome).
     var isFirstRun: Bool = false
@@ -10,6 +11,7 @@ struct GarageView: View {
     @State private var step = 1
     @State private var nickname = ""
     @State private var icon = "🚗"
+    @State private var paint: VehiclePaintColor = .brand
     @State private var make = ""
     @State private var model = ""
     @State private var showMakeModel = false
@@ -22,17 +24,21 @@ struct GarageView: View {
     @State private var isSubmitting = false
     @State private var errorMessage: String?
     @State private var isRetrying = false
+    @State private var showOrphanLinkDialog = false
+    @State private var pendingAddCompletion = false
+    @State private var orphanLinkVehicle: Vehicle?
+    @State private var orphanLinkSnapshot: (count: Int, totalKm: Double)?
+
+    private struct OrphanLinkAction {
+        var assignToVehicle: Bool
+    }
+    @State private var orphanLinkAction: OrphanLinkAction?
 
     private let fuelTypes = [
         ("petrol", "Petrol"),
         ("diesel", "Diesel"),
         ("hybrid", "Hybrid"),
         ("electric", "Electric")
-    ]
-
-    private let popularMakes = [
-        "Toyota", "Honda", "Ford", "BMW", "Mercedes-Benz", "Audi",
-        "Volkswagen", "Nissan", "Hyundai", "Kia", "Mazda", "Lexus"
     ]
 
     private let currencies = ["QAR", "AED", "SAR", "USD", "EUR", "GBP", "PKR", "INR"]
@@ -113,6 +119,43 @@ struct GarageView: View {
                     .accessibilityLabel("Close")
                 }
             }
+        }
+        .confirmationDialog(
+            TrackyVoice.Calm.linkOrphanDrivesTitle,
+            isPresented: $showOrphanLinkDialog,
+            titleVisibility: .visible
+        ) {
+            if let vehicle = orphanLinkVehicle {
+                Button(TrackyVoice.Calm.linkOrphanDrivesConfirm(vehicleName: vehicle.nickname)) {
+                    orphanLinkAction = OrphanLinkAction(assignToVehicle: true)
+                    showOrphanLinkDialog = false
+                }
+            }
+            Button(TrackyVoice.Calm.linkOrphanDrivesSkip, role: .cancel) {
+                orphanLinkAction = OrphanLinkAction(assignToVehicle: false)
+                showOrphanLinkDialog = false
+            }
+        } message: {
+            if let vehicle = orphanLinkVehicle, let snapshot = orphanLinkSnapshot {
+                Text(
+                    TrackyVoice.Calm.linkOrphanDrivesMessage(
+                        count: snapshot.count,
+                        distance: DistanceFormat.formatDistance(snapshot.totalKm, unit: store.defaultDistanceUnit),
+                        vehicleName: vehicle.nickname
+                    )
+                )
+            }
+        }
+        .onChange(of: showOrphanLinkDialog) { _, isShowing in
+            guard !isShowing, pendingAddCompletion else { return }
+            if orphanLinkAction?.assignToVehicle == true, let vehicle = orphanLinkVehicle {
+                recorder.assignOrphanPending(to: vehicle.id, vehicleName: vehicle.nickname)
+            }
+            orphanLinkAction = nil
+            orphanLinkVehicle = nil
+            orphanLinkSnapshot = nil
+            pendingAddCompletion = false
+            onComplete?()
         }
     }
 
@@ -204,17 +247,13 @@ struct GarageView: View {
             glassTextField(label: "Name", placeholder: "My car", text: $nickname, large: true)
 
             VStack(alignment: .leading, spacing: 10) {
+                fieldLabel("Colour")
+                VehiclePaintSwatchRow(paint: $paint)
+            }
+
+            VStack(alignment: .leading, spacing: 10) {
                 fieldLabel("Car mark")
-                LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 3), spacing: 12) {
-                    ForEach(VehicleMarkStyle.selectable) { style in
-                        VehicleMarkPickerCell(
-                            style: style,
-                            selected: VehicleMarkStyle.resolve(icon) == style
-                        ) {
-                            icon = style.storageToken
-                        }
-                    }
-                }
+                VehicleMarkCarousel(icon: $icon, paint: paint)
             }
 
             Button {
@@ -228,15 +267,7 @@ struct GarageView: View {
 
             if showMakeModel {
                 glassTextField(label: "Make", placeholder: "Toyota", text: $make)
-
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 8) {
-                        ForEach(popularMakes, id: \.self) { m in
-                            capsuleChip(m, selected: make == m) { make = m }
-                        }
-                    }
-                }
-
+                VehicleMakeChipRow(make: $make)
                 glassTextField(label: "Model", placeholder: "Camry", text: $model)
             }
         }
@@ -403,7 +434,7 @@ struct GarageView: View {
             let tankLiters = Double(tankCapacity).map {
                 VolumeFormat.toLiters($0, unit: fuelVolumeUnit)
             }
-            try await store.addVehicle(
+            let vehicle = try await store.addVehicle(
                 nickname: nickname.trimmingCharacters(in: .whitespaces),
                 make: make.trimmingCharacters(in: .whitespaces).isEmpty ? "Unknown" : make.trimmingCharacters(in: .whitespaces),
                 model: model.trimmingCharacters(in: .whitespaces).isEmpty ? "Unknown" : model.trimmingCharacters(in: .whitespaces),
@@ -411,11 +442,24 @@ struct GarageView: View {
                 currentOdometer: odo,
                 currency: currency,
                 icon: icon,
+                paintColor: paint == .brand ? nil : paint.rawValue,
                 fuelTankCapacity: tankLiters,
                 fuelVolumeUnit: fuelVolumeUnit
             )
             UINotificationFeedbackGenerator().notificationOccurred(.success)
-            onComplete?()
+
+            let orphans = recorder.orphanPendingSaves
+            if orphans.isEmpty {
+                onComplete?()
+            } else {
+                orphanLinkVehicle = vehicle
+                orphanLinkSnapshot = (
+                    count: orphans.count,
+                    totalKm: orphans.reduce(0) { $0 + $1.distanceKm }
+                )
+                pendingAddCompletion = true
+                showOrphanLinkDialog = true
+            }
         } catch {
             errorMessage = error.localizedDescription
             UINotificationFeedbackGenerator().notificationOccurred(.error)

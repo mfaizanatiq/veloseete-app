@@ -1,4 +1,139 @@
 import SwiftUI
+import UIKit
+
+/// Common car paint colours. Assets stay brand-lime; tint is applied at render time.
+/// Nil / unknown / `.brand` keeps the natural Veloseete lime with no filter.
+enum VehiclePaintColor: String, CaseIterable, Identifiable, Equatable {
+    case brand
+    case white
+    case black
+    case silver
+    case gray
+    case red
+    case blue
+    case navy
+    case green
+    case yellow
+    case orange
+    case brown
+    case beige
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .brand: return "Brand"
+        case .white: return "White"
+        case .black: return "Black"
+        case .silver: return "Silver"
+        case .gray: return "Gray"
+        case .red: return "Red"
+        case .blue: return "Blue"
+        case .navy: return "Navy"
+        case .green: return "Green"
+        case .yellow: return "Yellow"
+        case .orange: return "Orange"
+        case .brown: return "Brown"
+        case .beige: return "Beige"
+        }
+    }
+
+    /// Swatch shown in the colour picker (not the filtered asset).
+    var swatch: Color {
+        switch self {
+        case .brand: return VS.Color.accent
+        case .white: return Color(hex: 0xF4F4F2)
+        case .black: return Color(hex: 0x1A1A1A)
+        case .silver: return Color(hex: 0xC5C8CE)
+        case .gray: return Color(hex: 0x6B7280)
+        case .red: return Color(hex: 0xDC2626)
+        case .blue: return Color(hex: 0x2563EB)
+        case .navy: return Color(hex: 0x1E3A5F)
+        case .green: return Color(hex: 0x166534)
+        case .yellow: return Color(hex: 0xEAB308)
+        case .orange: return Color(hex: 0xEA580C)
+        case .brown: return Color(hex: 0x7C4A2D)
+        case .beige: return Color(hex: 0xD4C4A8)
+        }
+    }
+
+    static func resolve(_ stored: String?) -> VehiclePaintColor {
+        guard let raw = stored?.trimmingCharacters(in: .whitespacesAndNewlines), !raw.isEmpty else {
+            return .brand
+        }
+        return VehiclePaintColor(rawValue: raw) ?? .brand
+    }
+
+    /// Default paint when no car is in the garage yet.
+    static let defaultMapPaint: VehiclePaintColor = .brand
+
+    /// Brand lime hue in degrees — source of the asset paint.
+    fileprivate static let brandHueDegrees: Double = {
+        var h: CGFloat = 0, s: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+        UIColor(red: 217 / 255, green: 252 / 255, blue: 85 / 255, alpha: 1)
+            .getHue(&h, saturation: &s, brightness: &b, alpha: &a)
+        return Double(h) * 360
+    }()
+
+    fileprivate var hueRotationDegrees: Double {
+        switch self {
+        case .brand, .white, .black, .silver, .gray, .beige:
+            return 0
+        case .red: return 0 - Self.brandHueDegrees
+        case .orange: return 28 - Self.brandHueDegrees
+        case .yellow: return 50 - Self.brandHueDegrees
+        case .green: return 140 - Self.brandHueDegrees
+        case .blue: return 215 - Self.brandHueDegrees
+        case .navy: return 228 - Self.brandHueDegrees
+        case .brown: return 30 - Self.brandHueDegrees
+        }
+    }
+
+    fileprivate var saturationFactor: Double {
+        switch self {
+        case .brand: return 1
+        case .white: return 0.06
+        case .black: return 0.22
+        case .silver: return 0.1
+        case .gray: return 0.16
+        case .beige: return 0.28
+        case .brown: return 0.75
+        case .navy: return 0.9
+        case .green: return 0.85
+        case .red, .blue, .yellow, .orange: return 1.12
+        }
+    }
+
+    fileprivate var brightnessDelta: Double {
+        switch self {
+        case .brand: return 0
+        case .white: return 0.4
+        case .black: return -0.44
+        case .silver: return 0.2
+        case .gray: return -0.06
+        case .beige: return 0.18
+        case .brown: return -0.12
+        case .navy: return -0.18
+        case .green: return -0.1
+        default: return 0
+        }
+    }
+}
+
+private struct VehiclePaintFilter: ViewModifier {
+    let paint: VehiclePaintColor
+
+    func body(content: Content) -> some View {
+        if paint == .brand {
+            content
+        } else {
+            content
+                .hueRotation(.degrees(paint.hueRotationDegrees))
+                .saturation(paint.saturationFactor)
+                .brightness(paint.brightnessDelta)
+        }
+    }
+}
 
 /// Veloseete car marks — flat silhouette set for garage representation.
 /// Stored value stays emoji (web parity); iOS always renders these marks.
@@ -58,6 +193,9 @@ enum VehicleMarkStyle: String, CaseIterable, Identifiable {
         [.sedan, .suv, .hatch, .coupe, .sport, .ev, .pickup, .van, .truck, .taxi, .moto, .scooter]
     }
 
+    /// Default puck when no car is in the garage yet.
+    static let defaultMapStyle: VehicleMarkStyle = .sedan
+
     static func resolve(_ stored: String?) -> VehicleMarkStyle {
         guard let raw = stored?.trimmingCharacters(in: .whitespacesAndNewlines), !raw.isEmpty else {
             return .sedan
@@ -85,6 +223,7 @@ enum VehicleMarkStyle: String, CaseIterable, Identifiable {
 
 /// Veloseete car marks — soft matte lime 3D icons (brand lime + black glass/wheels).
 /// Prefers assets `vehicle-{style}` (picker) or `vehicle-{style}-map` (Uber-style top-down for maps).
+/// Optional `paint` shifts hue/saturation on the same assets — no new images required.
 struct VehicleMark: View {
     enum Viewpoint {
         /// Garage / picker — front three-quarter.
@@ -96,6 +235,7 @@ struct VehicleMark: View {
     var style: VehicleMarkStyle = .sedan
     var size: CGFloat = 44
     var viewpoint: Viewpoint = .mark
+    var paint: VehiclePaintColor = .brand
 
     var body: some View {
         Group {
@@ -117,8 +257,9 @@ struct VehicleMark: View {
                 .frame(width: size, height: size)
             }
         }
+        .modifier(VehiclePaintFilter(paint: paint))
         .frame(width: size, height: size)
-        .accessibilityLabel(style.label)
+        .accessibilityLabel("\(paint.label) \(style.label)")
     }
 
     /// Prefer map asset; fall back to garage front-three-quarter mark (never Tracky).
@@ -131,10 +272,10 @@ struct VehicleMark: View {
     }
 
     private var bodyFill: Color { Color(hex: 0x0A0C0A) }
-    private var glass: Color { VS.Color.accent.opacity(0.92) }
-    private var accentSoft: Color { VS.Color.accent.opacity(0.55) }
+    private var glass: Color { paint == .brand ? VS.Color.accent.opacity(0.92) : paint.swatch.opacity(0.92) }
+    private var accentSoft: Color { (paint == .brand ? VS.Color.accent : paint.swatch).opacity(0.55) }
     private var wheel: Color { Color(hex: 0x1A1C1A) }
-    private var wheelRim: Color { VS.Color.accent.opacity(0.35) }
+    private var wheelRim: Color { (paint == .brand ? VS.Color.accent : paint.swatch).opacity(0.35) }
     private var outline: Color { Color.white.opacity(0.14) }
 
     private func draw(
@@ -418,10 +559,11 @@ struct VehicleMark: View {
 struct VehicleMarkPickerCell: View {
     let style: VehicleMarkStyle
     let selected: Bool
+    var paint: VehiclePaintColor = .brand
     var action: () -> Void
 
-    private let tile: CGFloat = 96
-    private let mark: CGFloat = 84
+    private let tile: CGFloat = 88
+    private let mark: CGFloat = 76
 
     var body: some View {
         Button {
@@ -429,32 +571,137 @@ struct VehicleMarkPickerCell: View {
             action()
         } label: {
             VStack(spacing: 6) {
-                VehicleMark(style: style, size: mark)
+                VehicleMark(style: style, size: mark, paint: paint)
                     .frame(width: tile, height: tile)
                     .background(
-                        RoundedRectangle(cornerRadius: 22, style: .continuous)
-                            .fill(VS.Color.navPill.opacity(0.88))
+                        RoundedRectangle(cornerRadius: 20, style: .continuous)
+                            .fill(VS.Color.navPill.opacity(selected ? 0.92 : 0.72))
                     )
                     .overlay {
-                        RoundedRectangle(cornerRadius: 22, style: .continuous)
+                        RoundedRectangle(cornerRadius: 20, style: .continuous)
                             .strokeBorder(
-                                selected ? VS.Color.accent : VS.Color.hairline.opacity(0.55),
+                                selected ? VS.Color.accent : VS.Color.hairline.opacity(0.45),
                                 lineWidth: selected ? 2.5 : 1
                             )
                     }
-                    .opacity(selected ? 1 : 0.55)
-                    .saturation(selected ? 1 : 0.75)
+                    .shadow(color: selected ? VS.Color.accent.opacity(0.22) : .clear, radius: 10, y: 2)
 
                 Text(style.label)
-                    .font(VS.Typography.heading(13, weight: selected ? .bold : .semibold))
+                    .font(VS.Typography.heading(12, weight: selected ? .bold : .semibold))
                     .foregroundStyle(selected ? VS.Color.accent : VS.Color.textTertiary)
                     .lineLimit(1)
                     .minimumScaleFactor(0.85)
             }
-            .frame(maxWidth: .infinity)
+            .frame(width: tile + 8)
+            .scaleEffect(selected ? 1 : 0.9)
+            .opacity(selected ? 1 : 0.5)
+            .animation(.snappy(duration: 0.28), value: selected)
         }
         .buttonStyle(.plain)
         .accessibilityLabel(style.label)
         .accessibilityAddTraits(selected ? .isSelected : [])
+    }
+}
+
+/// Horizontal carousel — scroll to browse marks; selected item stays centred and focused.
+struct VehicleMarkCarousel: View {
+    @Binding var icon: String
+    var paint: VehiclePaintColor = .brand
+    var onSelect: (() -> Void)? = nil
+
+    private var selectedStyle: VehicleMarkStyle {
+        VehicleMarkStyle.resolve(icon)
+    }
+
+    var body: some View {
+        ScrollViewReader { proxy in
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 14) {
+                    ForEach(VehicleMarkStyle.selectable) { style in
+                        VehicleMarkPickerCell(
+                            style: style,
+                            selected: selectedStyle == style,
+                            paint: paint
+                        ) {
+                            icon = style.storageToken
+                            onSelect?()
+                            scrollTo(style, proxy: proxy)
+                        }
+                        .id(style)
+                    }
+                }
+                .scrollTargetLayout()
+                .padding(.horizontal, 4)
+                .padding(.vertical, 6)
+            }
+            .scrollTargetBehavior(.viewAligned)
+            .scrollClipDisabled()
+            .onAppear {
+                scrollTo(selectedStyle, proxy: proxy, animated: false)
+            }
+            .onChange(of: icon) { _, _ in
+                scrollTo(selectedStyle, proxy: proxy)
+            }
+        }
+        .padding(.horizontal, -4)
+    }
+
+    private func scrollTo(_ style: VehicleMarkStyle, proxy: ScrollViewProxy, animated: Bool = true) {
+        if animated {
+            withAnimation(.snappy(duration: 0.35)) {
+                proxy.scrollTo(style, anchor: .center)
+            }
+        } else {
+            proxy.scrollTo(style, anchor: .center)
+        }
+    }
+}
+
+/// Horizontal paint swatches — Brand (lime) first, then common car colours.
+struct VehiclePaintSwatchRow: View {
+    @Binding var paint: VehiclePaintColor
+
+    var body: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 10) {
+                ForEach(VehiclePaintColor.allCases) { color in
+                    Button {
+                        UISelectionFeedbackGenerator().selectionChanged()
+                        paint = color
+                    } label: {
+                        VStack(spacing: 6) {
+                            ZStack {
+                                Circle()
+                                    .fill(color.swatch)
+                                    .frame(width: 34, height: 34)
+                                    .overlay {
+                                        Circle()
+                                            .strokeBorder(
+                                                Color.white.opacity(color == .white || color == .beige ? 0.35 : 0.18),
+                                                lineWidth: 1
+                                            )
+                                    }
+                                if paint == color {
+                                    Circle()
+                                        .strokeBorder(VS.Color.accent, lineWidth: 2.5)
+                                        .frame(width: 42, height: 42)
+                                }
+                            }
+                            .frame(width: 42, height: 42)
+
+                            Text(color.label)
+                                .font(VS.Typography.body(10, weight: paint == color ? .bold : .medium))
+                                .foregroundStyle(paint == color ? VS.Color.accent : VS.Color.textTertiary)
+                                .lineLimit(1)
+                        }
+                        .frame(width: 52)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(color.label)
+                    .accessibilityAddTraits(paint == color ? .isSelected : [])
+                }
+            }
+            .padding(.vertical, 2)
+        }
     }
 }

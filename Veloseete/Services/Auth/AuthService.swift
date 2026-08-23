@@ -228,12 +228,17 @@ final class AuthService: ObservableObject {
 
     func signOut() throws {
         clearPendingLink()
+        // Persist pending drives / tear down GPS before the session uid is cleared.
+        TripRecordingService.shared.detachSessionForSignOut()
+
         try? GIDSignIn.sharedInstance.signOut()
         try Auth.auth().signOut()
 
-        // Drop session UI so the next account on this device cannot see it.
-        // Pending drive reviews stay on disk for this uid and reload on sign-in.
-        TripRecordingService.shared.detachSessionForSignOut()
+        // Update UI immediately — the Auth listener schedules applyUser async and
+        // leaving `user` set while DataStore clears crashes sheet-backed tabs.
+        applyUser(nil)
+        isCheckingAuth = false
+
         CarPlayWidgetStateStore.clearUserData()
         ProfileAvatarStore.shared.clearSession()
         VehiclePhotoStore.shared.clearSession()

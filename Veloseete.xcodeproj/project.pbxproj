@@ -7,6 +7,8 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		032D4284B7BD9687B15C3C1B /* TripTrackingLogicTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 31F93D6D540FE26880482CD8 /* TripTrackingLogicTests.swift */; };
+		079FC39809544E13995E6790 /* VehicleMakePicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 227195C40E3CD106F2343B03 /* VehicleMakePicker.swift */; };
 		08DFE3397E7CE2D442F38B41 /* FirestoreRepository.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3CB688049B7786554F370E64 /* FirestoreRepository.swift */; };
 		0AAA22F6732EBCAE28AA5BAD /* AuthView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1D6A64AC85316ED1FB1F193A /* AuthView.swift */; };
 		0ADF9E69E2BBC958D25B91B4 /* FirebaseFirestore in Frameworks */ = {isa = PBXBuildFile; productRef = 32C989AA668D64C69595D10D /* FirebaseFirestore */; };
@@ -50,14 +52,17 @@
 		AA46164EC2F563556FDD6A56 /* GoogleSignIn in Frameworks */ = {isa = PBXBuildFile; productRef = 026A916CAAD55EE59AF0F9FC /* GoogleSignIn */; };
 		AB69738B2377CB8010930622 /* VSIcon.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5BEBBFE3A0702FEF839CEEE5 /* VSIcon.swift */; };
 		AC24231325EF9C9C5C9934B4 /* TripConfirmSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 95622FAF7EEA68AF70574E03 /* TripConfirmSheet.swift */; };
+		AD2679EE80F1B30C0BBB46C8 /* DriveMoodLogicTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 14616EDFBDE7DE5F2CAC1EB6 /* DriveMoodLogicTests.swift */; };
 		B3763817EE58A8BABBD8B09F /* DataStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 032D9685E63E087090A2889A /* DataStore.swift */; };
 		B54A52B0BE07BAC01A98668D /* Metrics.swift in Sources */ = {isa = PBXBuildFile; fileRef = FF78BFABE392DBE393254431 /* Metrics.swift */; };
 		BC566CBB50ED4FC839E3301F /* BottomNavChrome.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1455C6E27E977E53DE7B98E6 /* BottomNavChrome.swift */; };
 		C717BA273A6E967FDB7EE6D4 /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5C8ECCF8B347101E05AE05BF /* Theme.swift */; };
 		C993CEE9E96A91831F35B9A2 /* TripPermissionsOnboardingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE380E91E0F721685A913B2D /* TripPermissionsOnboardingView.swift */; };
+		C9ACFF4D49EC096289E347E2 /* TripTrackingStressTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 020629CBE43E82356A644590 /* TripTrackingStressTests.swift */; };
 		CC1B3A24417C167CCF243AA4 /* Media in Resources */ = {isa = PBXBuildFile; fileRef = 8CCCB0D552ADF2C858E7B307 /* Media */; };
 		CC82F8C98D6E11CC932868BE /* AppLegal.swift in Sources */ = {isa = PBXBuildFile; fileRef = F595F55B263EA98F91E920CC /* AppLegal.swift */; };
 		CD5113461FD49DA09C3067BF /* MainTabShell.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1AC2C5E99E0603B3725F36D /* MainTabShell.swift */; };
+		D8A7437382F5D240695CA4D7 /* DriverProfileChrome.swift in Sources */ = {isa = PBXBuildFile; fileRef = EC0CC4FE1869EDDDB7A4ECA8 /* DriverProfileChrome.swift */; };
 		DF02674D948FF98FCAF64A28 /* VehicleMark.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7F3FDF18656D6A596D783A1C /* VehicleMark.swift */; };
 		E379326E18B4EF78ABE883BE /* VehicleInsightScheduler.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB94189745321CC429BA8CA8 /* VehicleInsightScheduler.swift */; };
 		E56B5D4761318FAF61ED9EF5 /* TripPermissionsStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6D1A3E4EE9B0BEB713B1D5B0 /* TripPermissionsStore.swift */; };
@@ -71,6 +76,13 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
+		43140DC53005EB437F63261A /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = B49DC46AA492B3106B843E46 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 167A01CC7974FB0668295765;
+			remoteInfo = Veloseete;
+		};
 		5BDB89145D463C1DA405C40D /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = B49DC46AA492B3106B843E46 /* Project object */;
@@ -96,16 +108,20 @@
 
 /* Begin PBXFileReference section */
 		011C2238AFE0B8E9F8E0155D /* DriveMoodLogic.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DriveMoodLogic.swift; sourceTree = "<group>"; };
+		020629CBE43E82356A644590 /* TripTrackingStressTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TripTrackingStressTests.swift; sourceTree = "<group>"; };
 		032D9685E63E087090A2889A /* DataStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DataStore.swift; sourceTree = "<group>"; };
 		03E2E1E23C22D331E66874CF /* Fonts */ = {isa = PBXFileReference; lastKnownFileType = folder; name = Fonts; path = Veloseete/Resources/Fonts; sourceTree = SOURCE_ROOT; };
 		0525EBB0DBFEA1A2FBC29AD3 /* TripsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TripsView.swift; sourceTree = "<group>"; };
 		1455C6E27E977E53DE7B98E6 /* BottomNavChrome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BottomNavChrome.swift; sourceTree = "<group>"; };
+		14616EDFBDE7DE5F2CAC1EB6 /* DriveMoodLogicTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DriveMoodLogicTests.swift; sourceTree = "<group>"; };
 		1517975FF0ABFA3F7F78C537 /* FillDetailSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FillDetailSheet.swift; sourceTree = "<group>"; };
 		1594DF57756A4459A585537A /* GarageView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GarageView.swift; sourceTree = "<group>"; };
 		1D6A64AC85316ED1FB1F193A /* AuthView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthView.swift; sourceTree = "<group>"; };
 		222F2B40313306BAE406CD4B /* DashboardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashboardView.swift; sourceTree = "<group>"; };
+		227195C40E3CD106F2343B03 /* VehicleMakePicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VehicleMakePicker.swift; sourceTree = "<group>"; };
 		256658471BD7508658CD944C /* Veloseete.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = Veloseete.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		2DC6CBCD403057F0E42E9DE2 /* TripLiveActivityWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TripLiveActivityWidget.swift; sourceTree = "<group>"; };
+		31F93D6D540FE26880482CD8 /* TripTrackingLogicTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TripTrackingLogicTests.swift; sourceTree = "<group>"; };
 		38FEB5FAA114A73357C89CC1 /* TripTrackingLogic.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TripTrackingLogic.swift; sourceTree = "<group>"; };
 		3CB688049B7786554F370E64 /* FirestoreRepository.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FirestoreRepository.swift; sourceTree = "<group>"; };
 		3F39C3DE6C6DA1496C373F94 /* FluentEmoji.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FluentEmoji.swift; sourceTree = "<group>"; };
@@ -118,6 +134,7 @@
 		6C5F335DEF9B24B466266874 /* AsyncTimeout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AsyncTimeout.swift; sourceTree = "<group>"; };
 		6D1A3E4EE9B0BEB713B1D5B0 /* TripPermissionsStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TripPermissionsStore.swift; sourceTree = "<group>"; };
 		73208BD3A2A07DF47970B267 /* TripShareComposer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TripShareComposer.swift; sourceTree = "<group>"; };
+		748136528561ED9CFD5E5AE3 /* VeloseeteTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = VeloseeteTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		7E90D99435660B2C4EDFDD04 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		7F3FDF18656D6A596D783A1C /* VehicleMark.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VehicleMark.swift; sourceTree = "<group>"; };
 		873D378B91DBE12238CE4761 /* AuthService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthService.swift; sourceTree = "<group>"; };
@@ -147,6 +164,7 @@
 		E107223D7E9322440515BAFE /* FirebaseBootstrap.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FirebaseBootstrap.swift; sourceTree = "<group>"; };
 		E2E878ED454B527898AF4684 /* CarPlayWidgetState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CarPlayWidgetState.swift; sourceTree = "<group>"; };
 		EA60AD59312CDA0CAD8B0DED /* TrackyAppIcon.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackyAppIcon.swift; sourceTree = "<group>"; };
+		EC0CC4FE1869EDDDB7A4ECA8 /* DriverProfileChrome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DriverProfileChrome.swift; sourceTree = "<group>"; };
 		F45D0247EE51C0E3F476BACF /* TripActivityAttributes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TripActivityAttributes.swift; sourceTree = "<group>"; };
 		F595F55B263EA98F91E920CC /* AppLegal.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppLegal.swift; sourceTree = "<group>"; };
 		F694C2983FF8F289315A17B5 /* TripPermissionsManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TripPermissionsManager.swift; sourceTree = "<group>"; };
@@ -221,6 +239,7 @@
 			isa = PBXGroup;
 			children = (
 				256658471BD7508658CD944C /* Veloseete.app */,
+				748136528561ED9CFD5E5AE3 /* VeloseeteTests.xctest */,
 				DF837A0683DA1E47EF9113EE /* VeloseeteTripWidget.appex */,
 			);
 			name = Products;
@@ -240,6 +259,16 @@
 				B15330384B4EF5F64B074ECA /* Trips */,
 			);
 			path = Features;
+			sourceTree = "<group>";
+		};
+		53C9BE1BAC7858896BAC643A /* VeloseeteTests */ = {
+			isa = PBXGroup;
+			children = (
+				14616EDFBDE7DE5F2CAC1EB6 /* DriveMoodLogicTests.swift */,
+				31F93D6D540FE26880482CD8 /* TripTrackingLogicTests.swift */,
+				020629CBE43E82356A644590 /* TripTrackingStressTests.swift */,
+			);
+			path = VeloseeteTests;
 			sourceTree = "<group>";
 		};
 		6B28ED63C034EF7EBE38EB6A /* Refuel */ = {
@@ -383,11 +412,13 @@
 			children = (
 				1455C6E27E977E53DE7B98E6 /* BottomNavChrome.swift */,
 				A55172652626FF9444AE42A4 /* DriverBadgeChrome.swift */,
+				EC0CC4FE1869EDDDB7A4ECA8 /* DriverProfileChrome.swift */,
 				3F39C3DE6C6DA1496C373F94 /* FluentEmoji.swift */,
 				5C8ECCF8B347101E05AE05BF /* Theme.swift */,
 				EA60AD59312CDA0CAD8B0DED /* TrackyAppIcon.swift */,
 				DBA345DF372C9272BC8A2B8D /* TrackyFace.swift */,
 				DAB2E7CE206F543F63624394 /* TrackyVoice.swift */,
+				227195C40E3CD106F2343B03 /* VehicleMakePicker.swift */,
 				7F3FDF18656D6A596D783A1C /* VehicleMark.swift */,
 				5BEBBFE3A0702FEF839CEEE5 /* VSIcon.swift */,
 			);
@@ -399,6 +430,7 @@
 			children = (
 				752596DA54D7B366A89B6B31 /* Shared */,
 				D849952ECB48B00234E9C3F5 /* Veloseete */,
+				53C9BE1BAC7858896BAC643A /* VeloseeteTests */,
 				16E6328311838B74CEC44956 /* VeloseeteTripWidget */,
 				4D645CBCFF81FC9AE4D81899 /* Products */,
 			);
@@ -461,6 +493,24 @@
 			productReference = 256658471BD7508658CD944C /* Veloseete.app */;
 			productType = "com.apple.product-type.application";
 		};
+		7B25DF2F7399E61789DF39A2 /* VeloseeteTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 83D0DA9C8F6F5A65612B6CA1 /* Build configuration list for PBXNativeTarget "VeloseeteTests" */;
+			buildPhases = (
+				A907A86690ED7BECBB6C1F07 /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				B2F717AFFA035649A018453F /* PBXTargetDependency */,
+			);
+			name = VeloseeteTests;
+			packageProductDependencies = (
+			);
+			productName = VeloseeteTests;
+			productReference = 748136528561ED9CFD5E5AE3 /* VeloseeteTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
 		EF082251D839C5091E36843B /* VeloseeteTripWidget */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = 1D2A517B2B79DB4EF950BC17 /* Build configuration list for PBXNativeTarget "VeloseeteTripWidget" */;
@@ -492,6 +542,10 @@
 						DevelopmentTeam = X978QRK3WP;
 						ProvisioningStyle = Automatic;
 					};
+					7B25DF2F7399E61789DF39A2 = {
+						DevelopmentTeam = X978QRK3WP;
+						ProvisioningStyle = Automatic;
+					};
 					EF082251D839C5091E36843B = {
 						DevelopmentTeam = X978QRK3WP;
 						ProvisioningStyle = Automatic;
@@ -518,6 +572,7 @@
 			targets = (
 				167A01CC7974FB0668295765 /* Veloseete */,
 				EF082251D839C5091E36843B /* VeloseeteTripWidget */,
+				7B25DF2F7399E61789DF39A2 /* VeloseeteTests */,
 			);
 		};
 /* End PBXProject section */
@@ -584,6 +639,7 @@
 				B3763817EE58A8BABBD8B09F /* DataStore.swift in Sources */,
 				6645B208EFDEA611E193CD45 /* DriveMoodLogic.swift in Sources */,
 				3428480EE72138DA24FB805E /* DriverBadgeChrome.swift in Sources */,
+				D8A7437382F5D240695CA4D7 /* DriverProfileChrome.swift in Sources */,
 				78DD9B99B5AF7D8BA6A26C8A /* FillDetailSheet.swift in Sources */,
 				81B2F8DA22FF3F54A9CFC19B /* FirebaseBootstrap.swift in Sources */,
 				08DFE3397E7CE2D442F38B41 /* FirestoreRepository.swift in Sources */,
@@ -616,6 +672,7 @@
 				63B8235E9A940B210302F60E /* TripsView.swift in Sources */,
 				AB69738B2377CB8010930622 /* VSIcon.swift in Sources */,
 				E379326E18B4EF78ABE883BE /* VehicleInsightScheduler.swift in Sources */,
+				079FC39809544E13995E6790 /* VehicleMakePicker.swift in Sources */,
 				DF02674D948FF98FCAF64A28 /* VehicleMark.swift in Sources */,
 				33EF7235CAC444208BD0316C /* VeloseeteApp.swift in Sources */,
 			);
@@ -633,9 +690,24 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		A907A86690ED7BECBB6C1F07 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				AD2679EE80F1B30C0BBB46C8 /* DriveMoodLogicTests.swift in Sources */,
+				032D4284B7BD9687B15C3C1B /* TripTrackingLogicTests.swift in Sources */,
+				C9ACFF4D49EC096289E347E2 /* TripTrackingStressTests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
+		B2F717AFFA035649A018453F /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 167A01CC7974FB0668295765 /* Veloseete */;
+			targetProxy = 43140DC53005EB437F63261A /* PBXContainerItemProxy */;
+		};
 		D338CC2C97BC5252249ED843 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
 			target = EF082251D839C5091E36843B /* VeloseeteTripWidget */;
@@ -650,7 +722,7 @@
 				CODE_SIGN_ENTITLEMENTS = VeloseeteTripWidget/VeloseeteTripWidgetDebug.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 19;
+				CURRENT_PROJECT_VERSION = 28;
 				DEVELOPMENT_TEAM = X978QRK3WP;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = VeloseeteTripWidget/Info.plist;
@@ -662,6 +734,26 @@
 				SKIP_INSTALL = YES;
 				SWIFT_VERSION = 5.9;
 				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Debug;
+		};
+		3F569FCB56F0F906C1FB9162 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = X978QRK3WP;
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.veloseete.ios.tests;
+				PRODUCT_NAME = VeloseeteTests;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = 1;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Veloseete.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Veloseete";
 			};
 			name = Debug;
 		};
@@ -737,7 +829,7 @@
 				CODE_SIGN_ENTITLEMENTS = Veloseete/VeloseeteDebug.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 19;
+				CURRENT_PROJECT_VERSION = 28;
 				DEVELOPMENT_TEAM = X978QRK3WP;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = Veloseete/Info.plist;
@@ -761,7 +853,7 @@
 				CODE_SIGN_ENTITLEMENTS = Veloseete/Veloseete.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 19;
+				CURRENT_PROJECT_VERSION = 28;
 				DEVELOPMENT_TEAM = X978QRK3WP;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = Veloseete/Info.plist;
@@ -777,13 +869,33 @@
 			};
 			name = Release;
 		};
+		CAC2869D10B5A1D9D18C8E6E /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = X978QRK3WP;
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.veloseete.ios.tests;
+				PRODUCT_NAME = VeloseeteTests;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = 1;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Veloseete.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Veloseete";
+			};
+			name = Release;
+		};
 		D93A32000561145DD2E455E6 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CODE_SIGN_ENTITLEMENTS = VeloseeteTripWidget/VeloseeteTripWidget.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 19;
+				CURRENT_PROJECT_VERSION = 28;
 				DEVELOPMENT_TEAM = X978QRK3WP;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = VeloseeteTripWidget/Info.plist;
@@ -872,6 +984,15 @@
 			buildConfigurations = (
 				84E47B5226D5AEFEB1F4FE85 /* Debug */,
 				9842E8ADA1F2624283D64DF5 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		83D0DA9C8F6F5A65612B6CA1 /* Build configuration list for PBXNativeTarget "VeloseeteTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				3F569FCB56F0F906C1FB9162 /* Debug */,
+				CAC2869D10B5A1D9D18C8E6E /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Debug;

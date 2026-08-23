@@ -248,7 +248,11 @@ struct FirstVehicleOnboardingView: View {
                             Task { await restore(vehicle.id) }
                         } label: {
                             HStack(spacing: 14) {
-                                VehicleMark(style: VehicleMarkStyle.resolve(vehicle.icon), size: 44)
+                                VehicleMark(
+                                    style: VehicleMarkStyle.resolve(vehicle.icon),
+                                    size: 44,
+                                    paint: VehiclePaintColor.resolve(vehicle.paintColor)
+                                )
                                 VStack(alignment: .leading, spacing: 4) {
                                     Text(vehicle.nickname.isEmpty ? "\(vehicle.make) \(vehicle.model)" : vehicle.nickname)
                                         .font(VS.Typography.heading(17, weight: .bold))
@@ -347,7 +351,7 @@ struct FirstVehicleSyncRecoveryView: View {
                     PrimaryCTAButton(title: "Retry", icon: nil, action: onRetry)
 
                     Button(action: onContinueEmpty) {
-                        Text("Set up a new car")
+                        Text("Continue without a car")
                             .font(VS.Typography.body(14, weight: .semibold))
                             .foregroundStyle(VS.Color.textSecondary)
                             .frame(maxWidth: .infinity)

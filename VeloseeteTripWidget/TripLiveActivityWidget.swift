@@ -29,6 +29,12 @@ private enum TripActivityStyle {
         case .paused: return amber
         }
     }
+
+    static let spectrumGradient = LinearGradient(
+        colors: [lime, amber, coral],
+        startPoint: .leading,
+        endPoint: .trailing
+    )
 }
 
 struct TripLiveActivityWidget: Widget {
@@ -81,14 +87,14 @@ struct TripLiveActivityWidget: Widget {
                             )
                         }
 
-                        StableTrack(
+                        EfficiencySpectrumBar(
                             thirst: context.state.thirst,
-                            tint: TripActivityStyle.mood(context.state.mood)
+                            mood: context.state.mood
                         )
 
                         Text(footerLine(for: context.state))
                             .font(.caption2.weight(.semibold))
-                            .foregroundStyle(TripActivityStyle.secondary)
+                            .foregroundStyle(footerColor(for: context.state))
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .lineLimit(1)
                     }
@@ -238,12 +244,11 @@ private struct TripLockScreenView: View {
                 )
             }
 
-            StableTrack(thirst: context.state.thirst, tint: tint)
+            EfficiencySpectrumBar(thirst: context.state.thirst, mood: mood)
 
-            // Always the same structure — no if/else swap that jumps layout.
             Text(footerLine(for: context.state))
                 .font(.caption2.weight(.semibold))
-                .foregroundStyle(TripActivityStyle.secondary)
+                .foregroundStyle(footerColor(for: context.state))
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .lineLimit(1)
         }
@@ -284,34 +289,121 @@ private struct MetricCell: View {
     }
 }
 
-/// Simple ProgressView-based bar — avoids GeometryReader offset glitches.
-private struct StableTrack: View {
+/// Thrifty → Thirsty bar as a fun sine wave — same lime/amber/coral spectrum.
+private struct EfficiencySpectrumBar: View {
     let thirst: Double
-    let tint: Color
+    let mood: DriveMood
 
-    /// Snap to steps so the bar doesn't jitter every GPS tick.
     private var snapped: Double {
         let clamped = min(max(thirst, 0), 1)
         return (clamped * 20).rounded() / 20
     }
 
+    private var markerColor: Color {
+        TripActivityStyle.mood(mood)
+    }
+
+    private let amplitude: CGFloat = 4.5
+    private let wavelength: CGFloat = 22
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            ProgressView(value: snapped)
-                .progressViewStyle(.linear)
-                .tint(tint)
-                .frame(height: 6)
-                .scaleEffect(x: 1, y: 1.15, anchor: .center)
+        VStack(alignment: .leading, spacing: 5) {
+            GeometryReader { geo in
+                let size = geo.size
+                let tip = tipPoint(progress: snapped, in: size)
+
+                ZStack {
+                    // Quiet remaining track
+                    Capsule()
+                        .fill(TripActivityStyle.track)
+                        .frame(height: 5)
+                        .frame(maxWidth: .infinity)
+                        .position(x: size.width / 2, y: size.height / 2)
+
+                    // End stop at “Thirsty”
+                    Circle()
+                        .fill(TripActivityStyle.coral.opacity(0.9))
+                        .frame(width: 7, height: 7)
+                        .position(x: size.width - 3.5, y: size.height / 2)
+
+                    // Wavy progress — spectrum along the wave
+                    WavyLine(amplitude: amplitude, wavelength: wavelength)
+                        .trim(from: 0, to: max(0.02, snapped))
+                        .stroke(
+                            TripActivityStyle.spectrumGradient,
+                            style: StrokeStyle(lineWidth: 7, lineCap: .round, lineJoin: .round)
+                        )
+                        .shadow(color: markerColor.opacity(0.3), radius: 3, y: 1)
+
+                    // Tip follows the wave crest
+                    Circle()
+                        .fill(markerColor)
+                        .frame(width: 9, height: 9)
+                        .overlay(
+                            Circle()
+                                .strokeBorder(Color.white.opacity(0.4), lineWidth: 1)
+                        )
+                        .position(tip)
+                }
+            }
+            .frame(height: 18)
 
             HStack {
-                Text("Thrifty")
+                Label("Thrifty", systemImage: "leaf.fill")
+                    .foregroundStyle(TripActivityStyle.lime.opacity(0.85))
                 Spacer(minLength: 0)
-                Text("Thirsty")
+                Label("Thirsty", systemImage: "flame.fill")
+                    .foregroundStyle(TripActivityStyle.coral.opacity(0.9))
             }
-            .font(.system(size: 8, weight: .semibold))
-            .foregroundStyle(TripActivityStyle.secondary)
+            .font(.system(size: 8, weight: .bold))
         }
     }
+
+    private func tipPoint(progress: Double, in size: CGSize) -> CGPoint {
+        let x = size.width * progress
+        let midY = size.height / 2
+        let y = midY + sin((x / wavelength) * 2 * .pi) * amplitude
+        return CGPoint(x: min(max(x, 4.5), size.width - 4.5), y: y)
+    }
+}
+
+/// Full-width sine used with `.trim` so progress grows along the wave.
+private struct WavyLine: Shape {
+    var amplitude: CGFloat
+    var wavelength: CGFloat
+
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        let midY = rect.midY
+        let width = rect.width
+        guard width > 1 else { return path }
+
+        path.move(to: CGPoint(x: 0, y: midY))
+        let step: CGFloat = 1.5
+        var x: CGFloat = 0
+        while x <= width {
+            let y = midY + sin((x / wavelength) * 2 * .pi) * amplitude
+            path.addLine(to: CGPoint(x: x, y: y))
+            x += step
+        }
+        let endY = midY + sin((width / wavelength) * 2 * .pi) * amplitude
+        path.addLine(to: CGPoint(x: width, y: endY))
+        return path
+    }
+}
+
+private func footerColor(for state: TripActivityAttributes.ContentState) -> Color {
+    let event = state.lastEvent
+    if event.contains("throttle") || event.contains("accel") || event.contains("thirsty") {
+        return TripActivityStyle.coral.opacity(0.95)
+    }
+    if event.contains("brake") {
+        return TripActivityStyle.amber.opacity(0.95)
+    }
+    if event.isEmpty {
+        return TripActivityStyle.secondary
+    }
+    return TripActivityStyle.mood(state.mood).opacity(0.9)
 }
 
 private func footerLine(for state: TripActivityAttributes.ContentState) -> String {

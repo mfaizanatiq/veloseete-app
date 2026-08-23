@@ -177,6 +177,7 @@ enum TrackyVoice {
 
         static let trackysMoodTitle = "Tracky’s mood"
         static let trackyCardHint = "Home screen icon follows along · tap to change"
+        static let trackyInlineHint = "App icon"
         static let trackyDrawerSubtitle = "Face on Driver · icon on your Home Screen"
 
         static let inEstimateTitle = "In your Tracky count"
@@ -230,6 +231,16 @@ enum TrackyVoice {
         static let deleteDriveMessage =
             "Removes this route and stats. Your dashboard odometer stays as entered."
 
+        static let linkOrphanDrivesTitle = "Link earlier drives?"
+        static func linkOrphanDrivesMessage(count: Int, distance: String, vehicleName: String) -> String {
+            let driveWord = count == 1 ? "drive" : "drives"
+            return "You tracked \(count) \(driveWord) (\(distance)) before adding a car. Attach them to \(vehicleName)?"
+        }
+        static func linkOrphanDrivesConfirm(vehicleName: String) -> String {
+            "Link to \(vehicleName)"
+        }
+        static let linkOrphanDrivesSkip = "Not this car"
+
         static let archiveVehicle = "Archive vehicle"
         static let archiveVehicleMessage =
             "Hides this car from the garage. Drives, fills, and service stay saved."
@@ -261,6 +272,8 @@ enum TrackyVoice {
 
         static let hardAccel = "Hard accel"
         static let hardBrake = "Hard brake"
+        static let heavyThrottle = "Heavy throttle"
+        static let fastCruise = "Fast cruise · thirsty"
         static let readyWhenYouRoll = "Ready when you roll"
     }
 }

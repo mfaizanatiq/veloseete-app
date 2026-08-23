@@ -352,6 +352,7 @@ final class DataStore: ObservableObject {
         try await change?.commitChanges()
     }
 
+    @discardableResult
     func addVehicle(
         nickname: String,
         make: String,
@@ -360,14 +361,17 @@ final class DataStore: ObservableObject {
         currentOdometer: Double,
         currency: String,
         icon: String?,
+        paintColor: String? = nil,
         fuelTankCapacity: Double?,
         fuelVolumeUnit: String
-    ) async throws {
+    ) async throws -> Vehicle {
         guard let userId = AuthService.shared.userId else {
             throw NSError(domain: "Veloseete", code: 401, userInfo: [NSLocalizedDescriptionKey: "Not signed in"])
         }
 
         let volumeUnit = VolumeFormat.normalize(fuelVolumeUnit) ?? VolumeFormat.defaultUnit(currency: currency)
+        let resolvedPaint = VehiclePaintColor.resolve(paintColor)
+        let paintToken = resolvedPaint == .brand ? nil : resolvedPaint.rawValue
         let input = FirestoreRepository.NewVehicleInput(
             nickname: nickname,
             make: make,
@@ -376,6 +380,7 @@ final class DataStore: ObservableObject {
             currentOdometer: currentOdometer,
             currency: currency,
             icon: icon,
+            paintColor: paintToken,
             fuelTankCapacity: fuelTankCapacity,
             fuelVolumeUnit: volumeUnit
         )
@@ -393,6 +398,7 @@ final class DataStore: ObservableObject {
             currency: currency,
             fuelVolumeUnit: volumeUnit,
             icon: icon,
+            paintColor: paintToken,
             createdAt: Date(),
             isArchived: false,
             archivedAt: nil
@@ -422,6 +428,7 @@ final class DataStore: ObservableObject {
 
         await refreshManufacturerStandard(for: vehicle)
         publishCarPlayWidgetState()
+        return vehicle
     }
 
     func selectVehicle(_ vehicleId: String) async throws {
@@ -690,8 +697,22 @@ final class DataStore: ObservableObject {
             throw NSError(domain: "Veloseete", code: 401, userInfo: [NSLocalizedDescriptionKey: "Not signed in"])
         }
 
+        let resolvedVehicleId: String
+        if pending.vehicleId.isEmpty {
+            guard let vehicle = currentVehicle else {
+                throw NSError(
+                    domain: "Veloseete",
+                    code: 409,
+                    userInfo: [NSLocalizedDescriptionKey: "Add a car in Garage to save this drive."]
+                )
+            }
+            resolvedVehicleId = vehicle.id
+        } else {
+            resolvedVehicleId = pending.vehicleId
+        }
+
         let input = FirestoreRepository.NewTripInput(
-            vehicleId: pending.vehicleId,
+            vehicleId: resolvedVehicleId,
             startedAt: pending.startedAt,
             endedAt: pending.endedAt,
             distanceKm: pending.distanceKm,
@@ -708,11 +729,11 @@ final class DataStore: ObservableObject {
 
         if applyOdometer {
             try await FirestoreRepository.shared.updateVehicleOdometer(
-                vehicleId: pending.vehicleId,
+                vehicleId: resolvedVehicleId,
                 odometer: odometer
             )
             vehicles = vehicles.map { v in
-                guard v.id == pending.vehicleId else { return v }
+                guard v.id == resolvedVehicleId else { return v }
                 var updated = v
                 updated.currentOdometer = odometer
                 return updated
@@ -722,7 +743,7 @@ final class DataStore: ObservableObject {
 
         let trip = Trip(
             id: id,
-            vehicleId: pending.vehicleId,
+            vehicleId: resolvedVehicleId,
             startedAt: pending.startedAt,
             endedAt: pending.endedAt,
             distanceKm: pending.distanceKm,

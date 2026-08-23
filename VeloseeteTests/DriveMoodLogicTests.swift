@@ -64,6 +64,28 @@ final class DriveMoodLogicTests: XCTestCase {
         XCTAssertEqual(snap.statusLabel, "Paused")
     }
 
+    func testHeavyThrottleRegistersBeforeHarshAccel() {
+        var state = DriveMoodLogic.State()
+        let start = Date()
+        _ = DriveMoodLogic.ingest(
+            state: &state,
+            speedKmh: 40,
+            at: start,
+            isPaused: false,
+            baselineL100: 8
+        )
+        let after = DriveMoodLogic.ingest(
+            state: &state,
+            speedKmh: 55,
+            at: start.addingTimeInterval(2),
+            isPaused: false,
+            baselineL100: 8
+        )
+
+        XCTAssertEqual(after.lastEvent, "Heavy throttle")
+        XCTAssertGreaterThanOrEqual(after.thirst, 0.25)
+    }
+
     func testFinalSnapshotMarksSaved() {
         let snap = DriveMoodLogic.finalSnapshot(
             state: DriveMoodLogic.State(score: 82),

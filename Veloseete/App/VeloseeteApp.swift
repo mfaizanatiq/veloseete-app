@@ -83,6 +83,7 @@ struct VeloseeteApp: App {
             }
             .onAppear {
                 TrackyAppIcon.syncFromStorage()
+                profileAvatarStore.reloadIfNeeded(userId: authService.userId)
                 if authService.isAuthenticated {
                     tripRecorder.resumeBackgroundWatchingIfNeeded()
                 }
@@ -95,6 +96,7 @@ struct VeloseeteApp: App {
             .onChange(of: scenePhase) { _, phase in
                 guard phase == .active else { return }
                 TrackyAppIcon.syncFromStorage()
+                profileAvatarStore.reloadIfNeeded(userId: authService.userId)
                 if authService.isAuthenticated {
                     tripRecorder.resumeBackgroundWatchingIfNeeded()
                 }
@@ -107,7 +109,7 @@ struct VeloseeteApp: App {
             .onChange(of: dataStore.isLoaded) { _, loaded in
                 guard loaded else { return }
                 VehicleInsightScheduler.shared.refresh(using: dataStore)
-                dataStore.refreshHomeWidgets()
+                syncTripRecorderVehicle()
             }
             // The review queue changing (drive finished, confirmed, or
             // discarded) shifts the fuel-range picture too.
@@ -116,22 +118,35 @@ struct VeloseeteApp: App {
                 VehicleInsightScheduler.shared.refresh(using: dataStore)
             }
             .onChange(of: dataStore.currentVehicle?.id) { _, _ in
-                guard let vehicle = dataStore.currentVehicle else { return }
-                tripRecorder.configure(
-                    vehicleId: vehicle.id,
-                    vehicleName: vehicle.nickname,
-                    currentOdometer: vehicle.currentOdometer,
-                    driverName: dataStore.userName,
-                    baselineL100: DriveMoodBaseline.resolve(
-                        vehicle: vehicle,
-                        logs: dataStore.fuelLogs,
-                        manufacturerStandard: dataStore.manufacturerStandard
-                    )
-                )
-                tripRecorder.resumeBackgroundWatchingIfNeeded()
-                VehicleInsightScheduler.shared.refresh(using: dataStore)
-                dataStore.refreshHomeWidgets()
+                syncTripRecorderVehicle()
             }
+            .onChange(of: tripPermissionsStore.hasCompletedOnboarding) { _, _ in
+                syncTripRecorderVehicle()
+            }
+        }
+    }
+
+    private func syncTripRecorderVehicle() {
+        guard dataStore.isLoaded, authService.isAuthenticated else { return }
+        if let vehicle = dataStore.currentVehicle {
+            tripRecorder.configure(
+                vehicleId: vehicle.id,
+                vehicleName: vehicle.nickname,
+                currentOdometer: vehicle.currentOdometer,
+                driverName: dataStore.userName,
+                baselineL100: DriveMoodBaseline.resolve(
+                    vehicle: vehicle,
+                    logs: dataStore.fuelLogs,
+                    manufacturerStandard: dataStore.manufacturerStandard
+                )
+            )
+            tripRecorder.resumeBackgroundWatchingIfNeeded()
+        } else if tripPermissionsStore.hasCompletedOnboarding {
+            tripRecorder.configureGuestTracking(driverName: dataStore.userName)
+        }
+        if dataStore.isLoaded {
+            VehicleInsightScheduler.shared.refresh(using: dataStore)
+            dataStore.refreshHomeWidgets()
         }
     }
 

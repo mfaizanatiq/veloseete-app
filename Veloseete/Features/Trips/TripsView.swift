@@ -85,15 +85,31 @@ struct TripsView: View {
     private var filteredPendingTrips: [PendingTripSave] {
         let activeIds = store.activeVehicleIds
         return recorder.pendingSaves
-            .filter { activeIds.contains($0.vehicleId) }
-            .filter { selectedVehicleId == nil || $0.vehicleId == selectedVehicleId }
+            .filter { pending in
+                if pending.vehicleId.isEmpty { return true }
+                return activeIds.contains(pending.vehicleId)
+            }
+            .filter { selectedVehicleId == nil || $0.vehicleId == selectedVehicleId || $0.vehicleId.isEmpty }
             .sorted { $0.endedAt > $1.endedAt }
     }
 
     /// Whole review queue for active cars, ignoring the car filter — drives the tab badge.
     private var reviewBadgeCount: Int {
         let activeIds = store.activeVehicleIds
-        return recorder.pendingSaves.count { activeIds.contains($0.vehicleId) }
+        return recorder.pendingSaves.count { pending in
+            pending.vehicleId.isEmpty || activeIds.contains(pending.vehicleId)
+        }
+    }
+
+    private var mapVehicleStyle: VehicleMarkStyle {
+        if let icon = store.currentVehicle?.icon {
+            return VehicleMarkStyle.resolve(icon)
+        }
+        return .defaultMapStyle
+    }
+
+    private var mapVehiclePaint: VehiclePaintColor {
+        VehiclePaintColor.resolve(store.currentVehicle?.paintColor)
     }
 
     /// Saves every visible pending drive with its suggested odometer — same flow
@@ -218,7 +234,8 @@ struct TripsView: View {
                     showsUserCharacter: usesLocationFocalMap,
                     courseDegrees: recorder.followCourseDegrees,
                     characterCoordinate: mapCharacterCoordinate,
-                    vehicleStyle: VehicleMarkStyle.resolve(store.currentVehicle?.icon),
+                    vehicleStyle: mapVehicleStyle,
+                    vehiclePaint: mapVehiclePaint,
                     locksMinimumPitch: mode == .tracking || selectedTrip != nil,
                     position: $mapPosition
                 )
@@ -380,7 +397,8 @@ struct TripsView: View {
         }
         .onChange(of: recorder.followTick) { _, _ in
             guard mode == .tracking else { return }
-            withAnimation(.easeInOut(duration: 0.55)) {
+            // Short ease — long overlapping camera animations fought the puck and looked glitchy.
+            withAnimation(.easeInOut(duration: 0.35)) {
                 focusTrackingLocation()
             }
         }
@@ -825,53 +843,80 @@ struct TripsView: View {
 
     @ViewBuilder
     private func trackingVehiclePicker(vehicle: Vehicle?) -> some View {
-        Menu {
-            ForEach(store.vehicles) { option in
-                Button {
-                    selectedVehicleId = option.id
-                } label: {
-                    Label {
-                        Text(option.nickname)
-                    } icon: {
-                        VehicleMark(style: VehicleMarkStyle.resolve(option.icon), size: 18)
-                    }
-                }
-            }
-        } label: {
-            HStack(alignment: .center, spacing: 12) {
-                if let vehicle {
-                    VehicleMark(style: VehicleMarkStyle.resolve(vehicle.icon), size: 44)
-                } else {
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .fill(VS.Color.chip)
-                        .frame(width: 44, height: 44)
-                        .overlay(
-                            VSIcon(icon: .car, size: 18, weight: .fill, tint: VS.Color.textTertiary)
-                        )
-                }
-                VStack(alignment: .leading, spacing: 3) {
-                    HStack(spacing: 5) {
-                        Text(vehicle?.nickname ?? "Select car")
+        Group {
+            if store.vehicles.isEmpty {
+                HStack(alignment: .center, spacing: 12) {
+                    VehicleMark(style: .defaultMapStyle, size: 44, paint: .defaultMapPaint)
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("Your drive")
                             .font(VS.Typography.heading(20, weight: .bold))
                             .foregroundStyle(VS.Color.textPrimary)
                             .lineLimit(1)
-                        if store.vehicles.count > 1 {
-                            VSIcon(icon: .caretDown, size: 12, weight: .bold, tint: VS.Color.textTertiary)
+                        Text(trackingIdentitySubtitle(nil))
+                            .font(VS.Typography.body(13, weight: .medium))
+                            .foregroundStyle(VS.Color.textTertiary)
+                            .lineLimit(1)
+                    }
+                }
+            } else {
+                Menu {
+                    ForEach(store.vehicles) { option in
+                        Button {
+                            selectedVehicleId = option.id
+                        } label: {
+                            Label {
+                                Text(option.nickname)
+                            } icon: {
+                                VehicleMark(
+                                    style: VehicleMarkStyle.resolve(option.icon),
+                                    size: 18,
+                                    paint: VehiclePaintColor.resolve(option.paintColor)
+                                )
+                            }
                         }
                     }
-                    Text(trackingIdentitySubtitle(vehicle))
-                        .font(VS.Typography.body(13, weight: .medium))
-                        .foregroundStyle(VS.Color.textTertiary)
-                        .lineLimit(1)
+                } label: {
+                    HStack(alignment: .center, spacing: 12) {
+                        if let vehicle {
+                            VehicleMark(
+                                style: VehicleMarkStyle.resolve(vehicle.icon),
+                                size: 44,
+                                paint: VehiclePaintColor.resolve(vehicle.paintColor)
+                            )
+                        } else {
+                            VehicleMark(style: .defaultMapStyle, size: 44, paint: .defaultMapPaint)
+                        }
+                        VStack(alignment: .leading, spacing: 3) {
+                            HStack(spacing: 5) {
+                                Text(vehicle?.nickname ?? "Select car")
+                                    .font(VS.Typography.heading(20, weight: .bold))
+                                    .foregroundStyle(VS.Color.textPrimary)
+                                    .lineLimit(1)
+                                if store.vehicles.count > 1 {
+                                    VSIcon(icon: .caretDown, size: 12, weight: .bold, tint: VS.Color.textTertiary)
+                                }
+                            }
+                            Text(trackingIdentitySubtitle(vehicle))
+                                .font(VS.Typography.body(13, weight: .medium))
+                                .foregroundStyle(VS.Color.textTertiary)
+                                .lineLimit(1)
+                        }
+                    }
+                    .contentShape(Rectangle())
                 }
             }
-            .contentShape(Rectangle())
         }
-        .disabled(store.vehicles.isEmpty)
     }
 
     private func trackingIdentitySubtitle(_ vehicle: Vehicle?) -> String {
-        guard let vehicle else { return phaseSubtitle }
+        guard let vehicle else {
+            switch recorder.phase {
+            case .idle, .watching:
+                return "Default sedan · \(phaseTitle)"
+            default:
+                return phaseSubtitle
+            }
+        }
         let makeModel = [vehicle.make, vehicle.model]
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { !$0.isEmpty }
@@ -1172,7 +1217,8 @@ struct TripsView: View {
                 showsUserCharacter: mode == .tracking,
                 courseDegrees: recorder.followCourseDegrees,
                 characterCoordinate: mapCharacterCoordinate,
-                vehicleStyle: VehicleMarkStyle.resolve(store.currentVehicle?.icon),
+                vehicleStyle: mapVehicleStyle,
+                vehiclePaint: mapVehiclePaint,
                 locksMinimumPitch: mode == .tracking || selectedTrip != nil,
                 position: $mapPosition
             )
@@ -1200,19 +1246,21 @@ struct TripsView: View {
     }
 
     private func syncRecorderVehicle() {
-        let vehicle = store.vehicles.first(where: { $0.id == selectedVehicleId }) ?? store.currentVehicle
-        guard let vehicle else { return }
-        recorder.configure(
-            vehicleId: vehicle.id,
-            vehicleName: vehicle.nickname,
-            currentOdometer: vehicle.currentOdometer,
-            driverName: store.userName,
-            baselineL100: DriveMoodBaseline.resolve(
-                vehicle: vehicle,
-                logs: store.fuelLogs,
-                manufacturerStandard: store.manufacturerStandard
+        if let vehicle = store.vehicles.first(where: { $0.id == selectedVehicleId }) ?? store.currentVehicle {
+            recorder.configure(
+                vehicleId: vehicle.id,
+                vehicleName: vehicle.nickname,
+                currentOdometer: vehicle.currentOdometer,
+                driverName: store.userName,
+                baselineL100: DriveMoodBaseline.resolve(
+                    vehicle: vehicle,
+                    logs: store.fuelLogs,
+                    manufacturerStandard: store.manufacturerStandard
+                )
             )
-        )
+        } else {
+            recorder.configureGuestTracking(driverName: store.userName)
+        }
         if recorder.autoTrackingEnabled, recorder.phase == .idle {
             recorder.setAutoTracking(true)
         }
@@ -1305,6 +1353,8 @@ struct TripsView: View {
 
         let heading = recorder.followCourseDegrees >= 0 ? recorder.followCourseDegrees : 0
         let distance: CLLocationDistance = recorder.phase == .recording ? 680 : 1_050
+        // Sticky heading: only yaw the camera on throttled follow ticks (not every GPS hop).
+        // Course still rotates the car mark via `bodyRotation`.
         mapPosition = .camera(
             Self.pitchedCamera(center: coordinate, distance: distance, heading: heading)
         )
@@ -1359,7 +1409,11 @@ struct TripsView: View {
                             Label {
                                 Text(vehicle.nickname)
                             } icon: {
-                                VehicleMark(style: VehicleMarkStyle.resolve(vehicle.icon), size: 18)
+                                VehicleMark(
+                                    style: VehicleMarkStyle.resolve(vehicle.icon),
+                                    size: 18,
+                                    paint: VehiclePaintColor.resolve(vehicle.paintColor)
+                                )
                             }
                         }
                     }
@@ -1533,6 +1587,8 @@ struct TripsMapCanvas: View {
     let characterCoordinate: CLLocationCoordinate2D?
     /// Car mark for the live map puck (Uber-style top-down asset).
     var vehicleStyle: VehicleMarkStyle = .sedan
+    /// Paint tint for the map puck — brand lime when unset.
+    var vehiclePaint: VehiclePaintColor = .brand
     /// When false (historic overview), allow flat camera so multi-city history can fit.
     var locksMinimumPitch: Bool = true
     @Binding var position: MapCameraPosition
@@ -1547,7 +1603,8 @@ struct TripsMapCanvas: View {
                             isLive: isActivelyRecording,
                             courseDegrees: courseDegrees,
                             mapHeading: mapHeading,
-                            vehicleStyle: vehicleStyle
+                            vehicleStyle: vehicleStyle,
+                            vehiclePaint: vehiclePaint
                         )
                     }
                 } else {
@@ -1556,7 +1613,8 @@ struct TripsMapCanvas: View {
                             isLive: isActivelyRecording,
                             courseDegrees: courseDegrees,
                             mapHeading: mapHeading,
-                            vehicleStyle: vehicleStyle
+                            vehicleStyle: vehicleStyle,
+                            vehiclePaint: vehiclePaint
                         )
                     }
                 }
@@ -1678,8 +1736,8 @@ struct TripsMapCanvas: View {
                 )
             )
         }
-        .animation(.linear(duration: 0.35), value: characterCoordinate?.latitude)
-        .animation(.linear(duration: 0.35), value: characterCoordinate?.longitude)
+        // Intentionally no `.animation` on character lat/lng — animating the annotation
+        // while the camera also eases made the car skate relative to the map.
     }
 
     /// Street map only (never satellite/hybrid) with realistic elevation so
@@ -1698,6 +1756,7 @@ private struct VeloseeteMapCharacter: View {
     var courseDegrees: Double = -1
     var mapHeading: Double = 0
     var vehicleStyle: VehicleMarkStyle = .sedan
+    var vehiclePaint: VehiclePaintColor = .brand
     @State private var pulse = false
 
     private var showsHeading: Bool { courseDegrees >= 0 }
@@ -1705,19 +1764,23 @@ private struct VeloseeteMapCharacter: View {
     /// Rotate absolute course into screen space (annotations stay upright).
     private var bodyRotation: Double { courseDegrees - mapHeading }
 
+    private var glow: Color {
+        vehiclePaint == .brand ? VS.Color.accent : vehiclePaint.swatch
+    }
+
     var body: some View {
         ZStack {
             if isLive {
                 Circle()
-                    .fill(VS.Color.accent.opacity(0.22))
+                    .fill(glow.opacity(0.22))
                     .frame(width: 72, height: 72)
                     .scaleEffect(pulse ? 1.18 : 0.9)
                     .opacity(pulse ? 0.12 : 0.7)
             }
 
-            VehicleMark(style: vehicleStyle, size: 64, viewpoint: .map)
+            VehicleMark(style: vehicleStyle, size: 64, viewpoint: .map, paint: vehiclePaint)
                 .shadow(color: .black.opacity(0.45), radius: 5, y: 2)
-                .shadow(color: VS.Color.accent.opacity(0.2), radius: 8)
+                .shadow(color: glow.opacity(0.2), radius: 8)
         }
         // Nose of the map asset points up; rotate so travel direction matches course.
         .rotationEffect(.degrees(showsHeading ? bodyRotation : 0))
@@ -1729,8 +1792,8 @@ private struct VeloseeteMapCharacter: View {
         }
         .accessibilityLabel(
             isLive
-                ? "\(vehicleStyle.label) live location"
-                : "\(vehicleStyle.label) location"
+                ? "\(vehiclePaint.label) \(vehicleStyle.label) live location"
+                : "\(vehiclePaint.label) \(vehicleStyle.label) location"
         )
     }
 }

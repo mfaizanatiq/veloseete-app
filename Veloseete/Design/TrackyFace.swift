@@ -38,6 +38,78 @@ enum TrackyMood: String, CaseIterable, Identifiable {
     }
 }
 
+/// Inline mood picker — compact row on Driver profile (no full-screen card).
+struct TrackyInlineMoodRow: View {
+    @AppStorage("veloseete.tracky.mood") private var trackyMoodRaw: String = TrackyMood.chill.rawValue
+
+    private var trackyMood: TrackyMood {
+        TrackyMood(rawValue: trackyMoodRaw) ?? .chill
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 8) {
+                TrackyFace(mood: trackyMood, size: 32)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(TrackyVoice.Soft.trackysMoodTitle)
+                        .font(VS.Typography.body(11, weight: .bold))
+                        .foregroundStyle(VS.Color.textTertiary)
+                    Text(trackyMood.label)
+                        .font(VS.Typography.body(14, weight: .semibold))
+                        .foregroundStyle(VS.Color.textPrimary)
+                }
+                Spacer(minLength: 0)
+                Text(TrackyVoice.Soft.trackyInlineHint)
+                    .font(VS.Typography.body(10))
+                    .foregroundStyle(VS.Color.textTertiary)
+                    .multilineTextAlignment(.trailing)
+            }
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(TrackyMood.selectable) { mood in
+                        inlineMoodChip(mood)
+                    }
+                }
+            }
+        }
+        .padding(VS.Spacing.card)
+        .glassCard(elevated: true)
+        .onChange(of: trackyMoodRaw) { _, newValue in
+            TrackyAppIcon.apply(mood: TrackyMood(rawValue: newValue) ?? .chill)
+        }
+    }
+
+    private func inlineMoodChip(_ mood: TrackyMood) -> some View {
+        let isSelected = trackyMood == mood
+        return Button {
+            UISelectionFeedbackGenerator().selectionChanged()
+            withAnimation(.snappy(duration: 0.2)) {
+                trackyMoodRaw = mood.rawValue
+            }
+            TrackyAppIcon.apply(mood: mood)
+        } label: {
+            VStack(spacing: 6) {
+                TrackyFace(mood: mood, size: 36)
+                    .overlay {
+                        Circle()
+                            .strokeBorder(isSelected ? VS.Color.accent : VS.Color.hairline, lineWidth: isSelected ? 2 : 1)
+                            .frame(width: 42, height: 42)
+                    }
+                    .frame(width: 42, height: 42)
+                Text(mood.label)
+                    .font(VS.Typography.body(10, weight: isSelected ? .bold : .medium))
+                    .foregroundStyle(isSelected ? VS.Color.accent : VS.Color.textTertiary)
+            }
+            .padding(.vertical, 4)
+            .padding(.horizontal, 2)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Tracky \(mood.label)")
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
+    }
+}
+
 /// Compact Tracky card — selected face centered; mood grid lives in a drawer.
 struct TrackyPickerCard: View {
     @AppStorage("veloseete.tracky.mood") private var trackyMoodRaw: String = TrackyMood.chill.rawValue

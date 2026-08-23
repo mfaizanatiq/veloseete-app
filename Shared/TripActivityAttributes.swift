@@ -83,7 +83,7 @@ public enum DriveMood: String, Codable, Hashable {
         switch self {
         case .smooth: return "Driving smooth"
         case .watch: return "Steady drive"
-        case .heavy: return "Heavy foot"
+        case .heavy: return "Heavy foot · thirsty"
         case .paused: return "Trip paused"
         case .saved: return "Trip saved"
         }

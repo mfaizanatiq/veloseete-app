@@ -346,8 +346,86 @@ final class TripTrackingLogicTests: XCTestCase {
         XCTAssertEqual(prediction?.daysRemaining, 5)
     }
 
+    func testAutoStartBlocksRecentPedestrian() {
+        let now = Date()
+        let recentWalk = now.addingTimeInterval(-10)
+        XCTAssertTrue(TripAutoStartLogic.isPedestrianBlocked(lastPedestrianAt: recentWalk, now: now))
+        XCTAssertFalse(
+            TripAutoStartLogic.motionAdvancesHold(
+                isAutomotive: true,
+                confidenceOK: true,
+                pedestrianBlocked: true
+            )
+        )
+        XCTAssertFalse(
+            TripAutoStartLogic.gpsAdvancesHold(
+                speedKmh: 30,
+                automotiveCorroborated: true,
+                pedestrianBlocked: true
+            )
+        )
+    }
+
+    func testAutoStartSoftSpeedNeedsAutomotiveCorroboration() {
+        // Jogging range — must not start a drive from GPS alone.
+        XCTAssertFalse(
+            TripAutoStartLogic.gpsAdvancesHold(
+                speedKmh: 14,
+                automotiveCorroborated: false,
+                pedestrianBlocked: false
+            )
+        )
+        XCTAssertTrue(
+            TripAutoStartLogic.gpsAdvancesHold(
+                speedKmh: 14,
+                automotiveCorroborated: true,
+                pedestrianBlocked: false
+            )
+        )
+    }
+
+    func testAutoStartHardSpeedAloneIsEnough() {
+        XCTAssertTrue(
+            TripAutoStartLogic.gpsAdvancesHold(
+                speedKmh: 25,
+                automotiveCorroborated: false,
+                pedestrianBlocked: false
+            )
+        )
+        XCTAssertFalse(
+            TripAutoStartLogic.gpsAdvancesHold(
+                speedKmh: TripAutoStartLogic.hardDrivingSpeedKmh - 0.1,
+                automotiveCorroborated: false,
+                pedestrianBlocked: false
+            )
+        )
+    }
+
+    func testAutoStartRequiresHoldDuration() {
+        XCTAssertFalse(TripAutoStartLogic.shouldStart(heldFor: nil))
+        XCTAssertFalse(TripAutoStartLogic.shouldStart(heldFor: 10))
+        XCTAssertTrue(TripAutoStartLogic.shouldStart(heldFor: 18))
+    }
+
+    func testLowConfidenceAutomotiveDoesNotAdvanceHold() {
+        XCTAssertFalse(
+            TripAutoStartLogic.motionAdvancesHold(
+                isAutomotive: true,
+                confidenceOK: false,
+                pedestrianBlocked: false
+            )
+        )
+        XCTAssertTrue(
+            TripAutoStartLogic.motionAdvancesHold(
+                isAutomotive: true,
+                confidenceOK: true,
+                pedestrianBlocked: false
+            )
+        )
+    }
+
     private var testVehicle: Vehicle {
-        Vehicle(id: "car", nickname: "Test", make: "Test", model: "Car", fuelType: "petrol", currentOdometer: 10_500, fuelTankCapacity: 50, currency: "QAR", fuelVolumeUnit: "L", icon: nil, createdAt: Date(), isArchived: false, archivedAt: nil)
+        Vehicle(id: "car", nickname: "Test", make: "Test", model: "Car", fuelType: "petrol", currentOdometer: 10_500, fuelTankCapacity: 50, currency: "QAR", fuelVolumeUnit: "L", icon: nil, paintColor: nil, createdAt: Date(), isArchived: false, archivedAt: nil)
     }
 
     private func fuelLog(id: String, vehicleId: String = "car", odometer: Double, liters: Double, full: Bool, daysAgo: Int, from reference: Date = Date()) -> FuelLog {

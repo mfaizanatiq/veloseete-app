@@ -1,8 +1,8 @@
 import UIKit
 
 /// Maps Tracky’s mood to the home-screen app icon.
-/// Chill (and locked) use the primary eyes-on-lime mark; other moods use
-/// `AppIcon-{mood}` alternate icons from the asset catalog.
+/// Chill (and locked) use the primary `AppIcon`; other moods use
+/// `AppIcon-{mood}` alternates generated from `tracky-{mood}` assets.
 enum TrackyAppIcon {
     private static let storageKey = "veloseete.tracky.mood"
 

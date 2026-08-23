@@ -4,7 +4,7 @@ import Foundation
 enum TripTrackingLogic {
     /// Highway / background GPS often reports 30–60 m; 45 m was dropping real fixes.
     static func accepts(horizontalAccuracy: Double) -> Bool {
-        horizontalAccuracy >= 0 && horizontalAccuracy <= 65
+        horizontalAccuracy.isFinite && horizontalAccuracy >= 0 && horizontalAccuracy <= 65
     }
 
     /// Accepts real driving segments, including sparse highway updates.
@@ -153,5 +153,130 @@ enum OdometerReconciliation {
 
     static func variance(enteredKm: Double, verifiedKm: Double, trackedKm: Double) -> Double {
         enteredKm - estimated(verifiedKm: verifiedKm, trackedKm: trackedKm)
+    }
+}
+
+/// Pure finish/save math — keeps TripRecordingService from crashing on bad times/distances.
+enum TripFinishLogic {
+    static let minSaveDistanceKm = 0.25
+
+    static func durationSec(
+        startedAt: Date,
+        endedAt: Date,
+        pausedAccumulated: TimeInterval,
+        pauseStartedAt: Date?,
+        isPaused: Bool
+    ) -> TimeInterval {
+        var duration = endedAt.timeIntervalSince(startedAt) - pausedAccumulated
+        if let pauseStartedAt, isPaused {
+            duration -= endedAt.timeIntervalSince(pauseStartedAt)
+        }
+        // Guard inverted clocks / clock skew — never negative or NaN.
+        guard duration.isFinite else { return 0 }
+        return max(duration, 0)
+    }
+
+    static func averageSpeedKmh(distanceKm: Double, durationSec: TimeInterval) -> Double {
+        guard distanceKm.isFinite, durationSec.isFinite, durationSec > 0, distanceKm >= 0 else {
+            return 0
+        }
+        return distanceKm / (durationSec / 3600)
+    }
+
+    static func shouldPersist(distanceKm: Double, minimumKm: Double = minSaveDistanceKm) -> Bool {
+        guard distanceKm.isFinite else { return false }
+        return distanceKm >= minimumKm
+    }
+}
+
+/// Pure rules for auto-start — walking must not look like a drive.
+enum TripAutoStartLogic {
+    /// Automotive / hard-speed must hold this long before recording begins.
+    static let holdSeconds: TimeInterval = 18
+    /// Soft GPS gate (jogging range) — needs motion automotive corroboration.
+    static let softDrivingSpeedKmh = 12.0
+    /// Hard GPS gate — clearly a vehicle even without motion (above typical jogging).
+    static let hardDrivingSpeedKmh = 22.0
+    /// After walking/running, ignore automotive / soft-speed starts for this long.
+    static let pedestrianBlockSeconds: TimeInterval = 60
+
+    static func isPedestrianBlocked(lastPedestrianAt: Date?, now: Date = Date()) -> Bool {
+        guard let lastPedestrianAt else { return false }
+        return now.timeIntervalSince(lastPedestrianAt) < pedestrianBlockSeconds
+    }
+
+    /// Motion may advance the hold clock only with usable confidence and no recent walk/run.
+    static func motionAdvancesHold(
+        isAutomotive: Bool,
+        confidenceOK: Bool,
+        pedestrianBlocked: Bool
+    ) -> Bool {
+        isAutomotive && confidenceOK && !pedestrianBlocked
+    }
+
+    /// GPS may advance the hold clock: hard speed alone, or soft speed + automotive motion.
+    static func gpsAdvancesHold(
+        speedKmh: Double,
+        automotiveCorroborated: Bool,
+        pedestrianBlocked: Bool
+    ) -> Bool {
+        guard speedKmh.isFinite, !pedestrianBlocked else { return false }
+        if speedKmh >= hardDrivingSpeedKmh { return true }
+        if speedKmh >= softDrivingSpeedKmh, automotiveCorroborated { return true }
+        return false
+    }
+
+    static func shouldStart(heldFor: TimeInterval?) -> Bool {
+        guard let heldFor, heldFor.isFinite else { return false }
+        return heldFor >= holdSeconds
+    }
+
+    /// Simulates the watching hold clock for tests / invariants.
+    struct HoldClock: Equatable {
+        var automotiveSince: Date?
+        var automotiveCorroborated = false
+        var lastPedestrianAt: Date?
+
+        mutating func onPedestrian(at now: Date, confidenceOK: Bool) {
+            if confidenceOK { lastPedestrianAt = now }
+            automotiveSince = nil
+            automotiveCorroborated = false
+        }
+
+        mutating func onAutomotive(at now: Date, confidenceOK: Bool) -> Bool {
+            let blocked = TripAutoStartLogic.isPedestrianBlocked(lastPedestrianAt: lastPedestrianAt, now: now)
+            guard TripAutoStartLogic.motionAdvancesHold(
+                isAutomotive: true,
+                confidenceOK: confidenceOK,
+                pedestrianBlocked: blocked
+            ) else {
+                if blocked {
+                    automotiveSince = nil
+                    automotiveCorroborated = false
+                }
+                return false
+            }
+            if automotiveSince == nil { automotiveSince = now }
+            automotiveCorroborated = true
+            let held = automotiveSince.map { now.timeIntervalSince($0) }
+            return TripAutoStartLogic.shouldStart(heldFor: held)
+        }
+
+        mutating func onGPS(speedKmh: Double, at now: Date) -> Bool {
+            let blocked = TripAutoStartLogic.isPedestrianBlocked(lastPedestrianAt: lastPedestrianAt, now: now)
+            if TripAutoStartLogic.gpsAdvancesHold(
+                speedKmh: speedKmh,
+                automotiveCorroborated: automotiveCorroborated,
+                pedestrianBlocked: blocked
+            ) {
+                if automotiveSince == nil { automotiveSince = now }
+                let held = automotiveSince.map { now.timeIntervalSince($0) }
+                return TripAutoStartLogic.shouldStart(heldFor: held)
+            }
+            if speedKmh < 3 || !automotiveCorroborated || blocked {
+                automotiveSince = nil
+            }
+            return false
+        }
     }
 }

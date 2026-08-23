@@ -20,6 +20,7 @@ enum DriveMoodLogic {
         var score: Double = 78
         var harshCount: Int = 0
         var smoothSeconds: Double = 0
+        var fastCruiseSeconds: Double = 0
         var lastEvent: String = ""
         var lastEventAt: Date?
         var samples: [SpeedSample] = []
@@ -27,7 +28,9 @@ enum DriveMoodLogic {
 
     /// Harsh accel / brake thresholds (km/h per second).
     private static let harshAccelKmhPerSec = 11.0
+    private static let heavyThrottleKmhPerSec = 6.5
     private static let harshBrakeKmhPerSec = -14.0
+    private static let fastCruiseKmh = 95.0
     private static let sampleWindow: TimeInterval = 45
     private static let eventCooldown: TimeInterval = 4
 
@@ -49,7 +52,7 @@ enum DriveMoodLogic {
             )
         }
 
-        let clampedSpeed = max(0, speedKmh)
+        let clampedSpeed = max(0, speedKmh.isFinite ? speedKmh : 0)
         state.samples.append(SpeedSample(at: at, speedKmh: clampedSpeed))
         state.samples.removeAll { at.timeIntervalSince($0.at) > sampleWindow }
         if state.samples.count > 40 {
@@ -64,14 +67,14 @@ enum DriveMoodLogic {
 
                 if !inTraffic, delta >= harshAccelKmhPerSec {
                     registerHarsh(&state, event: TrackyVoice.Calm.hardAccel, at: at, penalty: 7)
+                } else if !inTraffic, delta >= heavyThrottleKmhPerSec {
+                    registerHarsh(&state, event: TrackyVoice.Calm.heavyThrottle, at: at, penalty: 4)
                 } else if !inTraffic, delta <= harshBrakeKmhPerSec {
                     registerHarsh(&state, event: TrackyVoice.Calm.hardBrake, at: at, penalty: 5)
                 } else if abs(delta) < 3.5 || inTraffic {
                     state.smoothSeconds += dt
-                    // Gentle recovery while calm.
                     state.score = min(100, state.score + dt * 0.045)
                     if state.smoothSeconds >= 45, state.lastEvent.isEmpty == false {
-                        // Clear stale chips after a long smooth stretch.
                         if at.timeIntervalSince(state.lastEventAt ?? .distantPast) > 20 {
                             state.lastEvent = "Smooth \(Int(state.smoothSeconds / 60))m"
                             if state.smoothSeconds < 60 {
@@ -81,9 +84,25 @@ enum DriveMoodLogic {
                     }
                 }
             }
+
+            // Sustained fast cruise burns more fuel even without harsh spikes.
+            if clampedSpeed >= fastCruiseKmh {
+                state.fastCruiseSeconds += min(dt, 3)
+                state.score = max(35, state.score - dt * 0.14)
+                if state.fastCruiseSeconds >= 18 {
+                    registerHarsh(
+                        &state,
+                        event: TrackyVoice.Calm.fastCruise,
+                        at: at,
+                        penalty: 2,
+                        cooldown: 12
+                    )
+                }
+            } else {
+                state.fastCruiseSeconds = max(0, state.fastCruiseSeconds - dt * 0.6)
+            }
         }
 
-        // High sustained speed without harsh events still burns more fuel.
         if clampedSpeed > 120 {
             state.score = max(35, state.score - 0.08)
         }
@@ -119,9 +138,10 @@ enum DriveMoodLogic {
         _ state: inout State,
         event: String,
         at: Date,
-        penalty: Double
+        penalty: Double,
+        cooldown: TimeInterval = eventCooldown
     ) {
-        if let last = state.lastEventAt, at.timeIntervalSince(last) < eventCooldown {
+        if let last = state.lastEventAt, at.timeIntervalSince(last) < cooldown {
             return
         }
         state.harshCount += 1
@@ -141,12 +161,16 @@ enum DriveMoodLogic {
         forcedMood: String? = nil,
         forcedLabel: String? = nil
     ) -> Snapshot {
+        let safeBaseline = max(baselineL100.isFinite ? baselineL100 : 0, 0)
         let clamped = Int(score.rounded().clamped(to: 0...100))
-        let thirst = ((1.0 - (Double(clamped) / 100.0)) * 20).rounded() / 20
-        let thirstClamped = thirst.clamped(to: 0...1)
-        // Map score onto baseline: better score → lower L/100.
         let factor = 1.0 + ((70.0 - Double(clamped)) / 100.0) * 0.55
-        let est = max(3.5, baselineL100 * factor)
+        let est = max(3.5, max(safeBaseline, 0.1) * factor)
+
+        let scoreThirst = 1.0 - (Double(clamped) / 100.0)
+        let burnRatio = est / max(safeBaseline, 4.5)
+        let burnThirst = min(1.0, max(0, (burnRatio - 0.9) / 0.38))
+        let rawThirst = max(scoreThirst, burnThirst)
+        let thirst = ((rawThirst * 20).rounded() / 20).clamped(to: 0...1)
 
         let mood: String
         let label: String
@@ -169,8 +193,7 @@ enum DriveMoodLogic {
 
         var event = lastEvent
         if let lastEventAt, now.timeIntervalSince(lastEventAt) > 25, mood != "saved" {
-            // Keep chips brief so the LA stays glanceable.
-            if event.hasPrefix("Harsh") || event.hasPrefix("Hard") {
+            if event.hasPrefix("Harsh") || event.hasPrefix("Hard") || event.hasPrefix("Heavy") {
                 event = ""
             }
         }
@@ -180,7 +203,7 @@ enum DriveMoodLogic {
             estL100: (est * 10).rounded() / 10,
             moodRaw: mood,
             lastEvent: event,
-            thirst: thirstClamped,
+            thirst: thirst,
             statusLabel: label
         )
     }

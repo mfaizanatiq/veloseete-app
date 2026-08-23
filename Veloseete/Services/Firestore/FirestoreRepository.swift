@@ -93,6 +93,7 @@ final class FirestoreRepository {
         var currentOdometer: Double
         var currency: String
         var icon: String?
+        var paintColor: String?
         var fuelTankCapacity: Double?
         var fuelVolumeUnit: String
     }
@@ -115,6 +116,9 @@ final class FirestoreRepository {
         ]
         if let icon = input.icon, !icon.isEmpty {
             data["icon"] = icon
+        }
+        if let paint = input.paintColor, !paint.isEmpty, paint != VehiclePaintColor.brand.rawValue {
+            data["paintColor"] = paint
         }
         if let tank = input.fuelTankCapacity {
             data["fuelTankCapacity"] = tank
@@ -146,6 +150,8 @@ final class FirestoreRepository {
         ]
         data["fuelTankCapacity"] = vehicle.fuelTankCapacity.map { $0 as Any } ?? NSNull()
         data["icon"] = vehicle.icon.map { $0 as Any } ?? NSNull()
+        let paint = VehiclePaintColor.resolve(vehicle.paintColor)
+        data["paintColor"] = paint == .brand ? NSNull() : paint.rawValue
         data["archivedAt"] = vehicle.archivedAt.map { $0 as Any } ?? NSNull()
         try await db.collection("vehicles").document(vehicle.id).updateData(data)
     }

@@ -1,0 +1,703 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Veloseete Portfolio Studio</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    --bg: #0B0E0B;
+    --bg2: #12160E;
+    --accent: #D9FC55;
+    --accent2: #5FED9A;
+    --text: #ffffff;
+    --text2: #B8C5D6;
+    --text3: #7A8A9E;
+    --warn: #FBBF24;
+    --err: #F87171;
+    --hair: rgba(255,255,255,0.10);
+    --chip: rgba(255,255,255,0.06);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: #050605;
+    color: var(--text);
+    font-family: Inter, system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  h1,h2,h3,.brand { font-family: "Space Grotesk", Inter, sans-serif; }
+
+  /* Studio index */
+  .studio-index {
+    max-width: 1100px;
+    margin: 40px auto;
+    padding: 0 24px 80px;
+  }
+  .studio-index h1 { font-size: 36px; margin-bottom: 8px; }
+  .studio-index p { color: var(--text2); margin-bottom: 28px; line-height: 1.5; }
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 16px;
+  }
+  .grid a {
+    display: block;
+    padding: 16px;
+    background: var(--bg2);
+    border: 1px solid var(--hair);
+    border-radius: 14px;
+    color: var(--text);
+    text-decoration: none;
+  }
+  .grid a:hover { border-color: var(--accent); }
+  .grid .num { color: var(--accent); font-weight: 700; font-size: 12px; }
+  .grid .title { font-weight: 600; margin-top: 6px; }
+  .grid .desc { color: var(--text3); font-size: 12px; margin-top: 6px; line-height: 1.4; }
+
+  /* Capture stage — fixed phone canvas */
+  .stage {
+    display: none;
+    width: 390px;
+    height: 844px;
+    background: var(--bg);
+    position: relative;
+    overflow: hidden;
+  }
+  .stage.active { display: block; }
+  body.capture .studio-index { display: none; }
+  body.capture .stage.active { display: block; }
+
+  .status {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 14px 28px 8px;
+    font-size: 15px;
+    font-weight: 600;
+  }
+  .status .right { display: flex; gap: 6px; align-items: center; font-size: 12px; opacity: 0.9; }
+  .island {
+    position: absolute; top: 11px; left: 50%; transform: translateX(-50%);
+    width: 126px; height: 37px; background: #000; border-radius: 20px; z-index: 5;
+  }
+
+  .phone-body {
+    padding: 8px 20px 28px;
+    height: calc(100% - 52px);
+    display: flex;
+    flex-direction: column;
+  }
+
+  .tabs {
+    margin-top: auto;
+    display: flex;
+    justify-content: space-around;
+    background: rgba(2,2,6,0.92);
+    border: 1px solid var(--hair);
+    border-radius: 28px;
+    padding: 10px 8px;
+  }
+  .tab { text-align: center; font-size: 10px; color: var(--text3); width: 56px; }
+  .tab.on { color: var(--accent); }
+  .tab .ico { font-size: 18px; margin-bottom: 2px; }
+
+  .card {
+    background: linear-gradient(160deg, rgba(255,255,255,0.07), rgba(255,255,255,0.03));
+    border: 1px solid var(--hair);
+    border-radius: 20px;
+    padding: 18px;
+  }
+  .pill {
+    display: inline-flex; align-items: center; gap: 6px;
+    background: var(--chip); border: 1px solid var(--hair);
+    border-radius: 999px; padding: 5px 10px; font-size: 12px; font-weight: 600;
+  }
+  .pill.good { color: var(--accent); background: rgba(217,252,85,0.12); border-color: rgba(217,252,85,0.25); }
+  .pill.warn { color: var(--warn); background: rgba(251,191,36,0.12); border-color: rgba(251,191,36,0.25); }
+  .muted { color: var(--text3); }
+  .sec { color: var(--text2); }
+  .row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+  .btn {
+    background: var(--accent); color: #0B0E0B; font-weight: 700;
+    border: none; border-radius: 999px; padding: 14px 18px; width: 100%;
+    font-family: inherit; font-size: 15px;
+  }
+  .btn.ghost {
+    background: transparent; color: var(--text); border: 1px solid var(--hair);
+  }
+
+  /* Lock screen */
+  .lock {
+    background: radial-gradient(ellipse at 50% 0%, #1a2212 0%, #050605 55%);
+    height: 100%;
+    padding: 64px 22px 40px;
+    display: flex; flex-direction: column; align-items: center;
+  }
+  .lock .time { font-size: 72px; font-weight: 600; letter-spacing: -2px; font-family: "Space Grotesk"; }
+  .lock .date { color: var(--text2); margin-bottom: 36px; font-size: 18px; }
+  .notif {
+    width: 100%;
+    background: rgba(30,34,28,0.82);
+    backdrop-filter: blur(20px);
+    border: 1px solid rgba(255,255,255,0.12);
+    border-radius: 22px;
+    padding: 14px 14px 14px 14px;
+    display: flex; gap: 12px; align-items: flex-start;
+    margin-bottom: 10px;
+  }
+  .notif .app-icon {
+    width: 38px; height: 38px; border-radius: 9px; background: var(--accent);
+    display: grid; place-items: center; flex-shrink: 0;
+  }
+  .notif .app-icon img { width: 22px; height: 22px; }
+  .notif .meta { font-size: 12px; color: var(--text3); display: flex; justify-content: space-between; margin-bottom: 2px; }
+  .notif .title { font-weight: 600; font-size: 14px; margin-bottom: 2px; }
+  .notif .body { font-size: 13px; color: var(--text2); line-height: 1.35; }
+
+  /* Marketing wide frame */
+  .wide {
+    display: none;
+    width: 1280px;
+    height: 800px;
+    background: #070907;
+    position: relative;
+    overflow: hidden;
+  }
+  .wide.active { display: flex; align-items: center; gap: 56px; padding: 48px 64px; }
+  body.capture-wide .studio-index { display: none; }
+  body.capture-wide .stage { display: none !important; }
+  .wide .copy { flex: 1; max-width: 520px; }
+  .wide .eyebrow { color: var(--accent); font-weight: 700; font-size: 13px; letter-spacing: 0.08em; text-transform: uppercase; margin-bottom: 14px; }
+  .wide h2 { font-size: 44px; line-height: 1.08; margin-bottom: 16px; }
+  .wide .lede { color: var(--text2); font-size: 17px; line-height: 1.55; margin-bottom: 28px; }
+  .wide ul { list-style: none; display: grid; gap: 12px; }
+  .wide li {
+    display: flex; gap: 12px; align-items: flex-start;
+    color: var(--text2); font-size: 14px; line-height: 1.45;
+  }
+  .wide li::before {
+    content: ""; width: 8px; height: 8px; border-radius: 50%;
+    background: var(--accent); margin-top: 6px; flex-shrink: 0;
+  }
+  .phone-shell {
+    width: 320px; height: 692px; border-radius: 36px;
+    border: 3px solid #222; background: #000; overflow: hidden;
+    box-shadow: 0 40px 80px rgba(0,0,0,0.55);
+    flex-shrink: 0;
+    position: relative;
+  }
+  .phone-shell iframe, .phone-shell .inner {
+    width: 390px; height: 844px;
+    transform: scale(0.8205);
+    transform-origin: top left;
+  }
+
+  .gauge-track {
+    height: 8px; border-radius: 999px; background: rgba(255,255,255,0.08); position: relative; margin: 14px 0 8px;
+  }
+  .gauge-fill {
+    position: absolute; top: 0; height: 8px; border-radius: 999px; background: var(--accent);
+  }
+  .gauge-tick {
+    position: absolute; top: -4px; width: 2px; height: 16px; background: rgba(255,255,255,0.45);
+  }
+  .gauge-dot {
+    position: absolute; top: -4px; width: 15px; height: 15px; border-radius: 50%;
+    background: var(--accent); border: 3px solid var(--bg2);
+  }
+
+  .map-fake {
+    height: 180px; border-radius: 16px; overflow: hidden; position: relative;
+    background:
+      linear-gradient(135deg, #1a2a1a 0%, #0e1610 40%, #172018 100%);
+  }
+  .map-fake::after {
+    content: "";
+    position: absolute; inset: 0;
+    background:
+      repeating-linear-gradient(0deg, transparent, transparent 28px, rgba(255,255,255,0.03) 28px, rgba(255,255,255,0.03) 29px),
+      repeating-linear-gradient(90deg, transparent, transparent 28px, rgba(255,255,255,0.03) 28px, rgba(255,255,255,0.03) 29px);
+  }
+  .route {
+    position: absolute; inset: 30px 40px;
+    border: 3px solid var(--accent); border-radius: 40% 60% 45% 55%;
+    border-left-color: transparent; border-bottom-color: var(--err);
+    z-index: 1; opacity: 0.9;
+  }
+  .pin {
+    position: absolute; width: 14px; height: 14px; border-radius: 50%;
+    background: var(--accent); border: 3px solid #0B0E0B; z-index: 2;
+  }
+
+  .signal-grid {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 14px;
+  }
+  .signal {
+    background: var(--chip); border: 1px solid var(--hair); border-radius: 14px; padding: 12px;
+  }
+  .signal .k { font-size: 11px; color: var(--text3); margin-bottom: 4px; }
+  .signal .v { font-weight: 700; font-size: 15px; }
+
+  .flow {
+    display: flex; flex-direction: column; gap: 8px; margin-top: 12px;
+  }
+  .flow-step {
+    display: flex; gap: 12px; align-items: center;
+    background: var(--chip); border: 1px solid var(--hair); border-radius: 14px; padding: 12px 14px;
+  }
+  .flow-step .n {
+    width: 26px; height: 26px; border-radius: 50%; background: var(--accent); color: #0B0E0B;
+    display: grid; place-items: center; font-weight: 800; font-size: 12px; flex-shrink: 0;
+  }
+</style>
+</head>
+<body>
+  <div class="studio-index">
+    <h1>Veloseete · Portfolio Studio</h1>
+    <p>Open any frame, or run <code>node capture.mjs</code> to export PNGs into <code>screenshots/</code>. Phone frames are 390×844. Marketing frames are 1280×800.</p>
+    <div class="grid" id="index"></div>
+  </div>
+
+  <!-- ========== PHONE FRAMES ========== -->
+
+  <!-- 01 Fuels hero -->
+  <section class="stage" data-frame="01-fuels-hero" data-title="Fuels hero + brochure gauge" data-desc="You vs brochure efficiency">
+    <div class="island"></div>
+    <div class="status"><span>9:41</span><span class="right">■■■ ▮</span></div>
+    <div class="phone-body">
+      <div class="row" style="margin-bottom:18px">
+        <div>
+          <div class="muted" style="font-size:13px">Fuels</div>
+          <div class="brand" style="font-size:28px;font-weight:700">Coolray</div>
+        </div>
+        <div class="pill good">🍃 Efficient</div>
+      </div>
+      <div class="card" style="margin-bottom:14px">
+        <div class="row" style="align-items:flex-start;margin-bottom:8px">
+          <div>
+            <div style="font-weight:700;font-size:18px">Coolray</div>
+            <div class="muted" style="font-size:12px">Geely Coolray</div>
+          </div>
+          <div class="pill good">🍃 Beating spec</div>
+        </div>
+        <div style="display:flex;align-items:baseline;gap:8px;margin:10px 0 4px">
+          <span class="brand" style="font-size:46px;font-weight:700;letter-spacing:-1px">6.8</span>
+          <span class="muted" style="font-weight:600">L/100km</span>
+        </div>
+        <div style="color:var(--accent);font-size:13px;font-weight:600;margin-bottom:10px">18% better than brochure</div>
+        <div class="gauge-track">
+          <div class="gauge-fill" style="left:28%;width:22%"></div>
+          <div class="gauge-tick" style="left:50%"></div>
+          <div class="gauge-dot" style="left:calc(28% - 4px)"></div>
+        </div>
+        <div class="row" style="font-size:11px">
+          <span style="color:var(--accent);font-weight:600">You 6.8</span>
+          <span class="muted">Brochure 6.35</span>
+        </div>
+        <div style="height:1px;background:var(--hair);margin:14px 0"></div>
+        <div class="row" style="justify-content:flex-start;gap:18px;font-size:12px;color:var(--text2)">
+          <span>🚗 42,180 km</span>
+          <span>⛽ 12 tanks measured</span>
+        </div>
+      </div>
+      <div class="row" style="margin:8px 0 10px">
+        <div style="font-weight:600">Recent fills</div>
+        <div style="color:var(--accent);font-size:13px;font-weight:600">See all</div>
+      </div>
+      <div class="card" style="padding:14px;margin-bottom:10px">
+        <div class="row"><div><div style="font-weight:600">WOQOD Al Waab</div><div class="muted" style="font-size:12px">2 days ago · Full tank</div></div><div style="font-weight:700">QAR 148</div></div>
+      </div>
+      <div class="card" style="padding:14px;margin-bottom:10px">
+        <div class="row"><div><div style="font-weight:600">Shell Nuaija</div><div class="muted" style="font-size:12px">9 days ago · Full tank</div></div><div style="font-weight:700">QAR 152</div></div>
+      </div>
+      <div class="tabs">
+        <div class="tab"><div class="ico">◎</div>Drives</div>
+        <div class="tab on"><div class="ico">⛽</div>Fuels</div>
+        <div class="tab"><div class="ico">🔧</div>Service</div>
+        <div class="tab"><div class="ico">▣</div>Garage</div>
+        <div class="tab"><div class="ico">☺</div>Driver</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 02 Fuel history -->
+  <section class="stage" data-frame="02-fuel-history" data-title="Fuel history ledger" data-desc="Lifetime + monthly groups">
+    <div class="island"></div>
+    <div class="status"><span>9:41</span><span class="right">■■■ ▮</span></div>
+    <div class="phone-body">
+      <div class="muted" style="font-size:13px;margin-bottom:4px">← Fuels</div>
+      <div class="brand" style="font-size:28px;font-weight:700;margin-bottom:16px">Fill history</div>
+      <div class="card" style="margin-bottom:16px;display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;text-align:center">
+        <div><div class="brand" style="font-size:22px;font-weight:700">47</div><div class="muted" style="font-size:11px">fills</div></div>
+        <div><div class="brand" style="font-size:22px;font-weight:700">6.2k</div><div class="muted" style="font-size:11px">QAR spent</div></div>
+        <div><div class="brand" style="font-size:22px;font-weight:700">1.8k</div><div class="muted" style="font-size:11px">liters</div></div>
+      </div>
+      <div class="muted" style="font-size:12px;font-weight:600;margin-bottom:8px">AUGUST 2026</div>
+      <div class="card" style="padding:12px 14px;margin-bottom:8px"><div class="row"><div><div style="font-weight:600">WOQOD Al Waab</div><div class="muted" style="font-size:11px">Aug 4 · 42.1 L · Full</div></div><div style="font-weight:700">148</div></div></div>
+      <div class="card" style="padding:12px 14px;margin-bottom:8px"><div class="row"><div><div style="font-weight:600">Shell Nuaija</div><div class="muted" style="font-size:11px">Jul 28 · 40.8 L · Full</div></div><div style="font-weight:700">152</div></div></div>
+      <div class="muted" style="font-size:12px;margin:10px 0 8px">2 fills · QAR 300 · 82.9 L · 612 km</div>
+      <div class="muted" style="font-size:12px;font-weight:600;margin:12px 0 8px">JULY 2026</div>
+      <div class="card" style="padding:12px 14px;margin-bottom:8px"><div class="row"><div><div style="font-weight:600">Total Al Sadd</div><div class="muted" style="font-size:11px">Jul 19 · 41.2 L · Full</div></div><div style="font-weight:700">149</div></div></div>
+      <div class="card" style="padding:12px 14px"><div class="row"><div><div style="font-weight:600">WOQOD Pearl</div><div class="muted" style="font-size:11px">Jul 11 · 39.5 L · Full</div></div><div style="font-weight:700">141</div></div></div>
+    </div>
+  </section>
+
+  <!-- 03 Fill detail -->
+  <section class="stage" data-frame="03-fill-detail" data-title="Fill detail + station" data-desc="Interval efficiency vs brochure">
+    <div class="island"></div>
+    <div class="status"><span>9:41</span><span class="right">■■■ ▮</span></div>
+    <div class="phone-body">
+      <div class="muted" style="font-size:13px;margin-bottom:4px">← Close</div>
+      <div class="brand" style="font-size:26px;font-weight:700;margin-bottom:4px">QAR 148.20</div>
+      <div class="muted" style="margin-bottom:16px">Aug 4 · Full tank · 42.1 L</div>
+      <div class="card" style="margin-bottom:12px">
+        <div class="row" style="margin-bottom:10px"><span class="muted">Price / L</span><span style="font-weight:600">3.52</span></div>
+        <div class="row" style="margin-bottom:10px"><span class="muted">Odometer</span><span style="font-weight:600">42,180 km</span></div>
+        <div class="row" style="margin-bottom:10px"><span class="muted">Since last fill</span><span style="font-weight:600">412 km</span></div>
+        <div class="row"><span class="muted">Interval</span><span style="color:var(--accent);font-weight:700">6.8 L/100km</span></div>
+      </div>
+      <div class="map-fake" style="margin-bottom:12px">
+        <div class="pin" style="left:48%;top:42%"></div>
+      </div>
+      <div style="font-weight:600;margin-bottom:4px">WOQOD Al Waab</div>
+      <div class="muted" style="font-size:12px;margin-bottom:18px">Pinned when you logged the fill</div>
+      <div class="row" style="gap:10px">
+        <button class="btn ghost" style="flex:1">Delete</button>
+        <button class="btn" style="flex:1">Edit</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- 04 Live drive -->
+  <section class="stage" data-frame="04-live-drive" data-title="Live trip tracking" data-desc="GPS route + HUD">
+    <div class="island"></div>
+    <div class="status"><span>9:41</span><span class="right">■■■ ▮</span></div>
+    <div class="phone-body" style="padding-top:0">
+      <div class="map-fake" style="height:360px;margin:0 -20px 14px;border-radius:0">
+        <div class="route"></div>
+        <div class="pin" style="left:62%;top:28%;background:var(--err)"></div>
+        <div class="pin" style="left:30%;top:58%"></div>
+        <div style="position:absolute;top:16px;left:20px;z-index:2" class="pill" style="background:rgba(0,0,0,0.55)">● Recording</div>
+      </div>
+      <div class="card" style="margin-bottom:12px">
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;text-align:center">
+          <div><div class="brand" style="font-size:26px;font-weight:700">18.4</div><div class="muted" style="font-size:11px">km</div></div>
+          <div><div class="brand" style="font-size:26px;font-weight:700">24:12</div><div class="muted" style="font-size:11px">time</div></div>
+          <div><div class="brand" style="font-size:26px;font-weight:700">52</div><div class="muted" style="font-size:11px">km/h avg</div></div>
+        </div>
+      </div>
+      <button class="btn" style="background:var(--err);color:white">End drive</button>
+      <div class="tabs" style="margin-top:14px">
+        <div class="tab on"><div class="ico">◎</div>Drives</div>
+        <div class="tab"><div class="ico">⛽</div>Fuels</div>
+        <div class="tab"><div class="ico">🔧</div>Service</div>
+        <div class="tab"><div class="ico">▣</div>Garage</div>
+        <div class="tab"><div class="ico">☺</div>Driver</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 05 Pending review -->
+  <section class="stage" data-frame="05-pending-review" data-title="Confirm auto-captured drive" data-desc="Human oversight on AI detection">
+    <div class="island"></div>
+    <div class="status"><span>9:41</span><span class="right">■■■ ▮</span></div>
+    <div class="phone-body">
+      <div class="brand" style="font-size:26px;font-weight:700;margin-bottom:4px">Confirm drive</div>
+      <div class="muted" style="margin-bottom:14px">Auto-detected · Coolray</div>
+      <div class="map-fake" style="margin-bottom:14px">
+        <div class="route"></div>
+        <div class="pin" style="left:28%;top:60%"></div>
+        <div class="pin" style="left:64%;top:30%;background:var(--err)"></div>
+      </div>
+      <div class="card" style="margin-bottom:12px">
+        <div class="row" style="margin-bottom:8px"><span class="muted">Distance</span><span style="font-weight:600">12.6 km</span></div>
+        <div class="row" style="margin-bottom:8px"><span class="muted">Duration</span><span style="font-weight:600">18 min</span></div>
+        <div class="row" style="margin-bottom:8px"><span class="muted">Avg / max</span><span style="font-weight:600">41 / 78 km/h</span></div>
+        <div class="row"><span class="muted">Suggested odo</span><span style="font-weight:600">42,193 km</span></div>
+      </div>
+      <button class="btn" style="margin-bottom:10px">Confirm & save</button>
+      <button class="btn ghost">Discard</button>
+    </div>
+  </section>
+
+  <!-- 06 Driver insights -->
+  <section class="stage" data-frame="06-driver-insights" data-title="Driver hub + insights" data-desc="Personality layered on analytics">
+    <div class="island"></div>
+    <div class="status"><span>9:41</span><span class="right">■■■ ▮</span></div>
+    <div class="phone-body">
+      <div class="muted" style="font-size:13px">Driver</div>
+      <div class="brand" style="font-size:28px;font-weight:700;margin-bottom:14px">Faizan</div>
+      <div class="card" style="margin-bottom:12px;text-align:center">
+        <div class="muted" style="font-size:12px;margin-bottom:4px">ALL-TIME DISTANCE</div>
+        <div class="brand" style="font-size:40px;font-weight:700">8,420 <span style="font-size:16px;color:var(--text3)">km</span></div>
+      </div>
+      <div class="card" style="margin-bottom:10px;padding:14px">
+        <div style="font-size:20px;margin-bottom:4px">✨</div>
+        <div style="font-weight:700;margin-bottom:4px">Lighter on the wallet</div>
+        <div class="sec" style="font-size:13px;line-height:1.4">You spent 14% less on fuel this month than last. Nice.</div>
+      </div>
+      <div class="card" style="margin-bottom:10px;padding:14px">
+        <div style="font-size:20px;margin-bottom:4px">🎯</div>
+        <div style="font-weight:700;margin-bottom:4px">Your real cost to drive</div>
+        <div class="sec" style="font-size:13px;line-height:1.4">About QAR 0.36 per km this month across 612 km.</div>
+      </div>
+      <div class="row" style="margin:8px 0">
+        <div style="font-weight:600">Badges</div>
+        <div style="color:var(--accent);font-size:13px;font-weight:600">See all</div>
+      </div>
+      <div style="display:flex;gap:8px">
+        <div class="card" style="flex:1;text-align:center;padding:12px"><div style="font-size:22px">👑</div><div style="font-size:11px;margin-top:4px">Efficient king</div></div>
+        <div class="card" style="flex:1;text-align:center;padding:12px"><div style="font-size:22px">⚡</div><div style="font-size:11px;margin-top:4px">Half-year habit</div></div>
+        <div class="card" style="flex:1;text-align:center;padding:12px;opacity:0.5"><div style="font-size:22px">🛣️</div><div style="font-size:11px;margin-top:4px">10k club</div></div>
+      </div>
+      <div class="tabs" style="margin-top:14px">
+        <div class="tab"><div class="ico">◎</div>Drives</div>
+        <div class="tab"><div class="ico">⛽</div>Fuels</div>
+        <div class="tab"><div class="ico">🔧</div>Service</div>
+        <div class="tab"><div class="ico">▣</div>Garage</div>
+        <div class="tab on"><div class="ico">☺</div>Driver</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 07 Garage -->
+  <section class="stage" data-frame="07-garage" data-title="Multi-car garage" data-desc="Personal fleet OS">
+    <div class="island"></div>
+    <div class="status"><span>9:41</span><span class="right">■■■ ▮</span></div>
+    <div class="phone-body">
+      <div class="row" style="margin-bottom:16px">
+        <div class="brand" style="font-size:28px;font-weight:700">Garage</div>
+        <div class="pill" style="color:var(--accent)">+ Add</div>
+      </div>
+      <div class="card" style="margin-bottom:12px;border-color:rgba(217,252,85,0.35)">
+        <div class="row" style="margin-bottom:8px">
+          <div>
+            <div style="font-weight:700;font-size:18px">Coolray</div>
+            <div class="muted" style="font-size:12px">Geely · Petrol · 45 L tank</div>
+          </div>
+          <div class="pill good">Active</div>
+        </div>
+        <div class="muted" style="font-size:12px">42,180 km · QAR</div>
+      </div>
+      <div class="card" style="margin-bottom:12px">
+        <div class="row" style="margin-bottom:8px">
+          <div>
+            <div style="font-weight:700;font-size:18px">The Sedan</div>
+            <div class="muted" style="font-size:12px">Toyota Camry · Petrol</div>
+          </div>
+        </div>
+        <div class="muted" style="font-size:12px">91,004 km · QAR</div>
+      </div>
+      <div class="tabs" style="margin-top:auto">
+        <div class="tab"><div class="ico">◎</div>Drives</div>
+        <div class="tab"><div class="ico">⛽</div>Fuels</div>
+        <div class="tab"><div class="ico">🔧</div>Service</div>
+        <div class="tab on"><div class="ico">▣</div>Garage</div>
+        <div class="tab"><div class="ico">☺</div>Driver</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 08 Notif low fuel -->
+  <section class="stage" data-frame="08-notif-low-fuel" data-title="Low-fuel notification" data-desc="Confidence-gated empty alert">
+    <div class="lock">
+      <div class="date">Thursday, August 6</div>
+      <div class="time">9:15</div>
+      <div style="flex:1"></div>
+      <div class="notif">
+        <div class="app-icon"><img src="VeloseeteMark.svg" alt="" /></div>
+        <div style="flex:1">
+          <div class="meta"><span>VELOSEETE</span><span>now</span></div>
+          <div class="title">Faizan, Low fuel on Coolray</div>
+          <div class="body">Based on your fill history and km driven, you're in the low zone. About 38 km left (~12% of the tank). Plan a stop soon.</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 09 Notif drive pending -->
+  <section class="stage" data-frame="09-notif-drive" data-title="Drive review nudge" data-desc="Quirky pending-trip copy">
+    <div class="lock">
+      <div class="date">Thursday, August 6</div>
+      <div class="time">18:40</div>
+      <div style="flex:1"></div>
+      <div class="notif">
+        <div class="app-icon"><img src="VeloseeteMark.svg" alt="" /></div>
+        <div style="flex:1">
+          <div class="meta"><span>VELOSEETE</span><span>2h ago</span></div>
+          <div class="title">Faizan, Your drive misses you</div>
+          <div class="body">It's been sitting in My Drives all alone. One tap. That's all it wants.</div>
+        </div>
+      </div>
+      <div class="notif">
+        <div class="app-icon"><img src="VeloseeteMark.svg" alt="" /></div>
+        <div style="flex:1">
+          <div class="meta"><span>VELOSEETE</span><span>yesterday</span></div>
+          <div class="title">Oil change in ~5 days</div>
+          <div class="body">Coolray is counting on you. Literally. I'm counting the days for it.</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 10 Intelligence — fuel brain -->
+  <section class="stage" data-frame="10-intel-fuel-brain" data-title="Fuel intelligence" data-desc="Multi-signal empty detection">
+    <div class="island"></div>
+    <div class="status"><span>9:41</span><span class="right">■■■ ▮</span></div>
+    <div class="phone-body">
+      <div class="pill good" style="margin-bottom:12px">On-device intelligence</div>
+      <div class="brand" style="font-size:26px;font-weight:700;margin-bottom:8px">How Veloseete knows the tank is low</div>
+      <div class="sec" style="font-size:13px;line-height:1.45;margin-bottom:16px">Not a calendar reminder. A confidence-gated estimate from how you actually drive and fill.</div>
+      <div class="signal-grid">
+        <div class="signal"><div class="k">Fill → fill range</div><div class="v">~400 km</div></div>
+        <div class="signal"><div class="k">Liters × L/100km</div><div class="v">42 L × 6.8</div></div>
+        <div class="signal"><div class="k">Km since fill</div><div class="v">362 km</div></div>
+        <div class="signal"><div class="k">Confidence</div><div class="v" style="color:var(--accent)">0.85</div></div>
+      </div>
+      <div class="card" style="margin-top:14px">
+        <div class="row" style="margin-bottom:8px"><span class="muted">Tank left</span><span style="color:var(--warn);font-weight:700">~12%</span></div>
+        <div class="row" style="margin-bottom:8px"><span class="muted">Urgency</span><span class="pill warn">Low</span></div>
+        <div class="row"><span class="muted">Notify?</span><span style="color:var(--accent);font-weight:700">Yes — once per fill</span></div>
+      </div>
+      <div class="muted" style="font-size:11px;margin-top:12px;line-height:1.4">Calendar cadence alone never triggers an alert. No odometer picture → no cry wolf.</div>
+    </div>
+  </section>
+
+  <!-- 11 Intelligence — decision flow -->
+  <section class="stage" data-frame="11-intel-flow" data-title="Decision flow" data-desc="When we stay quiet vs alert">
+    <div class="island"></div>
+    <div class="status"><span>9:41</span><span class="right">■■■ ▮</span></div>
+    <div class="phone-body">
+      <div class="brand" style="font-size:24px;font-weight:700;margin-bottom:12px">Alert only when it's real</div>
+      <div class="flow">
+        <div class="flow-step"><div class="n">1</div><div><div style="font-weight:600">Learn your range</div><div class="muted" style="font-size:12px">Full-tank intervals + efficiency</div></div></div>
+        <div class="flow-step"><div class="n">2</div><div><div style="font-weight:600">Watch km burned</div><div class="muted" style="font-size:12px">Fuel anchors + GPS trips + pending drives</div></div></div>
+        <div class="flow-step"><div class="n">3</div><div><div style="font-weight:600">Score confidence</div><div class="muted" style="font-size:12px">Need ≥55% evidence before speaking up</div></div></div>
+        <div class="flow-step"><div class="n">4</div><div><div style="font-weight:600">Classify urgency</div><div class="muted" style="font-size:12px">none → watch → low → empty</div></div></div>
+        <div class="flow-step"><div class="n">5</div><div><div style="font-weight:600">Cooldown</div><div class="muted" style="font-size:12px">One ping per fill; escalate only</div></div></div>
+      </div>
+      <div class="card" style="margin-top:16px;border-color:rgba(217,252,85,0.3)">
+        <div style="font-weight:700;margin-bottom:4px">Quiet when it should be</div>
+        <div class="sec" style="font-size:13px;line-height:1.4">Just filled? Barely driving? Thin history? Veloseete stays silent instead of guessing.</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 12 Station picker -->
+  <section class="stage" data-frame="12-station-map" data-title="Station lookup" data-desc="MapKit petrol search">
+    <div class="island"></div>
+    <div class="status"><span>9:41</span><span class="right">■■■ ▮</span></div>
+    <div class="phone-body">
+      <div class="brand" style="font-size:24px;font-weight:700;margin-bottom:10px">Pick a station</div>
+      <div class="map-fake" style="height:280px;margin-bottom:12px">
+        <div class="pin" style="left:42%;top:38%"></div>
+        <div class="pin" style="left:58%;top:52%;background:#fff"></div>
+        <div class="pin" style="left:33%;top:60%;background:var(--accent2)"></div>
+      </div>
+      <div class="card" style="padding:14px;margin-bottom:8px;border-color:rgba(217,252,85,0.35)">
+        <div class="row"><div><div style="font-weight:600">WOQOD Al Waab</div><div class="muted" style="font-size:12px">240 m away</div></div><div class="pill good">Nearest</div></div>
+      </div>
+      <div class="card" style="padding:14px;margin-bottom:8px">
+        <div class="row"><div><div style="font-weight:600">Shell Nuaija</div><div class="muted" style="font-size:12px">1.2 km</div></div></div>
+      </div>
+      <div class="card" style="padding:14px">
+        <div class="row"><div><div style="font-weight:600">Total Energies</div><div class="muted" style="font-size:12px">1.8 km</div></div></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ========== WIDE MARKETING FRAMES ========== -->
+
+  <section class="wide" data-wide="w01-fuels-case" data-title="Case study · Fuels intelligence">
+    <div class="copy">
+      <div class="eyebrow">Veloseete · Fuels</div>
+      <h2>Efficiency you can argue with the brochure</h2>
+      <p class="lede">A single dominant L/100km reading, a you-vs-spec gauge, and fill history that behaves like a ledger — not a spreadsheet.</p>
+      <ul>
+        <li>Brochure baselines from EPA + curated GCC specs (2,196 models)</li>
+        <li>Rolling, distance-weighted efficiency from full-tank pairs</li>
+        <li>Station pins when you log a fill</li>
+      </ul>
+    </div>
+    <div class="phone-shell"><div class="inner" data-embed="01-fuels-hero"></div></div>
+  </section>
+
+  <section class="wide" data-wide="w02-notif-case" data-title="Case study · Predictive alerts">
+    <div class="copy">
+      <div class="eyebrow">Veloseete · Notifications</div>
+      <h2>Alerts that wait until the tank is actually low</h2>
+      <p class="lede">Multi-signal on-device logic: fill patterns, liters, efficiency, km driven, and a confidence gate — with a per-fill cooldown so it never spams.</p>
+      <ul>
+        <li>No calendar-only “you usually fill on day 4” false alarms</li>
+        <li>Unreviewed GPS drives still count toward range</li>
+        <li>Quirky copy with precise km / % remaining</li>
+      </ul>
+    </div>
+    <div class="phone-shell"><div class="inner" data-embed="08-notif-low-fuel"></div></div>
+  </section>
+
+  <section class="wide" data-wide="w03-drives-case" data-title="Case study · Trip intelligence">
+    <div class="copy">
+      <div class="eyebrow">Veloseete · Drives</div>
+      <h2>Auto-capture the drive. Let the driver confirm.</h2>
+      <p class="lede">Background motion + GPS build a route. Pending review keeps noisy detections from polluting history — and still informs the fuel-range model.</p>
+      <ul>
+        <li>Live HUD while recording</li>
+        <li>Confirm / discard with suggested odometer</li>
+        <li>Feeds low-fuel intelligence between fills</li>
+      </ul>
+    </div>
+    <div class="phone-shell"><div class="inner" data-embed="05-pending-review"></div></div>
+  </section>
+
+<script>
+  const index = document.getElementById('index');
+  const frames = [...document.querySelectorAll('.stage')];
+  const wides = [...document.querySelectorAll('.wide')];
+
+  function addLink(id, title, desc, kind) {
+    const a = document.createElement('a');
+    a.href = `?${kind}=${id}`;
+    a.innerHTML = `<div class="num">${kind === 'wide' ? 'WIDE' : id.split('-')[0]}</div><div class="title">${title}</div><div class="desc">${desc || ''}</div>`;
+    index.appendChild(a);
+  }
+
+  frames.forEach(el => addLink(el.dataset.frame, el.dataset.title, el.dataset.desc, 'frame'));
+  wides.forEach(el => addLink(el.dataset.wide, el.dataset.title, 'Marketing case-study frame', 'wide'));
+
+  const params = new URLSearchParams(location.search);
+  const frame = params.get('frame');
+  const wide = params.get('wide');
+
+  if (frame) {
+    document.body.classList.add('capture');
+    const el = document.querySelector(`.stage[data-frame="${frame}"]`);
+    if (el) el.classList.add('active');
+  } else if (wide) {
+    document.body.classList.add('capture-wide');
+    const el = document.querySelector(`.wide[data-wide="${wide}"]`);
+    if (el) {
+      el.classList.add('active');
+      const embedId = el.querySelector('[data-embed]')?.dataset.embed;
+      const source = document.querySelector(`.stage[data-frame="${embedId}"]`);
+      const host = el.querySelector('.inner');
+      if (source && host) {
+        host.innerHTML = source.innerHTML;
+        host.style.width = '390px';
+        host.style.height = '844px';
+        host.style.transform = 'scale(0.8205)';
+        host.style.transformOrigin = 'top left';
+        host.style.background = '#0B0E0B';
+      }
+    }
+  }
+
+  // Expose frame lists for the capture script
+  window.__FRAMES__ = frames.map(f => f.dataset.frame);
+  window.__WIDES__ = wides.map(f => f.dataset.wide);
+</script>
+</body>
+</html>

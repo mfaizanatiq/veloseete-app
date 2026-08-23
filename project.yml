@@ -50,7 +50,7 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.veloseete.ios
         PRODUCT_NAME: Veloseete
         MARKETING_VERSION: "1.0.0"
-        CURRENT_PROJECT_VERSION: "19"
+        CURRENT_PROJECT_VERSION: "28"
         INFOPLIST_FILE: Veloseete/Info.plist
         GENERATE_INFOPLIST_FILE: false
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
@@ -103,7 +103,7 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.veloseete.ios.TripWidget
         PRODUCT_NAME: VeloseeteTripWidget
         MARKETING_VERSION: "1.0.0"
-        CURRENT_PROJECT_VERSION: "19"
+        CURRENT_PROJECT_VERSION: "28"
         INFOPLIST_FILE: VeloseeteTripWidget/Info.plist
         GENERATE_INFOPLIST_FILE: false
         DEVELOPMENT_TEAM: X978QRK3WP
@@ -117,3 +117,39 @@ targets:
       configs:
         Release:
           CODE_SIGN_ENTITLEMENTS: VeloseeteTripWidget/VeloseeteTripWidget.entitlements
+
+  VeloseeteTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: VeloseeteTests
+    dependencies:
+      - target: Veloseete
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.veloseete.ios.tests
+        PRODUCT_NAME: VeloseeteTests
+        GENERATE_INFOPLIST_FILE: true
+        DEVELOPMENT_TEAM: X978QRK3WP
+        CODE_SIGN_STYLE: Automatic
+        TARGETED_DEVICE_FAMILY: "1"
+        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/Veloseete.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Veloseete"
+        BUNDLE_LOADER: "$(TEST_HOST)"
+
+schemes:
+  Veloseete:
+    build:
+      targets:
+        Veloseete: all
+        VeloseeteTripWidget: [build]
+        VeloseeteTests: [test]
+    run:
+      config: Debug
+    test:
+      config: Debug
+      targets:
+        - VeloseeteTests
+    profile:
+      config: Release
+    archive:
+      config: Release

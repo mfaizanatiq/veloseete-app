@@ -5,8 +5,8 @@ struct RootView: View {
     @EnvironmentObject private var store: DataStore
     @EnvironmentObject private var tripPermissionsStore: TripPermissionsStore
     @State private var showSlowLoadHint = false
-    /// User chose to continue into first-vehicle setup after a sync failure.
-    @State private var forceFirstVehicleSetup = false
+    /// User chose to continue without adding a car — drives still track with the default sedan puck.
+    @State private var forceContinueWithoutGarage = false
 
     var body: some View {
         ZStack {
@@ -27,21 +27,17 @@ struct RootView: View {
                         retryTitle: showSlowLoadHint ? "Retry" : nil,
                         onRetry: showSlowLoadHint ? { Task { await reload() } } : nil
                     )
-                } else if store.vehicles.isEmpty && store.isLoaded {
-                    if store.loadError != nil && !forceFirstVehicleSetup {
-                        FirstVehicleSyncRecoveryView(
-                            onRetry: { Task { await reload() } },
-                            onContinueEmpty: {
-                                withAnimation(.easeOut(duration: 0.25)) {
-                                    forceFirstVehicleSetup = true
-                                }
-                            }
-                        )
-                    } else {
-                        FirstVehicleOnboardingView()
-                    }
                 } else if !tripPermissionsStore.hasCompletedOnboarding {
                     TripPermissionsOnboardingView()
+                } else if store.loadError != nil && store.vehicles.isEmpty && store.isLoaded && !forceContinueWithoutGarage {
+                    FirstVehicleSyncRecoveryView(
+                        onRetry: { Task { await reload() } },
+                        onContinueEmpty: {
+                            withAnimation(.easeOut(duration: 0.25)) {
+                                forceContinueWithoutGarage = true
+                            }
+                        }
+                    )
                 } else {
                     VStack(spacing: 0) {
                         if !store.loadWarnings.isEmpty, store.vehicles.isEmpty == false,
@@ -58,7 +54,7 @@ struct RootView: View {
         }
         .task(id: auth.user?.uid) {
             showSlowLoadHint = false
-            forceFirstVehicleSetup = false
+            forceContinueWithoutGarage = false
             tripPermissionsStore.bind(userId: auth.user?.uid)
             TripRecordingService.shared.bind(userId: auth.user?.uid)
             guard let uid = auth.user?.uid else {
