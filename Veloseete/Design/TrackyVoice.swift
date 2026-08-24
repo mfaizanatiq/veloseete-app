@@ -159,6 +159,10 @@ enum TrackyVoice {
         static let logServiceNav = "Log service"
         static let editServiceNav = "Edit service"
         static let saveService = "Save service"
+        static let serviceFilterAll = "All"
+        static func emptyServiceFilter(_ type: String) -> String {
+            "No \(type.lowercased()) logs in this car."
+        }
 
         static let emptyInsightsTitle = "Nothing yet — that’s fine"
         static let emptyInsightsBody = "A few fills and drives unlock notes here."

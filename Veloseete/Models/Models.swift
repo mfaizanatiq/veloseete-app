@@ -57,6 +57,8 @@ struct ServiceLog: Identifiable, Equatable {
     var odometerReading: Double
     var serviceType: String
     var description: String?
+    /// Optional parts brand (e.g. tire maker on “New Tires”).
+    var brand: String?
     var cost: Double?
     var currency: String
     var nextServiceOdometer: Double?
@@ -242,6 +244,11 @@ extension FuelLog {
 }
 
 extension ServiceLog {
+    static let knownTypes = [
+        "Oil Change", "New Tires", "Tire Rotation", "Brake Service", "Air Filter",
+        "Battery Replacement", "Transmission Service", "General Inspection", "Other"
+    ]
+
     static func from(document id: String, data: [String: Any]) -> ServiceLog {
         let vehicleId = FirestoreDecode.string(data["vehicle_id"]).isEmpty
             ? FirestoreDecode.string(data["vehicleId"])
@@ -254,6 +261,10 @@ extension ServiceLog {
             odometerReading: FirestoreDecode.double(data["odometer_reading"]),
             serviceType: FirestoreDecode.string(data["service_type"], fallback: "service"),
             description: data["description"] as? String,
+            brand: {
+                let value = FirestoreDecode.string(data["brand"])
+                return value.isEmpty ? nil : value
+            }(),
             cost: data["cost"] == nil ? nil : FirestoreDecode.optionalDouble(data["cost"]),
             currency: FirestoreDecode.string(data["currency"], fallback: "QAR"),
             nextServiceOdometer: data["next_service_odometer"] == nil ? nil : FirestoreDecode.optionalDouble(data["next_service_odometer"]),

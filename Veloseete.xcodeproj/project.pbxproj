@@ -36,6 +36,7 @@
 		609A75D7A0DCF3C2D12E38E5 /* GoogleService-Info.plist in Resources */ = {isa = PBXBuildFile; fileRef = DD1A985D5F90998FB2473488 /* GoogleService-Info.plist */; };
 		63B8235E9A940B210302F60E /* TripsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0525EBB0DBFEA1A2FBC29AD3 /* TripsView.swift */; };
 		6645B208EFDEA611E193CD45 /* DriveMoodLogic.swift in Sources */ = {isa = PBXBuildFile; fileRef = 011C2238AFE0B8E9F8E0155D /* DriveMoodLogic.swift */; };
+		A3B4C5D6E7F8091A2B3C4D5 /* LiveDriveIntelligenceLogic.swift in Sources */ = {isa = PBXBuildFile; fileRef = B4C5D6E7F8091A2B3C4D5E6 /* LiveDriveIntelligenceLogic.swift */; };
 		698975EF12A294DC28B0C938 /* SplashView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4215F0FDD30582861414A9E /* SplashView.swift */; };
 		6D556A8BB6A6A0C51B46E80F /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 7E90D99435660B2C4EDFDD04 /* PrivacyInfo.xcprivacy */; };
 		7501512F21A76B272AE85F51 /* RefuelSheetView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E2D03F5821346DD9CB163CB /* RefuelSheetView.swift */; };
@@ -52,7 +53,10 @@
 		AA46164EC2F563556FDD6A56 /* GoogleSignIn in Frameworks */ = {isa = PBXBuildFile; productRef = 026A916CAAD55EE59AF0F9FC /* GoogleSignIn */; };
 		AB69738B2377CB8010930622 /* VSIcon.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5BEBBFE3A0702FEF839CEEE5 /* VSIcon.swift */; };
 		AC24231325EF9C9C5C9934B4 /* TripConfirmSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 95622FAF7EEA68AF70574E03 /* TripConfirmSheet.swift */; };
+		ACE085D7B4D6732C7D18CCC2 /* ActiveDriveHUDPreview.swift in Sources */ = {isa = PBXBuildFile; fileRef = 075A976783919FF128C49ABB /* ActiveDriveHUDPreview.swift */; };
+		F1A2B3C4D5E6789012345ABC /* ActiveDriveHUD.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1A2B3C4D5E6789012345ABC /* ActiveDriveHUD.swift */; };
 		AD2679EE80F1B30C0BBB46C8 /* DriveMoodLogicTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 14616EDFBDE7DE5F2CAC1EB6 /* DriveMoodLogicTests.swift */; };
+		C5D6E7F8091A2B3C4D5E6F7 /* LiveDriveIntelligenceLogicTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D6E7F8091A2B3C4D5E6F708 /* LiveDriveIntelligenceLogicTests.swift */; };
 		B3763817EE58A8BABBD8B09F /* DataStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 032D9685E63E087090A2889A /* DataStore.swift */; };
 		B54A52B0BE07BAC01A98668D /* Metrics.swift in Sources */ = {isa = PBXBuildFile; fileRef = FF78BFABE392DBE393254431 /* Metrics.swift */; };
 		BC566CBB50ED4FC839E3301F /* BottomNavChrome.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1455C6E27E977E53DE7B98E6 /* BottomNavChrome.swift */; };
@@ -72,6 +76,7 @@
 		EC841A9AA4068093C17C015F /* Fonts in Resources */ = {isa = PBXBuildFile; fileRef = 03E2E1E23C22D331E66874CF /* Fonts */; };
 		F983209FA5BCEA0169A62034 /* TripLiveActivityWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2DC6CBCD403057F0E42E9DE2 /* TripLiveActivityWidget.swift */; };
 		F9F060079AC13AC8A73A9539 /* GarageView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1594DF57756A4459A585537A /* GarageView.swift */; };
+		G4R4G3D4SHB0ARD01BUILD01 /* GarageDashboardChrome.swift in Sources */ = {isa = PBXBuildFile; fileRef = G4R4G3D4SHB0ARD01FILEREF1 /* GarageDashboardChrome.swift */; };
 		FAA097877C34864C14669E4D /* DashboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 222F2B40313306BAE406CD4B /* DashboardView.swift */; };
 /* End PBXBuildFile section */
 
@@ -108,14 +113,19 @@
 
 /* Begin PBXFileReference section */
 		011C2238AFE0B8E9F8E0155D /* DriveMoodLogic.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DriveMoodLogic.swift; sourceTree = "<group>"; };
+		B4C5D6E7F8091A2B3C4D5E6 /* LiveDriveIntelligenceLogic.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveDriveIntelligenceLogic.swift; sourceTree = "<group>"; };
 		020629CBE43E82356A644590 /* TripTrackingStressTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TripTrackingStressTests.swift; sourceTree = "<group>"; };
 		032D9685E63E087090A2889A /* DataStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DataStore.swift; sourceTree = "<group>"; };
 		03E2E1E23C22D331E66874CF /* Fonts */ = {isa = PBXFileReference; lastKnownFileType = folder; name = Fonts; path = Veloseete/Resources/Fonts; sourceTree = SOURCE_ROOT; };
 		0525EBB0DBFEA1A2FBC29AD3 /* TripsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TripsView.swift; sourceTree = "<group>"; };
+		075A976783919FF128C49ABB /* ActiveDriveHUDPreview.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActiveDriveHUDPreview.swift; sourceTree = "<group>"; };
+		E1A2B3C4D5E6789012345ABC /* ActiveDriveHUD.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActiveDriveHUD.swift; sourceTree = "<group>"; };
 		1455C6E27E977E53DE7B98E6 /* BottomNavChrome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BottomNavChrome.swift; sourceTree = "<group>"; };
 		14616EDFBDE7DE5F2CAC1EB6 /* DriveMoodLogicTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DriveMoodLogicTests.swift; sourceTree = "<group>"; };
+		D6E7F8091A2B3C4D5E6F708 /* LiveDriveIntelligenceLogicTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveDriveIntelligenceLogicTests.swift; sourceTree = "<group>"; };
 		1517975FF0ABFA3F7F78C537 /* FillDetailSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FillDetailSheet.swift; sourceTree = "<group>"; };
 		1594DF57756A4459A585537A /* GarageView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GarageView.swift; sourceTree = "<group>"; };
+		G4R4G3D4SHB0ARD01FILEREF1 /* GarageDashboardChrome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GarageDashboardChrome.swift; sourceTree = "<group>"; };
 		1D6A64AC85316ED1FB1F193A /* AuthView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthView.swift; sourceTree = "<group>"; };
 		222F2B40313306BAE406CD4B /* DashboardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashboardView.swift; sourceTree = "<group>"; };
 		227195C40E3CD106F2343B03 /* VehicleMakePicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VehicleMakePicker.swift; sourceTree = "<group>"; };
@@ -265,6 +275,7 @@
 			isa = PBXGroup;
 			children = (
 				14616EDFBDE7DE5F2CAC1EB6 /* DriveMoodLogicTests.swift */,
+				D6E7F8091A2B3C4D5E6F708 /* LiveDriveIntelligenceLogicTests.swift */,
 				31F93D6D540FE26880482CD8 /* TripTrackingLogicTests.swift */,
 				020629CBE43E82356A644590 /* TripTrackingStressTests.swift */,
 			);
@@ -302,6 +313,7 @@
 			isa = PBXGroup;
 			children = (
 				011C2238AFE0B8E9F8E0155D /* DriveMoodLogic.swift */,
+				B4C5D6E7F8091A2B3C4D5E6 /* LiveDriveIntelligenceLogic.swift */,
 				CAB93337EF3889E8516FA493 /* TripLiveActivityController.swift */,
 				B70FF38C17A056E74CA59B04 /* TripRecordingService.swift */,
 				38FEB5FAA114A73357C89CC1 /* TripTrackingLogic.swift */,
@@ -312,6 +324,7 @@
 		7B5023CE1C039CA7C2696CF3 /* Garage */ = {
 			isa = PBXGroup;
 			children = (
+				G4R4G3D4SHB0ARD01FILEREF1 /* GarageDashboardChrome.swift */,
 				1594DF57756A4459A585537A /* GarageView.swift */,
 			);
 			path = Garage;
@@ -410,6 +423,8 @@
 		D94E1ED4A9F3A641520DA7D7 /* Design */ = {
 			isa = PBXGroup;
 			children = (
+				075A976783919FF128C49ABB /* ActiveDriveHUDPreview.swift */,
+				E1A2B3C4D5E6789012345ABC /* ActiveDriveHUD.swift */,
 				1455C6E27E977E53DE7B98E6 /* BottomNavChrome.swift */,
 				A55172652626FF9444AE42A4 /* DriverBadgeChrome.swift */,
 				EC0CC4FE1869EDDDB7A4ECA8 /* DriverProfileChrome.swift */,
@@ -628,6 +643,8 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				ACE085D7B4D6732C7D18CCC2 /* ActiveDriveHUDPreview.swift in Sources */,
+				F1A2B3C4D5E6789012345ABC /* ActiveDriveHUD.swift in Sources */,
 				CC82F8C98D6E11CC932868BE /* AppLegal.swift in Sources */,
 				1A5D817177D5BC15C604CB3B /* AsyncTimeout.swift in Sources */,
 				3F60DBC1AFD8915F677AB407 /* AuthService.swift in Sources */,
@@ -638,6 +655,7 @@
 				FAA097877C34864C14669E4D /* DashboardView.swift in Sources */,
 				B3763817EE58A8BABBD8B09F /* DataStore.swift in Sources */,
 				6645B208EFDEA611E193CD45 /* DriveMoodLogic.swift in Sources */,
+				A3B4C5D6E7F8091A2B3C4D5 /* LiveDriveIntelligenceLogic.swift in Sources */,
 				3428480EE72138DA24FB805E /* DriverBadgeChrome.swift in Sources */,
 				D8A7437382F5D240695CA4D7 /* DriverProfileChrome.swift in Sources */,
 				78DD9B99B5AF7D8BA6A26C8A /* FillDetailSheet.swift in Sources */,
@@ -647,6 +665,7 @@
 				42D402FF910A17B280189C8B /* FluentEmoji.swift in Sources */,
 				10BBC7127CBF7F2DBD94BC28 /* FuelHistoryView.swift in Sources */,
 				F9F060079AC13AC8A73A9539 /* GarageView.swift in Sources */,
+				G4R4G3D4SHB0ARD01BUILD01 /* GarageDashboardChrome.swift in Sources */,
 				CD5113461FD49DA09C3067BF /* MainTabShell.swift in Sources */,
 				B54A52B0BE07BAC01A98668D /* Metrics.swift in Sources */,
 				77BDCB559F4E40817A499C77 /* Models.swift in Sources */,
@@ -695,6 +714,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				AD2679EE80F1B30C0BBB46C8 /* DriveMoodLogicTests.swift in Sources */,
+				C5D6E7F8091A2B3C4D5E6F7 /* LiveDriveIntelligenceLogicTests.swift in Sources */,
 				032D4284B7BD9687B15C3C1B /* TripTrackingLogicTests.swift in Sources */,
 				C9ACFF4D49EC096289E347E2 /* TripTrackingStressTests.swift in Sources */,
 			);

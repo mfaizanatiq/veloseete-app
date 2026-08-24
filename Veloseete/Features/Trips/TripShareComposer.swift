@@ -164,7 +164,7 @@ enum TripShareComposer {
     private static func displayCoordinates(for trip: Trip) -> [CLLocationCoordinate2D] {
         let points: [TripCoordinate]
         if trip.route.count >= 2 {
-            points = TripTrackingLogic.mapDisplayRoute(id: trip.id, points: trip.route, maximumPoints: 200)
+            points = TripTrackingLogic.mapDisplayRoute(id: trip.id, points: trip.route, maximumPoints: 600)
         } else {
             points = [trip.startCoordinate, trip.endCoordinate].compactMap { $0 }
         }

@@ -299,6 +299,7 @@ final class FirestoreRepository {
         var odometerReading: Double
         var serviceType: String
         var description: String?
+        var brand: String?
         var cost: Double?
         var currency: String
         var nextServiceOdometer: Double?
@@ -345,6 +346,7 @@ final class FirestoreRepository {
             else if !includeCreatedAt { data[key] = FieldValue.delete() }
         }
         optional("description", input.description)
+        optional("brand", input.brand)
         optional("cost", input.cost)
         optional("next_service_odometer", input.nextServiceOdometer)
         optional("next_service_date", input.nextServiceDate.map(Timestamp.init(date:)))

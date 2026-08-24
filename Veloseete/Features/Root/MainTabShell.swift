@@ -49,7 +49,10 @@ struct MainTabShell: View {
                 case .service:
                     ServiceListView(onProfile: { showProfile = true })
                 case .details:
-                    DetailsListView(onProfile: { showProfile = true })
+                    DetailsListView(
+                        onProfile: { showProfile = true },
+                        onSwitchTab: { tab = $0 }
+                    )
                 case .driver:
                     DriverProfileView(onProfile: { showProfile = true })
                 }
@@ -326,12 +329,14 @@ struct DetailsListView: View {
     @EnvironmentObject private var vehiclePhotos: VehiclePhotoStore
     @EnvironmentObject private var avatarStore: ProfileAvatarStore
     let onProfile: () -> Void
+    var onSwitchTab: (AppTab) -> Void = { _ in }
     @State private var showAddVehicle = false
     @State private var editingVehicle: Vehicle?
     @State private var vehiclePendingArchive: Vehicle?
     @State private var archiveError: String?
     @State private var isArchiving = false
-    @State private var archivedExpanded = false
+    @State private var garageSegment: GarageFleetSegment = .active
+    @State private var heroPage = 0
 
     private var currentVehicle: Vehicle? { store.currentVehicle }
 
@@ -366,9 +371,19 @@ struct DetailsListView: View {
         }
         .onAppear {
             vehiclePhotos.load(vehicleIds: (store.vehicles + store.archivedVehicles).map(\.id))
+            syncHeroPageToActiveVehicle()
         }
         .onChange(of: store.vehicles.map(\.id) + store.archivedVehicles.map(\.id)) { _, ids in
             vehiclePhotos.load(vehicleIds: ids)
+            syncHeroPageToActiveVehicle()
+        }
+        .onChange(of: store.currentVehicle?.id) { _, _ in
+            guard garageSegment == .active else { return }
+            syncHeroPageToActiveVehicle()
+        }
+        .onChange(of: garageSegment) { _, segment in
+            guard segment == .active else { return }
+            syncHeroPageToActiveVehicle()
         }
         .onChange(of: auth.isAuthenticated) { _, isAuthenticated in
             guard !isAuthenticated else { return }
@@ -385,19 +400,20 @@ struct DetailsListView: View {
                     "Garage",
                     subtitle: garageSubtitle,
                     onProfile: onProfile
-                ) {
-                    Button {
-                        showAddVehicle = true
-                    } label: {
-                        VSIcon(icon: .plusCircle, size: 40, weight: .fill, tint: VS.Color.accent)
-                    }
-                    .buttonStyle(ScaleButtonStyle())
-                    .accessibilityLabel("Add vehicle")
-                }
+                )
+
                 garageErrorBanner
-                garageActiveSection
-                garageCarFuelStatus
-                garageArchivedSection
+
+                GarageHeroCarousel(
+                    segment: $garageSegment,
+                    page: $heroPage,
+                    onAddVehicle: { showAddVehicle = true },
+                    onEditVehicle: { editingVehicle = $0 },
+                    onRestoreVehicle: { vehicle in
+                        Task { await restoreArchivedVehicle(vehicle) }
+                    }
+                )
+                .padding(.horizontal, -VS.Spacing.pageInset)
             }
             .padding(.horizontal, VS.Spacing.pageInset)
             .padding(.bottom, 110)
@@ -406,86 +422,33 @@ struct DetailsListView: View {
         .veloseetePage()
     }
 
-    /// Car fuel pulse lives in Garage — not on the Driver tab.
-    @ViewBuilder
-    private var garageCarFuelStatus: some View {
-        if let vehicle = store.currentVehicle {
-            let metrics = MetricsCalculator.compute(vehicle: vehicle, logs: store.fuelLogs)
-            let vibe = DashboardCopy.vibe(
-                efficiency: metrics.current ?? metrics.avgEfficiency,
-                standard: store.manufacturerStandard,
-                refuelCount: metrics.efficiencySampleCount
-            )
-            let status = DashboardCopy.status(
-                efficiency: metrics.current ?? metrics.avgEfficiency,
-                standard: store.manufacturerStandard,
-                sampleCount: metrics.efficiencySampleCount
-            )
-            let thirst = carFuelThirst(metrics: metrics)
-            let toneColor: Color = {
-                switch vibe.tone {
-                case .excellent, .good: return VS.Color.accent
-                case .watch: return VS.Color.warning
-                case .learning, .neutral: return VS.Color.textSecondary
-                }
-            }()
-
-            VStack(alignment: .leading, spacing: 12) {
-                HStack(spacing: 10) {
-                    Text(vibe.emoji)
-                        .font(.system(size: 26))
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Car fuel status")
-                            .font(VS.Typography.body(10, weight: .bold))
-                            .foregroundStyle(VS.Color.textTertiary)
-                        Text(vibe.label)
-                            .font(VS.Typography.heading(17, weight: .bold))
-                            .foregroundStyle(VS.Color.textPrimary)
-                        Text(status.text)
-                            .font(VS.Typography.body(13))
-                            .foregroundStyle(toneColor.opacity(0.95))
-                    }
-                    Spacer(minLength: 0)
-                    if let eff = metrics.current ?? metrics.avgEfficiency {
-                        VStack(alignment: .trailing, spacing: 2) {
-                            Text(String(format: "%.1f", eff))
-                                .font(VS.Typography.heading(20, weight: .bold))
-                                .foregroundStyle(VS.Color.textPrimary)
-                            Text("L/100")
-                                .font(VS.Typography.body(10, weight: .bold))
-                                .foregroundStyle(VS.Color.textTertiary)
-                        }
-                    }
-                }
-
-                DriverThirstSpectrumBar(thirst: thirst)
-
-                HStack {
-                    Label("Thrifty", systemImage: "leaf.fill")
-                        .font(VS.Typography.body(9, weight: .bold))
-                        .foregroundStyle(VS.Color.accent.opacity(0.85))
-                    Spacer(minLength: 0)
-                    Label("Thirsty", systemImage: "flame.fill")
-                        .font(VS.Typography.body(9, weight: .bold))
-                        .foregroundStyle(VS.Color.routeEnd.opacity(0.9))
-                }
-            }
-            .padding(VS.Spacing.card)
-            .glassCard(elevated: true)
-            .accessibilityElement(children: .combine)
-            .accessibilityLabel("Car fuel status, \(vibe.label), \(status.text)")
+    private func syncHeroPageToActiveVehicle() {
+        guard garageSegment == .active else { return }
+        guard !store.vehicles.isEmpty else {
+            heroPage = 0
+            return
+        }
+        if let activeId = store.currentVehicle?.id,
+           let index = store.vehicles.firstIndex(where: { $0.id == activeId }) {
+            heroPage = index
+        } else {
+            heroPage = min(heroPage, store.vehicles.count)
         }
     }
 
-    private func carFuelThirst(metrics: EfficiencyMetrics) -> Double {
-        let eff = metrics.current ?? metrics.avgEfficiency
-        guard let eff else { return 0.35 }
-        guard let standard = store.manufacturerStandard else {
-            return min(max((eff - 6) / 12, 0.15), 1)
+    private func restoreArchivedVehicle(_ vehicle: Vehicle) async {
+        do {
+            archiveError = nil
+            try await store.restoreVehicle(vehicle.id)
+            UINotificationFeedbackGenerator().notificationOccurred(.success)
+            withAnimation(.snappy(duration: 0.28)) {
+                garageSegment = .active
+                heroPage = 0
+            }
+            syncHeroPageToActiveVehicle()
+        } catch {
+            archiveError = error.localizedDescription
         }
-        let deviation = ((eff - standard) / standard) * 100
-        if deviation <= 0 { return 0.12 }
-        return min(max(deviation / 45, 0.2), 1)
     }
 
     @ViewBuilder
@@ -507,272 +470,6 @@ struct DetailsListView: View {
             return "\(count) cars · \(active) active"
         }
         return "\(count) cars"
-    }
-
-    @ViewBuilder
-    private var garageActiveSection: some View {
-        if store.vehicles.isEmpty {
-            garageEmptyActive
-        } else {
-            VStack(alignment: .leading, spacing: VS.Spacing.stack) {
-                if store.vehicles.count > 1 {
-                    Text("Your cars")
-                        .font(VS.Typography.heading(20, weight: .bold))
-                        .foregroundStyle(VS.Color.textPrimary)
-                }
-                ForEach(store.vehicles) { vehicle in
-                    garageVehicleCard(vehicle)
-                }
-            }
-        }
-    }
-
-    private func garageVehicleCard(_ vehicle: Vehicle) -> some View {
-        let isActive = store.currentVehicle?.id == vehicle.id
-        let refuels = store.fuelLogs.filter { $0.vehicleId == vehicle.id }.count
-        let drives = store.trips.filter { $0.vehicleId == vehicle.id }.count
-        let usesMiles = store.defaultDistanceUnit == "mi"
-        let odoValue = String(
-            format: "%.0f",
-            usesMiles ? vehicle.currentOdometer * 0.621371 : vehicle.currentOdometer
-        )
-        let odoUnit = usesMiles ? "mi" : "km"
-        let primary = isActive ? VS.Color.navPill : VS.Color.textPrimary
-        let secondary = isActive ? VS.Color.navPill.opacity(0.7) : VS.Color.textSecondary
-        let tertiary = isActive ? VS.Color.navPill.opacity(0.65) : VS.Color.textTertiary
-
-        return Button {
-            UIImpactFeedbackGenerator(style: .light).impactOccurred()
-            editingVehicle = vehicle
-        } label: {
-            HStack(alignment: .center, spacing: 16) {
-                vehicleAppearancePreview(
-                    image: vehiclePhotos.image(for: vehicle.id),
-                    emoji: vehicle.icon ?? "🚗",
-                    paint: VehiclePaintColor.resolve(vehicle.paintColor),
-                    size: isActive ? 88 : 64,
-                    well: isActive ? VS.Color.navPill.opacity(0.14) : VS.Color.chip,
-                    stroke: isActive ? VS.Color.navPill.opacity(0.22) : VS.Color.hairline
-                )
-
-                VStack(alignment: .leading, spacing: 6) {
-                    HStack(alignment: .top, spacing: 8) {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(vehicle.nickname)
-                                .font(VS.Typography.heading(isActive ? 22 : 18, weight: .bold))
-                                .foregroundStyle(primary)
-                                .lineLimit(1)
-                            Text("\(vehicle.make) \(vehicle.model)")
-                                .font(VS.Typography.body(13, weight: .medium))
-                                .foregroundStyle(secondary)
-                                .lineLimit(1)
-                        }
-                        Spacer(minLength: 4)
-                        if isActive {
-                            Text("Active")
-                                .font(VS.Typography.body(10, weight: .bold))
-                                .foregroundStyle(VS.Color.navPill)
-                                .padding(.horizontal, 8)
-                                .padding(.vertical, 4)
-                                .background(VS.Color.navPill.opacity(0.18), in: Capsule())
-                        }
-                        Image(systemName: "chevron.right")
-                            .font(.system(size: 12, weight: .bold))
-                            .foregroundStyle(tertiary)
-                    }
-
-                    HStack(alignment: .firstTextBaseline, spacing: 4) {
-                        Text(odoValue)
-                            .font(VS.Typography.heading(isActive ? 28 : 22, weight: .bold))
-                            .foregroundStyle(primary)
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.6)
-                        Text(odoUnit)
-                            .font(VS.Typography.body(12, weight: .semibold))
-                            .foregroundStyle(tertiary)
-                    }
-
-                    HStack(spacing: 12) {
-                        garageCardStat(
-                            icon: .car,
-                            text: drives == 1 ? "1 drive" : "\(drives) drives",
-                            active: isActive
-                        )
-                        garageCardStat(
-                            icon: .gasPump,
-                            text: refuels == 0 ? "No fills" : "\(refuels) fill\(refuels == 1 ? "" : "s")",
-                            active: isActive
-                        )
-                    }
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-            }
-            .padding(VS.Spacing.card)
-            .background {
-                RoundedRectangle(cornerRadius: VS.Radius.card, style: .continuous)
-                    .fill(isActive ? VS.Color.accent : Color.white.opacity(0.05))
-            }
-            .overlay {
-                if !isActive {
-                    RoundedRectangle(cornerRadius: VS.Radius.card, style: .continuous)
-                        .strokeBorder(VS.Color.hairline, lineWidth: 1)
-                }
-            }
-            .clipShape(RoundedRectangle(cornerRadius: VS.Radius.card, style: .continuous))
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel("\(vehicle.nickname), \(vehicle.make) \(vehicle.model)")
-        .accessibilityHint(isActive ? "Active car. Double tap for details." : "Double tap for details and set active.")
-    }
-
-    private func garageCardStat(icon: VSIconName, text: String, active: Bool) -> some View {
-        HStack(spacing: 6) {
-            VSIcon(
-                icon: icon,
-                size: 12,
-                weight: .fill,
-                tint: active ? VS.Color.navPill.opacity(0.7) : VS.Color.textTertiary
-            )
-            Text(text)
-                .font(VS.Typography.body(11, weight: .semibold))
-                .foregroundStyle(active ? VS.Color.navPill.opacity(0.8) : VS.Color.textTertiary)
-                .lineLimit(1)
-        }
-    }
-
-    @ViewBuilder
-    private var garageArchivedSection: some View {
-        if !store.archivedVehicles.isEmpty {
-            garageCollapsibleSection(
-                title: "Archived",
-                count: store.archivedVehicles.count,
-                expanded: $archivedExpanded
-            ) {
-                VStack(spacing: VS.Spacing.module) {
-                    ForEach(store.archivedVehicles) { vehicle in
-                        archivedVehicleCard(vehicle)
-                    }
-                }
-            }
-        }
-    }
-
-    private func garageCollapsibleSection<Content: View>(
-        title: String,
-        count: Int,
-        expanded: Binding<Bool>,
-        @ViewBuilder content: () -> Content
-    ) -> some View {
-        VStack(alignment: .leading, spacing: VS.Spacing.stack) {
-            Button {
-                UISelectionFeedbackGenerator().selectionChanged()
-                withAnimation(.snappy(duration: 0.28)) {
-                    expanded.wrappedValue.toggle()
-                }
-            } label: {
-                HStack(spacing: 10) {
-                    Text(title)
-                        .font(VS.Typography.heading(20, weight: .bold))
-                        .foregroundStyle(VS.Color.textPrimary)
-                    Text("\(count)")
-                        .font(VS.Typography.mono(13, weight: .semibold))
-                        .foregroundStyle(VS.Color.textSecondary)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 4)
-                        .background(VS.Color.chip, in: Capsule())
-                    Spacer(minLength: 8)
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: 13, weight: .bold))
-                        .foregroundStyle(VS.Color.textTertiary)
-                        .rotationEffect(.degrees(expanded.wrappedValue ? 90 : 0))
-                }
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("\(title), \(count)")
-            .accessibilityHint(expanded.wrappedValue ? "Collapse" : "Expand")
-
-            if expanded.wrappedValue {
-                content()
-                    .transition(.opacity.combined(with: .move(edge: .top)))
-            }
-        }
-    }
-
-    private var garageEmptyActive: some View {
-        VStack(spacing: 14) {
-            VSIcon(icon: .car, size: 40, weight: .regular, tint: VS.Color.accent)
-            Text(TrackyVoice.Soft.emptyGarageTitle)
-                .font(VS.Typography.heading(18))
-                .foregroundStyle(VS.Color.textPrimary)
-            Text(TrackyVoice.Soft.emptyGarageBody)
-                .font(VS.Typography.body(14))
-                .foregroundStyle(VS.Color.textSecondary)
-                .multilineTextAlignment(.center)
-            Button(TrackyVoice.Soft.emptyGarageCTA) { showAddVehicle = true }
-                .font(VS.Typography.heading(14))
-                .foregroundStyle(VS.Color.navPill)
-                .padding(.horizontal, 18)
-                .padding(.vertical, 12)
-                .background(VS.Color.accent, in: Capsule())
-        }
-        .frame(maxWidth: .infinity)
-        .padding(32)
-        .glassCard(elevated: true)
-    }
-
-    private func archivedVehicleCard(_ vehicle: Vehicle) -> some View {
-        let refuels = store.fuelLogs.filter { $0.vehicleId == vehicle.id }.count
-        let drives = store.trips.filter { $0.vehicleId == vehicle.id }.count
-
-        return VStack(alignment: .leading, spacing: VS.Spacing.stack) {
-            HStack(spacing: 14) {
-                vehicleAppearancePreview(
-                    image: vehiclePhotos.image(for: vehicle.id),
-                    emoji: vehicle.icon ?? "🚗",
-                    paint: VehiclePaintColor.resolve(vehicle.paintColor),
-                    size: 52
-                )
-                .opacity(0.75)
-
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(vehicle.nickname)
-                        .font(VS.Typography.heading(20, weight: .bold))
-                        .foregroundStyle(VS.Color.textPrimary)
-                    Text("\(vehicle.make) \(vehicle.model)")
-                        .font(VS.Typography.body(13))
-                        .foregroundStyle(VS.Color.textSecondary)
-                }
-                Spacer(minLength: 0)
-            }
-
-            HStack(spacing: VS.Spacing.gutter) {
-                garageBentoCount(drives, "Drives")
-                garageBentoCount(refuels, TrackyVoice.Soft.fillsLabel)
-            }
-
-            Button {
-                Task {
-                    do {
-                        archiveError = nil
-                        try await store.restoreVehicle(vehicle.id)
-                        UINotificationFeedbackGenerator().notificationOccurred(.success)
-                    } catch {
-                        archiveError = error.localizedDescription
-                    }
-                }
-            } label: {
-                Text("Restore to active")
-                    .font(VS.Typography.heading(14))
-                    .foregroundStyle(VS.Color.navPill)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 14)
-                    .background(VS.Color.accent, in: Capsule())
-            }
-            .buttonStyle(.plain)
-        }
-        .padding(VS.Spacing.card)
-        .glassCard(elevated: true)
     }
 
     private func archiveVehicle(_ vehicle: Vehicle) async {
@@ -1894,9 +1591,22 @@ struct ServiceListView: View {
     let onProfile: () -> Void
     @State private var editingLog: ServiceLog?
     @State private var showEditor = false
+    @State private var typeFilter: String?
 
     private var logs: [ServiceLog] {
         store.serviceLogs.filter { $0.vehicleId == store.currentVehicle?.id }.sorted { $0.timestamp > $1.timestamp }
+    }
+
+    private var filterTypes: [String] {
+        let present = Set(logs.map(\.serviceType))
+        let known = ServiceLog.knownTypes.filter { present.contains($0) }
+        let extras = present.subtracting(ServiceLog.knownTypes).sorted()
+        return known + extras
+    }
+
+    private var visibleLogs: [ServiceLog] {
+        guard let typeFilter else { return logs }
+        return logs.filter { $0.serviceType == typeFilter }
     }
 
     var body: some View {
@@ -1921,21 +1631,78 @@ struct ServiceListView: View {
                                 Text(TrackyVoice.Soft.emptyServiceBody)
                                     .font(VS.Typography.body(13))
                                     .foregroundStyle(VS.Color.textSecondary)
-                            }.frame(maxWidth: .infinity).padding(34).glassCard(elevated: true)
-                        }.buttonStyle(.plain)
-                    } else {
-                        VStack(spacing: 0) {
-                            ForEach(logs) { log in
-                                Button { editingLog = log; showEditor = true } label: { serviceRow(log) }.buttonStyle(.plain)
-                                if log.id != logs.last?.id { Divider().overlay(VS.Color.divider) }
+                                    .multilineTextAlignment(.center)
                             }
-                        }.padding(VS.Spacing.card).glassCard(elevated: true)
+                            .frame(maxWidth: .infinity)
+                            .padding(VS.Spacing.card)
+                            .glassCard(elevated: true)
+                        }
+                        .buttonStyle(.plain)
+                    } else {
+                        VStack(alignment: .leading, spacing: VS.Spacing.stack) {
+                            historyFilterChips
+
+                            if visibleLogs.isEmpty {
+                                Text(TrackyVoice.Soft.emptyServiceFilter(typeFilter ?? TrackyVoice.Soft.serviceFilterAll))
+                                    .font(VS.Typography.body(13))
+                                    .foregroundStyle(VS.Color.textSecondary)
+                                    .multilineTextAlignment(.center)
+                                    .frame(maxWidth: .infinity)
+                                    .padding(VS.Spacing.card)
+                                    .glassCard(elevated: true)
+                            } else {
+                                VStack(spacing: 0) {
+                                    ForEach(visibleLogs) { log in
+                                        Button {
+                                            editingLog = log
+                                            showEditor = true
+                                        } label: {
+                                            serviceRow(log)
+                                        }
+                                        .buttonStyle(.plain)
+
+                                        if log.id != visibleLogs.last?.id {
+                                            Divider().overlay(VS.Color.divider)
+                                        }
+                                    }
+                                }
+                                .padding(VS.Spacing.card)
+                                .glassCard(elevated: true)
+                            }
+                        }
                     }
                 }
             }.padding(.horizontal, VS.Spacing.pageInset).padding(.bottom, 110).tracksBottomNavScroll()
         }
         .veloseetePage()
         .sheet(isPresented: $showEditor) { ServiceEditorSheet(log: editingLog) }
+        .onChange(of: store.currentVehicle?.id) { _, _ in
+            typeFilter = nil
+        }
+        .onChange(of: filterTypes) { _, types in
+            if let typeFilter, !types.contains(typeFilter) {
+                self.typeFilter = nil
+            }
+        }
+    }
+
+    private var historyFilterChips: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                VSSelectableChip(title: TrackyVoice.Soft.serviceFilterAll, selected: typeFilter == nil, compact: true) {
+                    withAnimation(.snappy(duration: 0.22)) {
+                        typeFilter = nil
+                    }
+                }
+                ForEach(filterTypes, id: \.self) { type in
+                    VSSelectableChip(title: type, selected: typeFilter == type, compact: true) {
+                        withAnimation(.snappy(duration: 0.22)) {
+                            typeFilter = typeFilter == type ? nil : type
+                        }
+                    }
+                }
+            }
+        }
     }
 
     private var serviceTrendCard: some View {
@@ -1970,17 +1737,50 @@ struct ServiceListView: View {
     }
 
     private func serviceRow(_ log: ServiceLog) -> some View {
-        HStack(alignment: .top, spacing: 12) {
-            VSIcon(icon: .wrench, size: 18, weight: .regular, tint: VS.Color.accent).frame(width: 36, height: 36).background(VS.Color.accent.opacity(0.1), in: Circle())
+        let unit = store.defaultDistanceUnit
+        let currentKm = store.currentVehicle.flatMap { store.odometerEstimate(vehicleId: $0.id)?.estimatedKm }
+            ?? store.currentVehicle?.currentOdometer
+        let kmSince: Int? = {
+            guard let currentKm else { return nil }
+            return max(0, Int((currentKm - log.odometerReading).rounded()))
+        }()
+
+        return HStack(alignment: .top, spacing: 12) {
+            VSIcon(icon: .wrench, size: 18, weight: .regular, tint: VS.Color.accent)
+                .frame(width: 36, height: 36)
+                .background(VS.Color.accent.opacity(0.1), in: Circle())
             VStack(alignment: .leading, spacing: 4) {
-                Text(log.serviceType).font(VS.Typography.heading(15)).foregroundStyle(VS.Color.textPrimary)
-                Text("\(log.timestamp.formatted(date: .abbreviated, time: .omitted)) · \(DistanceFormat.formatOdometer(log.odometerReading, unit: store.defaultDistanceUnit))")
-                    .font(VS.Typography.body(11)).foregroundStyle(VS.Color.textTertiary)
-                if let description = log.description { Text(description).font(VS.Typography.body(11)).foregroundStyle(VS.Color.textSecondary).lineLimit(2) }
+                Text(log.serviceType)
+                    .font(VS.Typography.heading(15))
+                    .foregroundStyle(VS.Color.textPrimary)
+                if let brand = log.brand, !brand.isEmpty {
+                    Text(brand)
+                        .font(VS.Typography.body(12, weight: .semibold))
+                        .foregroundStyle(VS.Color.accent)
+                }
+                Text("\(log.timestamp.formatted(date: .abbreviated, time: .omitted)) · \(DistanceFormat.formatOdometer(log.odometerReading, unit: unit))")
+                    .font(VS.Typography.body(11))
+                    .foregroundStyle(VS.Color.textTertiary)
+                if let kmSince {
+                    Text("\(DistanceFormat.formatDistance(Double(kmSince), unit: unit)) since this service")
+                        .font(VS.Typography.body(11, weight: .medium))
+                        .foregroundStyle(VS.Color.textSecondary)
+                }
+                if let description = log.description {
+                    Text(description)
+                        .font(VS.Typography.body(11))
+                        .foregroundStyle(VS.Color.textSecondary)
+                        .lineLimit(2)
+                }
             }
             Spacer()
-            if let cost = log.cost { Text(CurrencyFormat.format(cost, currency: log.currency)).font(VS.Typography.body(13, weight: .semibold)).foregroundStyle(VS.Color.textPrimary) }
-        }.padding(.vertical, 14)
+            if let cost = log.cost {
+                Text(CurrencyFormat.format(cost, currency: log.currency))
+                    .font(VS.Typography.body(13, weight: .semibold))
+                    .foregroundStyle(VS.Color.textPrimary)
+            }
+        }
+        .padding(.vertical, 10)
     }
 }
 
@@ -1991,6 +1791,8 @@ struct ServiceEditorSheet: View {
 
     @State private var serviceType = "Oil Change"
     @State private var customType = ""
+    @State private var tireBrand = "Michelin"
+    @State private var customTireBrand = ""
     @State private var odometer = ""
     @State private var cost = ""
     @State private var notes = ""
@@ -2002,18 +1804,33 @@ struct ServiceEditorSheet: View {
     @State private var errorMessage: String?
     @State private var showDeleteConfirmation = false
 
-    private let types = [
-        "Oil Change", "Tire Rotation", "Brake Service", "Air Filter",
-        "Battery Replacement", "Transmission Service", "General Inspection", "Other"
-    ]
+    private let types = ServiceLog.knownTypes
+
     private var vehicle: Vehicle? { store.currentVehicle }
     private var currencyCode: String { vehicle?.currency ?? "QAR" }
+    private var isNewTires: Bool { serviceType == "New Tires" }
+    private var isOtherType: Bool { serviceType == "Other" }
+
     private var finalType: String {
-        serviceType == "Other"
+        isOtherType
             ? customType.trimmingCharacters(in: .whitespacesAndNewlines)
             : serviceType
     }
-    private var canSave: Bool { !finalType.isEmpty && (Double(odometer) ?? 0) > 0 }
+
+    private var finalBrand: String? {
+        guard isNewTires else { return nil }
+        if tireBrand == "Other" {
+            let custom = customTireBrand.trimmingCharacters(in: .whitespacesAndNewlines)
+            return custom.isEmpty ? nil : custom
+        }
+        return tireBrand
+    }
+
+    private var canSave: Bool {
+        guard !finalType.isEmpty, (Double(odometer) ?? 0) > 0 else { return false }
+        if isNewTires { return finalBrand != nil }
+        return true
+    }
 
     var body: some View {
         NavigationStack {
@@ -2021,9 +1838,13 @@ struct ServiceEditorSheet: View {
                 VStack(alignment: .leading, spacing: 28) {
                     typeSection
 
+                    if isNewTires {
+                        tireBrandSection
+                    }
+
                     HStack(spacing: 12) {
                         numberField(
-                            label: "Odometer",
+                            label: "Odometer at service",
                             placeholder: "0",
                             text: $odometer,
                             suffix: "km"
@@ -2035,6 +1856,10 @@ struct ServiceEditorSheet: View {
                             suffix: currencyCode
                         )
                     }
+
+                    Text("Saved on this service only — won’t change your car’s current odometer.")
+                        .font(VS.Typography.body(12))
+                        .foregroundStyle(VS.Color.textTertiary)
 
                     VStack(alignment: .leading, spacing: 8) {
                         fieldLabel("Date")
@@ -2050,6 +1875,10 @@ struct ServiceEditorSheet: View {
                         .padding(14)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .glassCard(elevated: true)
+
+                        Text("Backdate anytime — past tire/service work is fine.")
+                            .font(VS.Typography.body(12))
+                            .foregroundStyle(VS.Color.textTertiary)
                     }
 
                     VStack(alignment: .leading, spacing: 8) {
@@ -2140,8 +1969,30 @@ struct ServiceEditorSheet: View {
                 }
             }
 
-            if serviceType == "Other" {
+            if isOtherType {
                 TextField("Custom type", text: $customType)
+                    .font(VS.Typography.heading(18, weight: .semibold))
+                    .foregroundStyle(VS.Color.textPrimary)
+                    .padding(14)
+                    .glassCard(elevated: true)
+            }
+        }
+    }
+
+    private var tireBrandSection: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            ForEach(TireBrandCatalog.sections, id: \.title) { section in
+                VStack(alignment: .leading, spacing: 10) {
+                    fieldLabel(section.title)
+                    FlowChipWrap(items: section.brands, selected: tireBrand) { brand in
+                        UISelectionFeedbackGenerator().selectionChanged()
+                        tireBrand = brand
+                    }
+                }
+            }
+
+            if tireBrand == "Other" {
+                TextField("Custom tire brand", text: $customTireBrand)
                     .font(VS.Typography.heading(18, weight: .semibold))
                     .foregroundStyle(VS.Color.textPrimary)
                     .padding(14)
@@ -2218,6 +2069,15 @@ struct ServiceEditorSheet: View {
         }
         serviceType = types.contains(log.serviceType) ? log.serviceType : "Other"
         customType = serviceType == "Other" ? log.serviceType : ""
+        if serviceType == "New Tires" {
+            let known = TireBrandCatalog.allBrands
+            if let brand = log.brand, known.contains(brand) {
+                tireBrand = brand
+            } else if let brand = log.brand, !brand.isEmpty {
+                tireBrand = "Other"
+                customTireBrand = brand
+            }
+        }
         odometer = String(format: "%.0f", log.odometerReading)
         cost = log.cost.map { String(format: "%.2f", $0) } ?? ""
         notes = log.description ?? ""
@@ -2241,6 +2101,7 @@ struct ServiceEditorSheet: View {
                 odometerReading: odo,
                 serviceType: finalType,
                 description: notes.isEmpty ? nil : notes,
+                brand: finalBrand,
                 cost: Double(cost),
                 currency: vehicle.currency,
                 nextServiceOdometer: Double(nextOdometer),
@@ -2262,6 +2123,95 @@ struct ServiceEditorSheet: View {
         } catch {
             errorMessage = error.localizedDescription
         }
+    }
+}
+
+// MARK: - Tire brands + chip wrap
+
+private enum TireBrandCatalog {
+    struct Section {
+        var title: String
+        var brands: [String]
+    }
+
+    static let sections: [Section] = [
+        Section(
+            title: "Popular",
+            brands: [
+                "Michelin", "Bridgestone", "Goodyear", "Continental", "Pirelli",
+                "Dunlop", "Hankook", "Yokohama", "Toyo", "Falken",
+                "Kumho", "Nexen", "Maxxis", "BFGoodrich", "Cooper", "Firestone"
+            ]
+        ),
+        Section(
+            title: "Thai & SE Asia",
+            brands: ["Deestone", "Otani", "Leopold", "General Tire"]
+        ),
+        Section(
+            title: "Chinese",
+            brands: [
+                "Triangle", "Linglong", "Sailun", "Giti", "Double Coin", "Wanli",
+                "Goodride", "Westlake", "Chaoyang", "Prinx", "Sentury", "Aeolus",
+                "Landsail", "Infinity", "Sunny"
+            ]
+        ),
+        Section(
+            title: "India & others",
+            brands: ["MRF", "Apollo", "CEAT", "JK Tyre", "Other"]
+        )
+    ]
+
+    static var allBrands: [String] {
+        sections.flatMap(\.brands).filter { $0 != "Other" }
+    }
+}
+
+/// Simple wrapping chip row without a third-party flow layout.
+private struct FlowChipWrap: View {
+    let items: [String]
+    let selected: String
+    let onSelect: (String) -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            ForEach(rows, id: \.self) { row in
+                HStack(spacing: 8) {
+                    ForEach(row, id: \.self) { item in
+                        let isOn = selected == item
+                        Button {
+                            onSelect(item)
+                        } label: {
+                            Text(item)
+                                .font(VS.Typography.body(12, weight: .semibold))
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 8)
+                                .background(Capsule().fill(isOn ? VS.Color.accent : VS.Color.chip))
+                                .foregroundStyle(isOn ? VS.Color.navPill : VS.Color.textSecondary)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    Spacer(minLength: 0)
+                }
+            }
+        }
+    }
+
+    /// Rough wrap by character budget so chips don’t overflow on small phones.
+    private var rows: [[String]] {
+        var result: [[String]] = [[]]
+        var lineWidth = 0
+        let budget = 34
+        for item in items {
+            let cost = item.count + 4
+            if lineWidth + cost > budget, !result[result.count - 1].isEmpty {
+                result.append([item])
+                lineWidth = cost
+            } else {
+                result[result.count - 1].append(item)
+                lineWidth += cost
+            }
+        }
+        return result
     }
 }
 
@@ -3024,7 +2974,8 @@ final class VehiclePhotoStore: ObservableObject {
     @Published private(set) var images: [String: UIImage] = [:]
 
     private let fileManager = FileManager.default
-    private let maxDimension: CGFloat = 800
+    /// Keep garage heroes sharp on Pro Max (~3x · ~360pt stage needs ~1080px+).
+    private let maxDimension: CGFloat = 1600
 
     private init() {}
 
@@ -3046,7 +2997,7 @@ final class VehiclePhotoStore: ObservableObject {
 
     func save(image source: UIImage, vehicleId: String) throws {
         let normalized = resizedImage(source).stableCopy()
-        guard let jpeg = normalized.jpegData(compressionQuality: 0.82) else {
+        guard let jpeg = normalized.jpegData(compressionQuality: 0.9) else {
             throw ProfileAvatarError.processingFailed
         }
         try fileManager.createDirectory(at: photoDirectory, withIntermediateDirectories: true)

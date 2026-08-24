@@ -229,9 +229,9 @@ struct TripsView: View {
                 TripsMapCanvas(
                     trips: mode == .drives ? filteredTrips : [],
                     selected: mode == .drives ? selectedTrip : nil,
-                    activeRoute: recorder.liveRoute,
-                    isActivelyRecording: recorder.phase == .recording,
-                    showsUserCharacter: usesLocationFocalMap,
+                    activeRoute: recorder.phase == .recording ? [] : recorder.liveRoute,
+                    isActivelyRecording: false,
+                    showsUserCharacter: usesLocationFocalMap && recorder.phase != .recording,
                     courseDegrees: recorder.followCourseDegrees,
                     characterCoordinate: mapCharacterCoordinate,
                     vehicleStyle: mapVehicleStyle,
@@ -397,7 +397,8 @@ struct TripsView: View {
         }
         .onChange(of: recorder.followTick) { _, _ in
             guard mode == .tracking else { return }
-            // Short ease — long overlapping camera animations fought the puck and looked glitchy.
+            // Recording is HUD-first — never chase the camera (MapKit redraw = battery).
+            guard recorder.phase != .recording else { return }
             withAnimation(.easeInOut(duration: 0.35)) {
                 focusTrackingLocation()
             }
@@ -406,10 +407,11 @@ struct TripsView: View {
             guard mode == .tracking else { return }
             if phase == .idle || phase == .watching {
                 recorder.ensureMapFollowUpdates()
+                withAnimation(.easeInOut(duration: 0.55)) {
+                    focusTrackingLocation()
+                }
             }
-            withAnimation(.easeInOut(duration: 0.55)) {
-                focusTrackingLocation()
-            }
+            // Entering recording: leave the map where it is — drawer owns the session.
         }
         .onChange(of: store.trips.count) { _, _ in
             guard mode == .drives, selectedTripId == nil else { return }
@@ -451,8 +453,9 @@ struct TripsView: View {
         let railExtra: CGFloat = trackingStatusPriority != nil ? 56 : 0
         let errorExtra: CGFloat = recorder.lastError == nil ? 0 : 36
         switch recorder.phase {
-        // Room for metrics + GPS line + optional error + Pause/End — never clip CTAs.
-        case .recording: return 448 + errorExtra
+        // ~60% of the screen — room for HUD without swallowing the map.
+        case .recording:
+            return UIScreen.main.bounds.height * 0.60 + errorExtra
         case .confirming: return 320 + railExtra
         default: return 276 + railExtra
         }
@@ -532,21 +535,28 @@ struct TripsView: View {
     }
 
     private var trackingMode: some View {
-        VStack(alignment: .leading, spacing: 0) {
+        let recording = recorder.phase == .recording
+        return VStack(alignment: .leading, spacing: 0) {
             Capsule()
                 .fill(Color.white.opacity(0.22))
                 .frame(width: 40, height: 4)
                 .frame(maxWidth: .infinity)
                 .padding(.top, 10)
-                .padding(.bottom, 12)
+                .padding(.bottom, recording ? 16 : 12)
 
             trackingPanelBody
                 .padding(.horizontal, 16)
-                .padding(.bottom, 18)
+                .padding(.bottom, recording ? 22 : 18)
+                .frame(maxWidth: .infinity, maxHeight: recording ? .infinity : nil, alignment: .top)
         }
-        // Size to content — fixed height was clipping Pause / End when GPS error showed.
-        .fixedSize(horizontal: false, vertical: true)
-        .frame(maxWidth: .infinity, alignment: .top)
+        .frame(
+            maxWidth: .infinity,
+            minHeight: recording ? trackingPanelHeight : nil,
+            maxHeight: recording ? trackingPanelHeight : nil,
+            alignment: .top
+        )
+        // Idle / watching still hug content; recording uses ~60% of the screen.
+        .fixedSize(horizontal: false, vertical: !recording)
         .background(panelBackground)
         .clipShape(RoundedRectangle(cornerRadius: VS.Radius.panel, style: .continuous))
         .animation(.snappy(duration: 0.28), value: recorder.phase)
@@ -607,51 +617,45 @@ struct TripsView: View {
         let vehicle = trackingVehicle
         let vehicleId = vehicle?.id
         let estimate = vehicleId.flatMap { store.odometerEstimate(vehicleId: $0) }
-        let liveKm = recorder.phase == .recording ? (recorder.snapshot?.distanceKm ?? 0) : 0
-        let odoKm = (estimate?.estimatedKm ?? vehicle?.currentOdometer ?? 0) + liveKm
+        let odoKm = estimate?.estimatedKm ?? vehicle?.currentOdometer ?? 0
         let usesMiles = store.defaultDistanceUnit == "mi"
         let odoValue = String(format: "%.0f", usesMiles ? odoKm * 0.621371 : odoKm)
         let odoUnit = usesMiles ? "mi" : "km"
         let monthKm = vehicleId.map(monthDrivenKm(for:)) ?? 0
         let monthLabel = DistanceFormat.formatDistance(monthKm, unit: store.defaultDistanceUnit)
 
-        return VStack(alignment: .leading, spacing: 14) {
-            // Identity — car + auto-detect capsule only
+        return VStack(alignment: .leading, spacing: recorder.phase == .recording ? 14 : 14) {
+            // Always visible — car + Auto OFF (never drop while recording)
             HStack(alignment: .top, spacing: 12) {
                 trackingVehiclePicker(vehicle: vehicle)
                 Spacer(minLength: 8)
                 trackingAutoCapsule
             }
 
-            // Hero odometer — big type owns the panel (Ladder / Any Distance energy)
-            VStack(alignment: .leading, spacing: 8) {
-                HStack(alignment: .firstTextBaseline, spacing: 8) {
-                    Text(odoValue)
-                        .font(VS.Typography.heading(60, weight: .bold))
-                        .foregroundStyle(VS.Color.textPrimary)
-                        .minimumScaleFactor(0.48)
-                        .lineLimit(1)
-                        .contentTransition(.numericText())
-                        .animation(.snappy(duration: 0.22), value: odoValue)
-                    Text(odoUnit)
-                        .font(VS.Typography.heading(20, weight: .bold))
-                        .foregroundStyle(liveKm > 0.05 ? VS.Color.accent : VS.Color.textTertiary)
-                }
+            if recorder.phase != .recording {
+                // Hero odometer — idle / watching only (recording uses the performance HUD).
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack(alignment: .firstTextBaseline, spacing: 8) {
+                        Text(odoValue)
+                            .font(VS.Typography.heading(60, weight: .bold))
+                            .foregroundStyle(VS.Color.textPrimary)
+                            .minimumScaleFactor(0.48)
+                            .lineLimit(1)
+                            .contentTransition(.numericText())
+                            .animation(.snappy(duration: 0.22), value: odoValue)
+                        Text(odoUnit)
+                            .font(VS.Typography.heading(20, weight: .bold))
+                            .foregroundStyle(VS.Color.textTertiary)
+                    }
 
-                HStack(spacing: 8) {
-                    Text(odometerCaption(estimate: estimate, liveKm: liveKm))
+                    Text(odometerCaption(estimate: estimate, liveKm: 0))
                         .font(VS.Typography.body(13, weight: .medium))
                         .foregroundStyle(VS.Color.textTertiary)
-                    if recorder.phase == .recording {
-                        trackingLivePill(
-                            paused: recorder.snapshot?.isPaused == true
-                        )
-                    }
-                }
 
-                Text(TrackyVoice.monthLine(monthLabel))
-                    .font(VS.Typography.body(14, weight: .semibold))
-                    .foregroundStyle(VS.Color.textSecondary)
+                    Text(TrackyVoice.monthLine(monthLabel))
+                        .font(VS.Typography.body(14, weight: .semibold))
+                        .foregroundStyle(VS.Color.textSecondary)
+                }
             }
 
             // Single status rail (pending > fuel). Hidden while recording.
@@ -660,23 +664,7 @@ struct TripsView: View {
             }
 
             if let snap = recorder.snapshot, recorder.phase == .recording {
-                HStack(spacing: 8) {
-                    liveMetric(String(format: "%.1f", snap.distanceKm), "km")
-                    liveMetric(formatDuration(snap.durationSec), "time")
-                    liveMetric(String(format: "%.0f", snap.currentSpeedKmh), "km/h")
-                }
-
-                HStack(spacing: 6) {
-                    Circle()
-                        .fill(recorder.liveRoute.isEmpty ? VS.Color.warning : VS.Color.accent)
-                        .frame(width: 7, height: 7)
-                        .opacity(recorder.liveRoute.isEmpty ? 1 : pulseOpacity)
-                    Text(routeStatusText)
-                        .font(VS.Typography.body(12, weight: .semibold))
-                        .foregroundStyle(VS.Color.textTertiary)
-                        .lineLimit(1)
-                    Spacer(minLength: 0)
-                }
+                activeDrivePerformanceHUD(snap)
             }
 
             if let error = recorder.lastError {
@@ -686,8 +674,63 @@ struct TripsView: View {
                     .onTapGesture { recorder.clearError() }
             }
 
+            if recorder.phase == .recording {
+                Spacer(minLength: 8)
+            }
+
             trackingActionRow
         }
+    }
+
+    /// B1 wave pulse + B2 arc/blob — metrics own the session; map stays frozen.
+    @ViewBuilder
+    private func activeDrivePerformanceHUD(_ snap: ActiveTripSnapshot) -> some View {
+        let mood = recorder.driveMood
+        let vehicle = trackingVehicle
+        let vehicleId = vehicle?.id ?? snap.vehicleId
+        let vehicleLogs = store.fuelLogs.filter { $0.vehicleId == vehicleId }
+        let baseline = vehicle.map {
+            DriveMoodBaseline.resolve(
+                vehicle: $0,
+                logs: vehicleLogs,
+                manufacturerStandard: store.manufacturerStandard
+            )
+        } ?? store.manufacturerStandard ?? 8.0
+        let odoEstimate = store.odometerEstimate(vehicleId: vehicleId)
+        let liveOdometer = (odoEstimate?.estimatedKm ?? vehicle?.currentOdometer ?? 0) + snap.distanceKm
+        let intelligence = LiveDriveIntelligenceLogic.compute(
+            logs: vehicleLogs,
+            estimatedOdometer: liveOdometer,
+            tankCapacityLiters: vehicle?.fuelTankCapacity,
+            brochureL100km: store.manufacturerStandard,
+            personalBaselineL100: baseline,
+            liveEstL100: mood?.estL100 ?? baseline,
+            thirst: mood?.thirst ?? 0.3,
+            sessionAvgSpeedKmh: snap.avgSpeedKmh,
+            distanceUnit: store.defaultDistanceUnit
+        )
+
+        ActiveDriveHUDContent(
+            model: ActiveDriveHUDModel(
+                vehicleName: snap.vehicleName,
+                speedKmh: snap.currentSpeedKmh,
+                distanceKm: snap.distanceKm,
+                durationSec: snap.durationSec,
+                estL100: mood?.estL100 ?? store.manufacturerStandard ?? 0,
+                avgSpeedKmh: snap.avgSpeedKmh,
+                isPaused: snap.isPaused,
+                driveScore: mood?.driveScore ?? 78,
+                statusLabel: mood?.statusLabel ?? "Smooth",
+                lastEvent: mood?.lastEvent ?? "",
+                thirst: mood?.thirst ?? 0.3,
+                efficiencyReserve: mood?.efficiencyReserve ?? 1,
+                speedSamplesKmh: mood?.speedSamplesKmh ?? [],
+                intelligence: intelligence,
+                avatarImage: avatarStore.image,
+                showsVehicleName: false
+            ),
+            pulseOpacity: pulseOpacity
+        )
     }
 
     @ViewBuilder
@@ -1212,9 +1255,9 @@ struct TripsView: View {
             TripsMapCanvas(
                 trips: mode == .drives ? filteredTrips : [],
                 selected: mode == .drives ? selectedTrip : nil,
-                activeRoute: recorder.liveRoute,
-                isActivelyRecording: recorder.phase == .recording,
-                showsUserCharacter: mode == .tracking,
+                activeRoute: recorder.phase == .recording ? [] : recorder.liveRoute,
+                isActivelyRecording: false,
+                showsUserCharacter: mode == .tracking && recorder.phase != .recording,
                 courseDegrees: recorder.followCourseDegrees,
                 characterCoordinate: mapCharacterCoordinate,
                 vehicleStyle: mapVehicleStyle,
@@ -1506,7 +1549,7 @@ struct TripsView: View {
     private func region(for trip: Trip) -> MKCoordinateRegion? {
         let coords = trip.route.isEmpty
             ? [trip.startCoordinate, trip.endCoordinate].compactMap { $0 }
-            : TripTrackingLogic.mapDisplayRoute(id: trip.id, points: trip.route, maximumPoints: 240)
+            : TripTrackingLogic.mapDisplayRoute(id: trip.id, points: trip.route, maximumPoints: 800)
         guard !coords.isEmpty else { return nil }
         return region(for: coords)
     }
@@ -1514,7 +1557,7 @@ struct TripsView: View {
     private func drawerAwareRegion(for trip: Trip, shiftForPitch: Bool = true) -> MKCoordinateRegion? {
         let coordinates = trip.route.isEmpty
             ? [trip.startCoordinate, trip.endCoordinate].compactMap { $0 }
-            : TripTrackingLogic.mapDisplayRoute(id: trip.id, points: trip.route, maximumPoints: 240)
+            : TripTrackingLogic.mapDisplayRoute(id: trip.id, points: trip.route, maximumPoints: 800)
         guard !coordinates.isEmpty else { return nil }
         return drawerAwareRegion(for: coordinates, shiftForPitch: shiftForPitch)
     }
@@ -1626,7 +1669,7 @@ struct TripsMapCanvas: View {
                         return TripTrackingLogic.mapDisplayRoute(
                             id: trip.id,
                             points: trip.route,
-                            maximumPoints: 64
+                            maximumPoints: 160
                         )
                     }
                     return [trip.startCoordinate, trip.endCoordinate].compactMap { $0 }
@@ -1655,7 +1698,7 @@ struct TripsMapCanvas: View {
                 let selectedRoute = TripTrackingLogic.mapDisplayRoute(
                     id: selected.id,
                     points: selected.route,
-                    maximumPoints: 240
+                    maximumPoints: 800
                 )
                 if selectedRoute.count >= 2 {
                     let coords = selectedRoute.map {
@@ -1944,7 +1987,7 @@ struct MiniRoutePreview: View {
     let route: [TripCoordinate]
 
     private var displayRoute: [TripCoordinate] {
-        TripTrackingLogic.mapDisplayRoute(id: routeId, points: route, maximumPoints: 48)
+        TripTrackingLogic.mapDisplayRoute(id: routeId, points: route, maximumPoints: 96)
     }
 
     var body: some View {
@@ -2024,7 +2067,7 @@ struct TripDetailView: View {
     private var routeRegion: MKCoordinateRegion {
         let coords = trip.route.isEmpty
             ? [trip.startCoordinate, trip.endCoordinate].compactMap { $0 }
-            : TripTrackingLogic.mapDisplayRoute(id: trip.id, points: trip.route, maximumPoints: 240)
+            : TripTrackingLogic.mapDisplayRoute(id: trip.id, points: trip.route, maximumPoints: 800)
         guard !coords.isEmpty else {
             return MKCoordinateRegion(
                 center: CLLocationCoordinate2D(latitude: 25.2854, longitude: 51.5310),
@@ -2271,7 +2314,7 @@ struct TripDetailView: View {
 
     private var routeMap: some View {
         Map(initialPosition: .region(routeRegion)) {
-            let displayRoute = TripTrackingLogic.mapDisplayRoute(id: trip.id, points: trip.route, maximumPoints: 240)
+            let displayRoute = TripTrackingLogic.mapDisplayRoute(id: trip.id, points: trip.route, maximumPoints: 800)
             if displayRoute.count >= 2 {
                 MapPolyline(coordinates: displayRoute.map {
                     CLLocationCoordinate2D(latitude: $0.latitude, longitude: $0.longitude)

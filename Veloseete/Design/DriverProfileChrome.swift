@@ -25,7 +25,7 @@ struct DriverThirstSpectrumBar: View {
                     .frame(width: 6, height: 6)
                     .position(x: size.width - 3, y: size.height / 2)
 
-                DriverThirstWavyLine(amplitude: 4, wavelength: 20)
+                VeloseeteWavyLine(amplitude: 4, wavelength: 20)
                     .trim(from: 0, to: max(0.02, snapped))
                     .stroke(
                         DriverThirstSpectrumBar.spectrumGradient,
@@ -65,7 +65,7 @@ struct DriverThirstSpectrumBar: View {
 /// Calm → spirited driving style (person), not car fuel thirst.
 typealias DriverStyleSpectrumBar = DriverThirstSpectrumBar
 
-private struct DriverThirstWavyLine: Shape {
+struct VeloseeteWavyLine: Shape {
     var amplitude: CGFloat
     var wavelength: CGFloat
 

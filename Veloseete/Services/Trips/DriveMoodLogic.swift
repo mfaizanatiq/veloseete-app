@@ -13,7 +13,11 @@ enum DriveMoodLogic {
         var moodRaw: String
         var lastEvent: String
         var thirst: Double
+        /// Session efficiency cushion — starts full, drains with throttle, slowly recovers when calm.
+        var efficiencyReserve: Double
         var statusLabel: String
+        /// Recent GPS speeds for the live HUD waveform (last ~45s).
+        var speedSamplesKmh: [Double]
     }
 
     struct State: Equatable {
@@ -24,6 +28,8 @@ enum DriveMoodLogic {
         var lastEvent: String = ""
         var lastEventAt: Date?
         var samples: [SpeedSample] = []
+        var efficiencyReserve: Double = 1
+        var lastReserveUpdate: Date?
     }
 
     /// Harsh accel / brake thresholds (km/h per second).
@@ -48,7 +54,9 @@ enum DriveMoodLogic {
                 isPaused: true,
                 lastEvent: state.lastEvent,
                 lastEventAt: state.lastEventAt,
-                now: at
+                now: at,
+                efficiencyReserve: state.efficiencyReserve,
+                speedSamplesKmh: state.samples.map(\.speedKmh)
             )
         }
 
@@ -107,13 +115,18 @@ enum DriveMoodLogic {
             state.score = max(35, state.score - 0.08)
         }
 
+        let thirst = thirstValue(score: state.score, baselineL100: baselineL100)
+        updateEfficiencyReserve(state: &state, thirst: thirst, at: at, isPaused: false)
+
         return snapshot(
             score: state.score,
             baselineL100: baselineL100,
             isPaused: false,
             lastEvent: state.lastEvent,
             lastEventAt: state.lastEventAt,
-            now: at
+            now: at,
+            efficiencyReserve: state.efficiencyReserve,
+            speedSamplesKmh: state.samples.map(\.speedKmh)
         )
     }
 
@@ -130,8 +143,47 @@ enum DriveMoodLogic {
             lastEventAt: state.lastEventAt,
             now: Date(),
             forcedMood: saved ? "saved" : nil,
-            forcedLabel: saved ? "Saved" : nil
+            forcedLabel: saved ? "Saved" : nil,
+            efficiencyReserve: state.efficiencyReserve,
+            speedSamplesKmh: state.samples.map(\.speedKmh)
         )
+    }
+
+    private static func thirstValue(score: Double, baselineL100: Double) -> Double {
+        let safeBaseline = max(baselineL100.isFinite ? baselineL100 : 0, 0)
+        let clamped = Int(score.rounded().clamped(to: 0...100))
+        let factor = 1.0 + ((70.0 - Double(clamped)) / 100.0) * 0.55
+        let est = max(3.5, max(safeBaseline, 0.1) * factor)
+
+        let scoreThirst = 1.0 - (Double(clamped) / 100.0)
+        let burnRatio = est / max(safeBaseline, 4.5)
+        let burnThirst = min(1.0, max(0, (burnRatio - 0.9) / 0.38))
+        let rawThirst = max(scoreThirst, burnThirst)
+        return ((rawThirst * 20).rounded() / 20).clamped(to: 0...1)
+    }
+
+    private static func updateEfficiencyReserve(
+        state: inout State,
+        thirst: Double,
+        at: Date,
+        isPaused: Bool
+    ) {
+        guard !isPaused else { return }
+
+        let dt: Double
+        if let last = state.lastReserveUpdate {
+            dt = min(max(at.timeIntervalSince(last), 0), 4)
+        } else {
+            state.efficiencyReserve = 1
+            state.lastReserveUpdate = at
+            return
+        }
+        state.lastReserveUpdate = at
+        guard dt > 0 else { return }
+
+        let drain = thirst * dt * 0.024
+        let recover = (1 - thirst) * dt * 0.007
+        state.efficiencyReserve = min(1, max(0, state.efficiencyReserve - drain + recover))
     }
 
     private static func registerHarsh(
@@ -159,18 +211,15 @@ enum DriveMoodLogic {
         lastEventAt: Date?,
         now: Date,
         forcedMood: String? = nil,
-        forcedLabel: String? = nil
+        forcedLabel: String? = nil,
+        efficiencyReserve: Double = 1,
+        speedSamplesKmh: [Double] = []
     ) -> Snapshot {
         let safeBaseline = max(baselineL100.isFinite ? baselineL100 : 0, 0)
         let clamped = Int(score.rounded().clamped(to: 0...100))
         let factor = 1.0 + ((70.0 - Double(clamped)) / 100.0) * 0.55
         let est = max(3.5, max(safeBaseline, 0.1) * factor)
-
-        let scoreThirst = 1.0 - (Double(clamped) / 100.0)
-        let burnRatio = est / max(safeBaseline, 4.5)
-        let burnThirst = min(1.0, max(0, (burnRatio - 0.9) / 0.38))
-        let rawThirst = max(scoreThirst, burnThirst)
-        let thirst = ((rawThirst * 20).rounded() / 20).clamped(to: 0...1)
+        let thirst = thirstValue(score: score, baselineL100: baselineL100)
 
         let mood: String
         let label: String
@@ -204,7 +253,9 @@ enum DriveMoodLogic {
             moodRaw: mood,
             lastEvent: event,
             thirst: thirst,
-            statusLabel: label
+            efficiencyReserve: min(1, max(0, efficiencyReserve)),
+            statusLabel: label,
+            speedSamplesKmh: speedSamplesKmh
         )
     }
 }

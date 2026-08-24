@@ -2,29 +2,52 @@ import CoreLocation
 import Foundation
 
 enum TripTrackingLogic {
-    /// Highway / background GPS often reports 30–60 m; 45 m was dropping real fixes.
+    /// How a consecutive GPS pair should be applied to the live route buffer.
+    enum SegmentDecision: Equatable {
+        /// Too close / duplicate — ignore.
+        case noise
+        /// Impossible jump — ignore and keep the prior anchor.
+        case teleport
+        /// Continuous drive — accumulate `meters`.
+        case accept(meters: Double)
+        /// Tunnel / background gap — resume geometry without inflating distance.
+        case resumeAfterGap
+    }
+
+    /// Mountain / canopy GPS often reports 70–100 m; 65 m was dropping real stretches.
     static func accepts(horizontalAccuracy: Double) -> Bool {
-        horizontalAccuracy.isFinite && horizontalAccuracy >= 0 && horizontalAccuracy <= 65
+        horizontalAccuracy.isFinite && horizontalAccuracy >= 0 && horizontalAccuracy <= 100
     }
 
     /// Accepts real driving segments, including sparse highway updates.
-    /// Rejects teleports (impossible speed) and absurd gaps.
+    /// Rejects teleports (impossible speed). Large time/distance gaps resume
+    /// rather than permanently freezing the route anchor.
     static func acceptedSegmentDistance(from previous: CLLocation, to current: CLLocation) -> Double {
+        switch evaluateSegment(from: previous, to: current) {
+        case .accept(let meters): return meters
+        case .noise, .teleport, .resumeAfterGap: return 0
+        }
+    }
+
+    static func evaluateSegment(from previous: CLLocation, to current: CLLocation) -> SegmentDecision {
         let distance = current.distance(from: previous)
         let elapsed = current.timestamp.timeIntervalSince(previous.timestamp)
-        guard distance > 2, elapsed > 0 else { return 0 }
+        guard distance > 2, elapsed > 0 else { return .noise }
 
         // ~200 km/h — anything faster is a GPS jump, not a car.
         let maxPlausibleSpeedMps = 55.0
-        if distance / elapsed > maxPlausibleSpeedMps { return 0 }
+        if distance / elapsed > maxPlausibleSpeedMps { return .teleport }
 
-        // Background delivery can pause briefly (tunnels, suspension). Keep a
-        // generous gap so a 3–4 hour drive does not shed whole highway stretches.
-        let maxGapMeters = 2_500.0
-        let maxGapSeconds = 180.0
-        guard distance <= maxGapMeters, elapsed <= maxGapSeconds else { return 0 }
+        // Background delivery can pause (tunnels, suspension). Beyond this we
+        // still keep the new fix so the route continues — we just don't credit
+        // the chord as driven distance.
+        let maxGapMeters = 3_500.0
+        let maxGapSeconds = 420.0
+        if distance > maxGapMeters || elapsed > maxGapSeconds {
+            return .resumeAfterGap
+        }
 
-        return distance
+        return .accept(meters: distance)
     }
 
     static func appending(_ point: TripCoordinate, to route: [TripCoordinate]) -> [TripCoordinate] {
@@ -34,29 +57,67 @@ enum TripTrackingLogic {
         return updated
     }
 
-    /// Uniform stride downsample — fine for UI after spacing-based thinning.
+    /// Uniform stride downsample — last-resort budget crush only.
+    /// Prefer `simplify` / `simplifyToBudget` so twisty geometry survives.
     static func downsample(_ points: [TripCoordinate], maximum: Int = 200) -> [TripCoordinate] {
         guard points.count > maximum, maximum >= 2 else { return points }
-        let step = max(1, (points.count - 1) / (maximum - 1))
         var reduced: [TripCoordinate] = []
         reduced.reserveCapacity(maximum)
-        var index = 0
-        while index < points.count {
-            reduced.append(points[index])
-            index += step
+        let lastIndex = points.count - 1
+        for slot in 0..<maximum {
+            let index = slot == maximum - 1
+                ? lastIndex
+                : Int((Double(slot) * Double(lastIndex) / Double(maximum - 1)).rounded())
+            let point = points[index]
+            if reduced.last != point {
+                reduced.append(point)
+            }
         }
         if let last = points.last, reduced.last != last {
             reduced.append(last)
         }
+        if reduced.count > maximum, let last = points.last {
+            reduced = Array(reduced.prefix(maximum - 1)) + [last]
+        }
         return reduced
     }
 
-    /// Prefer keeping geometry: drop points closer than `minSpacingMeters`, then
-    /// fall back to uniform downsample only if still over `maximum`.
+    /// Ramer–Douglas–Peucker — keeps corners / hairpins, drops collinear highway points.
+    static func simplify(_ points: [TripCoordinate], epsilonMeters: Double) -> [TripCoordinate] {
+        guard points.count > 2, epsilonMeters > 0 else { return points }
+        var keep = [Bool](repeating: false, count: points.count)
+        keep[0] = true
+        keep[points.count - 1] = true
+        rdpMark(points, start: 0, end: points.count - 1, epsilonMeters: epsilonMeters, keep: &keep)
+        var out: [TripCoordinate] = []
+        out.reserveCapacity(keep.filter { $0 }.count)
+        for index in points.indices where keep[index] {
+            out.append(points[index])
+        }
+        return out
+    }
+
+    /// Simplify at a fixed epsilon, then stride only if still over `maximum`.
+    /// Do not grow epsilon — that flattens switchbacks before the budget is hit.
+    static func simplifyToBudget(
+        _ points: [TripCoordinate],
+        maximum: Int,
+        startingEpsilonMeters: Double = 8
+    ) -> [TripCoordinate] {
+        guard points.count > maximum, maximum >= 2 else { return points }
+        let simplified = simplify(points, epsilonMeters: max(1, startingEpsilonMeters))
+        if simplified.count > maximum {
+            return downsample(simplified, maximum: maximum)
+        }
+        return simplified
+    }
+
+    /// Prefer geometry: light spacing thin, then RDP (not uniform stride).
     static func thinForPersistence(
         _ points: [TripCoordinate],
-        minSpacingMeters: Double = 25,
-        maximum: Int = 2_000
+        minSpacingMeters: Double = 12,
+        maximum: Int = 5_000,
+        epsilonMeters: Double = 8
     ) -> [TripCoordinate] {
         guard points.count > 2 else { return points }
         var thinned: [TripCoordinate] = [points[0]]
@@ -71,18 +132,22 @@ enum TripTrackingLogic {
         if let last = points.last, thinned.last != last {
             thinned.append(last)
         }
-        return downsample(thinned, maximum: maximum)
+        return simplifyToBudget(thinned, maximum: maximum, startingEpsilonMeters: epsilonMeters)
     }
 
-    /// Live recording buffer: keep shape under memory pressure without the old
-    /// every-Nth crush to ~1.2k points that erased multi-hour highways.
+    /// Live recording buffer: keep twisty shape under memory pressure.
     static func compactLiveRoute(
         _ points: [TripCoordinate],
-        softCap: Int = 8_000,
-        compactedMaximum: Int = 4_000
+        softCap: Int = 12_000,
+        compactedMaximum: Int = 6_000
     ) -> [TripCoordinate] {
         guard points.count > softCap else { return points }
-        return thinForPersistence(points, minSpacingMeters: 35, maximum: compactedMaximum)
+        return thinForPersistence(
+            points,
+            minSpacingMeters: 16,
+            maximum: compactedMaximum,
+            epsilonMeters: 10
+        )
     }
 
     /// Removes isolated GPS spikes from legacy routes for map presentation only.
@@ -114,18 +179,22 @@ enum TripTrackingLogic {
         return cleaned
     }
 
-    /// Map-ready route: clean spikes, then downsample. Cached per trip id + point count
-    /// so SwiftUI/MapKit body refreshes (drawer drag) don't re-walk thousands of points.
+    /// Map-ready route: clean spikes, then RDP to budget (keeps hairpins).
+    /// Cached per trip id + point count so MapKit body refreshes stay cheap.
     static func mapDisplayRoute(
         id: String,
         points: [TripCoordinate],
-        maximumPoints: Int = 220
+        maximumPoints: Int = 600
     ) -> [TripCoordinate] {
         let key = "\(id)|\(points.count)|\(maximumPoints)"
         if let cached = displayCache.object(forKey: key as NSString) {
             return cached.points
         }
-        let prepared = downsample(cleanedForDisplay(points), maximum: maximumPoints)
+        let prepared = simplifyToBudget(
+            cleanedForDisplay(points),
+            maximum: maximumPoints,
+            startingEpsilonMeters: maximumPoints <= 80 ? 28 : 12
+        )
         displayCache.setObject(CachedRoute(points: prepared), forKey: key as NSString)
         return prepared
     }
@@ -136,6 +205,63 @@ enum TripTrackingLogic {
         let dLat = (rhs.latitude - lhs.latitude) * 111_320
         let dLng = (rhs.longitude - lhs.longitude) * 111_320 * cos(meanLat)
         return (dLat * dLat + dLng * dLng).squareRoot()
+    }
+
+    /// Perpendicular distance from `point` to the segment `start`→`end` (meters).
+    static func perpendicularDistanceMeters(
+        point: TripCoordinate,
+        start: TripCoordinate,
+        end: TripCoordinate
+    ) -> Double {
+        let meanLat = (start.latitude + end.latitude) * 0.5 * .pi / 180
+        let cosLat = cos(meanLat)
+        let ax = start.longitude * 111_320 * cosLat
+        let ay = start.latitude * 111_320
+        let bx = end.longitude * 111_320 * cosLat
+        let by = end.latitude * 111_320
+        let px = point.longitude * 111_320 * cosLat
+        let py = point.latitude * 111_320
+        let dx = bx - ax
+        let dy = by - ay
+        let lengthSq = dx * dx + dy * dy
+        guard lengthSq > 1e-6 else {
+            return approximateDistanceMeters(from: start, to: point)
+        }
+        let t = max(0, min(1, ((px - ax) * dx + (py - ay) * dy) / lengthSq))
+        let projX = ax + t * dx
+        let projY = ay + t * dy
+        let ex = px - projX
+        let ey = py - projY
+        return (ex * ex + ey * ey).squareRoot()
+    }
+
+    private static func rdpMark(
+        _ points: [TripCoordinate],
+        start: Int,
+        end: Int,
+        epsilonMeters: Double,
+        keep: inout [Bool]
+    ) {
+        guard end > start + 1 else { return }
+        var maxDistance = 0.0
+        var maxIndex = start
+        let lineStart = points[start]
+        let lineEnd = points[end]
+        for index in (start + 1)..<end {
+            let distance = perpendicularDistanceMeters(
+                point: points[index],
+                start: lineStart,
+                end: lineEnd
+            )
+            if distance > maxDistance {
+                maxDistance = distance
+                maxIndex = index
+            }
+        }
+        guard maxDistance > epsilonMeters else { return }
+        keep[maxIndex] = true
+        rdpMark(points, start: start, end: maxIndex, epsilonMeters: epsilonMeters, keep: &keep)
+        rdpMark(points, start: maxIndex, end: end, epsilonMeters: epsilonMeters, keep: &keep)
     }
 
     private static let displayCache = NSCache<NSString, CachedRoute>()

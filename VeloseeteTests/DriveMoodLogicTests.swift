@@ -86,6 +86,32 @@ final class DriveMoodLogicTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(after.thirst, 0.25)
     }
 
+    func testEfficiencyReserveStartsFullAndDrainsOnThrottle() {
+        var state = DriveMoodLogic.State()
+        let start = Date()
+        let first = DriveMoodLogic.ingest(
+            state: &state,
+            speedKmh: 40,
+            at: start,
+            isPaused: false,
+            baselineL100: 8
+        )
+        XCTAssertEqual(first.efficiencyReserve, 1, accuracy: 0.001)
+
+        var last = first
+        for step in 1...8 {
+            last = DriveMoodLogic.ingest(
+                state: &state,
+                speedKmh: 40 + Double(step * 8),
+                at: start.addingTimeInterval(Double(step) * 2),
+                isPaused: false,
+                baselineL100: 8
+            )
+        }
+
+        XCTAssertLessThan(last.efficiencyReserve, first.efficiencyReserve)
+    }
+
     func testFinalSnapshotMarksSaved() {
         let snap = DriveMoodLogic.finalSnapshot(
             state: DriveMoodLogic.State(score: 82),

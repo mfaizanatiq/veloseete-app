@@ -50,10 +50,13 @@ final class TripRecordingService: NSObject, ObservableObject {
     @Published private(set) var phase: TripRecordingPhase = .idle
     @Published private(set) var autoTrackingEnabled = false
     @Published private(set) var snapshot: ActiveTripSnapshot?
-    /// Downsampled polyline for the Tracking map — published on a throttle, not every GPS tick.
+    /// Live drive quality for the tracking HUD (not for map chrome).
+    @Published private(set) var driveMood: DriveMoodLogic.Snapshot?
+    /// Downsampled polyline for the Tracking map — idle/watching only.
+    /// While recording we keep the full buffer privately and skip MapKit redraws.
     @Published private(set) var liveRoute: [TripCoordinate] = []
     @Published private(set) var lastLocationAccuracy: Double?
-    /// Latest usable fix for the tracking map camera (watching or recording).
+    /// Latest usable fix for the tracking map camera (watching / idle follow only).
     @Published private(set) var followLatitude: Double?
     @Published private(set) var followLongitude: Double?
     /// Course in degrees clockwise from true north; negative when unknown.
@@ -101,7 +104,9 @@ final class TripRecordingService: NSObject, ObservableObject {
         moodRaw: "smooth",
         lastEvent: "",
         thirst: 0.22,
-        statusLabel: "Smooth"
+        efficiencyReserve: 1,
+        statusLabel: "Smooth",
+        speedSamplesKmh: []
     )
     /// Typical tank L/100 used to scale the live efficiency estimate.
     private var baselineL100: Double = 8.0
@@ -112,10 +117,14 @@ final class TripRecordingService: NSObject, ObservableObject {
     private var watchingIdleSince: Date?
 
     private let liveRoutePublishInterval: TimeInterval = 2.5
-    private let liveRouteDisplayMax = 220
-    /// Soft cap before live compaction — high enough for multi-hour drives.
-    private let recordedRouteSoftCap = 8_000
-    private let recordedRouteCompacted = 4_000
+    /// Display polyline budget for idle/watching map only (recording freezes the map).
+    private let liveRouteDisplayMax = 120
+    /// Soft cap before live compaction — high enough for multi-hour twisty drives.
+    private let recordedRouteSoftCap = 12_000
+    private let recordedRouteCompacted = 6_000
+    /// Snapshot / HUD publish cadence while recording — not every GPS hop.
+    private let snapshotPublishInterval: TimeInterval = 1.0
+    private var lastSnapshotPublish = Date.distantPast
     /// After this long below driving speed, drop continuous GPS back to coarse watch.
     private let watchingDeescalateHold: TimeInterval = 90
 
@@ -994,21 +1003,31 @@ final class TripRecordingService: NSObject, ObservableObject {
             return
         }
 
-        let acceptedSegment: Double
+        let decision: TripTrackingLogic.SegmentDecision
         if let last = lastLocation {
-            acceptedSegment = TripTrackingLogic.acceptedSegmentDistance(from: last, to: location)
+            decision = TripTrackingLogic.evaluateSegment(from: last, to: location)
         } else {
-            acceptedSegment = 0
+            decision = .accept(meters: 0)
         }
 
-        // Rejected fixes must not move the puck or the route anchor — otherwise the
-        // next accepted point spikes, and the tracker "glitches" on multipath hops.
-        guard recordedRoute.isEmpty || acceptedSegment > 0 else { return }
+        // Teleports / noise must not move the puck or the route anchor — otherwise
+        // the next accepted point spikes on multipath hops. Gaps *do* resume so a
+        // tunnel pause cannot freeze the rest of a long drive.
+        switch decision {
+        case .noise, .teleport:
+            return
+        case .accept, .resumeAfterGap:
+            break
+        }
 
-        publishFollow(from: location)
+        // Recording is HUD-first: no map camera chase / car redraw (battery).
+        // Watching / idle still get a gentle follow for the parked puck.
+        if phase != .recording {
+            publishFollow(from: location)
+        }
 
-        if let _ = lastLocation {
-            distanceMeters += acceptedSegment
+        if case .accept(let meters) = decision, lastLocation != nil {
+            distanceMeters += meters
         }
 
         let speed = max(0, location.speed)
@@ -1036,8 +1055,8 @@ final class TripRecordingService: NSObject, ObservableObject {
                 compactedMaximum: recordedRouteCompacted
             )
         }
-        publishLiveRouteIfNeeded(force: false)
-        publishSnapshot()
+        // Do not push liveRoute / followTick while recording — MapKit redraw is the battery hog.
+        publishSnapshotIfNeeded(force: false)
         updateLiveActivity(force: false)
     }
 
@@ -1167,9 +1186,19 @@ final class TripRecordingService: NSObject, ObservableObject {
         }
     }
 
+    private func publishSnapshotIfNeeded(force: Bool) {
+        let now = Date()
+        guard force || now.timeIntervalSince(lastSnapshotPublish) >= snapshotPublishInterval else {
+            return
+        }
+        lastSnapshotPublish = now
+        publishSnapshot()
+    }
+
     private func publishSnapshot() {
         guard phase == .recording, let startedAt else {
             snapshot = nil
+            driveMood = nil
             syncWidgetTracking(force: true)
             return
         }
@@ -1198,7 +1227,10 @@ final class TripRecordingService: NSObject, ObservableObject {
     }
 
     private func refreshDriveMood(at: Date = Date()) {
-        guard phase == .recording, let snapshot else { return }
+        guard phase == .recording, let snapshot else {
+            driveMood = nil
+            return
+        }
         lastDriveMoodSnapshot = DriveMoodLogic.ingest(
             state: &driveMoodState,
             speedKmh: snapshot.currentSpeedKmh,
@@ -1206,6 +1238,7 @@ final class TripRecordingService: NSObject, ObservableObject {
             isPaused: snapshot.isPaused,
             baselineL100: baselineL100
         )
+        driveMood = lastDriveMoodSnapshot
     }
 
     private func syncWidgetTracking(force: Bool) {

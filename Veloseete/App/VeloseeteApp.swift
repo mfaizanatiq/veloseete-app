@@ -51,6 +51,22 @@ struct VeloseeteApp: App {
 
     var body: some Scene {
         WindowGroup {
+            #if DEBUG
+            if ProcessInfo.processInfo.arguments.contains("-DriveHUDPreview") {
+                ActiveDriveHUDPreview()
+                    .preferredColorScheme(.dark)
+                    .tint(VS.Color.accent)
+            } else {
+                appRoot
+            }
+            #else
+            appRoot
+            #endif
+        }
+    }
+
+    @ViewBuilder
+    private var appRoot: some View {
             ZStack {
                 VeloseeteBackground()
                 RootView()
@@ -123,7 +139,6 @@ struct VeloseeteApp: App {
             .onChange(of: tripPermissionsStore.hasCompletedOnboarding) { _, _ in
                 syncTripRecorderVehicle()
             }
-        }
     }
 
     private func syncTripRecorderVehicle() {

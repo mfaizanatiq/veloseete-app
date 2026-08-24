@@ -170,9 +170,11 @@ struct VSInputField: ViewModifier {
 }
 
 /// Shared selectable chip — roomy for forms (fuel, garage, profile).
+/// Pass `compact: true` for list filters and other dense bars.
 struct VSSelectableChip: View {
     let title: String
     let selected: Bool
+    var compact: Bool = false
     var action: () -> Void
 
     var body: some View {
@@ -181,10 +183,10 @@ struct VSSelectableChip: View {
             action()
         } label: {
             Text(title)
-                .font(VS.Typography.body(15, weight: .semibold))
+                .font(VS.Typography.body(compact ? 13 : 15, weight: .semibold))
                 .lineLimit(1)
-                .padding(.horizontal, 18)
-                .padding(.vertical, 14)
+                .padding(.horizontal, compact ? 14 : 18)
+                .padding(.vertical, compact ? 10 : 14)
                 .background(Capsule(style: .continuous).fill(selected ? VS.Color.accent : VS.Color.chip))
                 .foregroundStyle(selected ? VS.Color.navPill : VS.Color.textSecondary)
                 .overlay(

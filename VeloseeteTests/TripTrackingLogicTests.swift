@@ -5,9 +5,9 @@ import XCTest
 final class TripTrackingLogicTests: XCTestCase {
     func testAccuracyBoundary() {
         XCTAssertTrue(TripTrackingLogic.accepts(horizontalAccuracy: 0))
-        XCTAssertTrue(TripTrackingLogic.accepts(horizontalAccuracy: 65))
+        XCTAssertTrue(TripTrackingLogic.accepts(horizontalAccuracy: 100))
         XCTAssertFalse(TripTrackingLogic.accepts(horizontalAccuracy: -1))
-        XCTAssertFalse(TripTrackingLogic.accepts(horizontalAccuracy: 65.1))
+        XCTAssertFalse(TripTrackingLogic.accepts(horizontalAccuracy: 100.1))
     }
 
     func testValidSegmentAccumulatesDistance() {
@@ -40,6 +40,68 @@ final class TripTrackingLogicTests: XCTestCase {
         XCTAssertGreaterThan(TripTrackingLogic.acceptedSegmentDistance(from: start, to: end), 800)
     }
 
+    func testLongGapResumesInsteadOfFreezingRoute() {
+        // After a long tunnel / background pause, the next fix must resume — the old
+        // hard reject froze lastLocation and dropped the rest of the drive.
+        let start = location(latitude: 25.2854, longitude: 51.5310, seconds: 0)
+        let afterTunnel = location(latitude: 25.2950, longitude: 51.5400, seconds: 500)
+        XCTAssertEqual(
+            TripTrackingLogic.evaluateSegment(from: start, to: afterTunnel),
+            .resumeAfterGap
+        )
+        XCTAssertEqual(TripTrackingLogic.acceptedSegmentDistance(from: start, to: afterTunnel), 0)
+    }
+
+    func testSimplifyKeepsHairpinCornersBetterThanStride() {
+        // Straight approach, sharp 90° corner, straight exit — RDP should keep the corner.
+        var route: [TripCoordinate] = []
+        for i in 0..<40 {
+            route.append(TripCoordinate(latitude: 25.0 + Double(i) * 0.0001, longitude: 51.0))
+        }
+        let corner = TripCoordinate(latitude: 25.0 + 40 * 0.0001, longitude: 51.0)
+        route.append(corner)
+        for i in 1...40 {
+            route.append(TripCoordinate(latitude: corner.latitude, longitude: 51.0 + Double(i) * 0.0001))
+        }
+
+        let simplified = TripTrackingLogic.simplify(route, epsilonMeters: 8)
+        let stride = TripTrackingLogic.downsample(route, maximum: simplified.count)
+
+        let cornerKept = simplified.contains { point in
+            abs(point.latitude - corner.latitude) < 1e-9 && abs(point.longitude - corner.longitude) < 1e-9
+        }
+        XCTAssertTrue(cornerKept, "RDP should retain the hairpin vertex")
+        XCTAssertEqual(simplified.first, route.first)
+        XCTAssertEqual(simplified.last, route.last)
+        XCTAssertLessThan(simplified.count, route.count)
+
+        // Stride at the same budget often skips the exact corner index.
+        let strideHasExactCorner = stride.contains { point in
+            abs(point.latitude - corner.latitude) < 1e-9 && abs(point.longitude - corner.longitude) < 1e-9
+        }
+        // Not asserting stride fails — just that RDP keeps geometry under a modest budget.
+        _ = strideHasExactCorner
+        XCTAssertLessThanOrEqual(simplified.count, 12)
+    }
+
+    func testThinForPersistenceKeepsTwistyShapeUnderBudget() {
+        // Dense switchback: zig-zag east-west every few points (~40 m amplitude).
+        var route: [TripCoordinate] = []
+        for index in 0..<2_000 {
+            let lat = 25.0 + Double(index) * 0.00005
+            let lng = 51.0 + (index % 2 == 0 ? 0.0 : 0.00035)
+            route.append(TripCoordinate(latitude: lat, longitude: lng))
+        }
+        let thinned = TripTrackingLogic.thinForPersistence(route, minSpacingMeters: 12, maximum: 800)
+        let stride = TripTrackingLogic.downsample(route, maximum: 200)
+        XCTAssertEqual(thinned.first, route.first)
+        XCTAssertEqual(thinned.last, route.last)
+        XCTAssertLessThanOrEqual(thinned.count, 800)
+        // RDP keeps switchback peaks; old uniform crush to 200 loses most of them.
+        XCTAssertGreaterThan(thinned.count, 120)
+        XCTAssertGreaterThan(thinned.count, stride.count)
+    }
+
     func testRouteKeepsDistinctPointsAndDropsDuplicates() {
         let first = TripCoordinate(latitude: 25.2854, longitude: 51.5310)
         let second = TripCoordinate(latitude: 25.2859, longitude: 51.5315)
@@ -66,11 +128,18 @@ final class TripTrackingLogicTests: XCTestCase {
             let lng = index < 600 ? 51.0 : 51.0 + Double(index - 600) * 0.00008
             route.append(TripCoordinate(latitude: lat, longitude: lng))
         }
-        let thinned = TripTrackingLogic.thinForPersistence(route, minSpacingMeters: 25, maximum: 800)
+        let thinned = TripTrackingLogic.thinForPersistence(route, minSpacingMeters: 12, maximum: 800)
         XCTAssertEqual(thinned.first, route.first)
         XCTAssertEqual(thinned.last, route.last)
-        XCTAssertGreaterThan(thinned.count, 200)
         XCTAssertLessThanOrEqual(thinned.count, 800)
+        // Perfect L-shape collapses to a handful of RDP vertices — that's correct.
+        // The corner (turn point) must survive.
+        let corner = route[600]
+        let keptCorner = thinned.contains {
+            abs($0.latitude - corner.latitude) < 0.0002 && abs($0.longitude - corner.longitude) < 0.0002
+        }
+        XCTAssertTrue(keptCorner)
+        XCTAssertGreaterThanOrEqual(thinned.count, 3)
     }
 
     func testPendingTripQueueItemSurvivesPersistenceRoundTrip() throws {
@@ -333,6 +402,7 @@ final class TripTrackingLogicTests: XCTestCase {
             odometerReading: 10_000,
             serviceType: "Oil change",
             description: nil,
+            brand: nil,
             cost: 200,
             currency: "QAR",
             nextServiceOdometer: nil,

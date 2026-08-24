@@ -654,6 +654,7 @@ final class DataStore: ObservableObject {
         }
     }
 
+    /// Saves a service record only. Never updates `vehicle.currentOdometer`.
     func saveServiceLog(id: String?, input: FirestoreRepository.ServiceLogInput) async throws {
         guard let userId = AuthService.shared.userId else {
             throw NSError(domain: "Veloseete", code: 401, userInfo: [NSLocalizedDescriptionKey: "Not signed in"])
@@ -672,6 +673,7 @@ final class DataStore: ObservableObject {
             odometerReading: input.odometerReading,
             serviceType: input.serviceType,
             description: input.description,
+            brand: input.brand,
             cost: input.cost,
             currency: input.currency,
             nextServiceOdometer: input.nextServiceOdometer,
