@@ -116,7 +116,13 @@ enum DriveMoodLogic {
         }
 
         let thirst = thirstValue(score: state.score, baselineL100: baselineL100)
-        updateEfficiencyReserve(state: &state, thirst: thirst, at: at, isPaused: false)
+        updateEfficiencyReserve(
+            state: &state,
+            thirst: thirst,
+            speedKmh: clampedSpeed,
+            at: at,
+            isPaused: false
+        )
 
         return snapshot(
             score: state.score,
@@ -125,7 +131,11 @@ enum DriveMoodLogic {
             lastEvent: state.lastEvent,
             lastEventAt: state.lastEventAt,
             now: at,
-            efficiencyReserve: state.efficiencyReserve,
+            efficiencyReserve: displayedEfficiency(
+                reserve: state.efficiencyReserve,
+                speedKmh: clampedSpeed,
+                thirst: thirst
+            ),
             speedSamplesKmh: state.samples.map(\.speedKmh)
         )
     }
@@ -165,6 +175,7 @@ enum DriveMoodLogic {
     private static func updateEfficiencyReserve(
         state: inout State,
         thirst: Double,
+        speedKmh: Double,
         at: Date,
         isPaused: Bool
     ) {
@@ -181,9 +192,27 @@ enum DriveMoodLogic {
         state.lastReserveUpdate = at
         guard dt > 0 else { return }
 
-        let drain = thirst * dt * 0.024
-        let recover = (1 - thirst) * dt * 0.007
+        // Faster cruise pulls the cushion down even without harsh spikes.
+        let speedPressure = speedPressure(speedKmh)
+        let drain = (thirst * 0.034 + speedPressure * 0.03) * dt
+        let recover = (1 - thirst) * (1 - speedPressure * 0.9) * dt * 0.009
         state.efficiencyReserve = min(1, max(0, state.efficiencyReserve - drain + recover))
+    }
+
+    /// Instant HUD response: higher speed / thirst pulls the arc tip toward the pump.
+    private static func displayedEfficiency(
+        reserve: Double,
+        speedKmh: Double,
+        thirst: Double
+    ) -> Double {
+        let speed = speedPressure(speedKmh)
+        let livePull = speed * (0.38 + thirst * 0.22)
+        return min(1, max(0, reserve * (1 - livePull)))
+    }
+
+    /// 0 around city cruise, 1 at hard highway pace.
+    private static func speedPressure(_ speedKmh: Double) -> Double {
+        min(1, max(0, (speedKmh - 45) / 70))
     }
 
     private static func registerHarsh(
@@ -199,6 +228,8 @@ enum DriveMoodLogic {
         state.harshCount += 1
         state.smoothSeconds = 0
         state.score = max(18, state.score - penalty)
+        // Throttle events punch the efficiency cushion immediately.
+        state.efficiencyReserve = max(0, state.efficiencyReserve - penalty * 0.022)
         state.lastEvent = event
         state.lastEventAt = at
     }

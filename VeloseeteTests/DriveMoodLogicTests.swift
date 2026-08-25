@@ -112,6 +112,59 @@ final class DriveMoodLogicTests: XCTestCase {
         XCTAssertLessThan(last.efficiencyReserve, first.efficiencyReserve)
     }
 
+    func testFasterSpeedPullsEfficiencyArcDown() {
+        var warmed = DriveMoodLogic.State(score: 48, efficiencyReserve: 0.9)
+        let start = Date()
+        _ = DriveMoodLogic.ingest(
+            state: &warmed,
+            speedKmh: 60,
+            at: start,
+            isPaused: false,
+            baselineL100: 8
+        )
+
+        var slowState = warmed
+        var fastState = warmed
+        let at = start.addingTimeInterval(2)
+        let slow = DriveMoodLogic.ingest(
+            state: &slowState,
+            speedKmh: 52,
+            at: at,
+            isPaused: false,
+            baselineL100: 8
+        )
+        let fast = DriveMoodLogic.ingest(
+            state: &fastState,
+            speedKmh: 118,
+            at: at,
+            isPaused: false,
+            baselineL100: 8
+        )
+
+        XCTAssertLessThan(fast.efficiencyReserve, slow.efficiencyReserve)
+    }
+
+    func testHeavyThrottlePunchesEfficiencyReserve() {
+        var state = DriveMoodLogic.State(efficiencyReserve: 1)
+        let start = Date()
+        _ = DriveMoodLogic.ingest(
+            state: &state,
+            speedKmh: 40,
+            at: start,
+            isPaused: false,
+            baselineL100: 8
+        )
+        let before = state.efficiencyReserve
+        _ = DriveMoodLogic.ingest(
+            state: &state,
+            speedKmh: 70,
+            at: start.addingTimeInterval(2),
+            isPaused: false,
+            baselineL100: 8
+        )
+        XCTAssertLessThan(state.efficiencyReserve, before)
+    }
+
     func testFinalSnapshotMarksSaved() {
         let snap = DriveMoodLogic.finalSnapshot(
             state: DriveMoodLogic.State(score: 82),

@@ -304,15 +304,19 @@ private struct DriveWavyArc: Shape {
 
 // MARK: - Dynamic fuel tank battery
 
-/// Horizontal tank — liquid fills from the left; the pump rides the fill tip.
+/// Horizontal tank — liquid fills from the left.
+/// Pump stays centered: white over empty, dark only where liquid actually overlaps it.
 private struct DriveFuelTankBattery: View {
     let fillLevel: Double?
     var isPaused: Bool = false
     var isLearning: Bool = false
 
+    private let inset: CGFloat = 3
+    private let pumpSize: CGFloat = 18
+
     private var displayFill: Double {
         if let fillLevel { return min(1, max(0.06, fillLevel)) }
-        return 0.42
+        return 0.28
     }
 
     private var statusTint: Color {
@@ -324,7 +328,7 @@ private struct DriveFuelTankBattery: View {
 
     private var liquidColors: [Color] {
         if isLearning {
-            return [VS.Color.textTertiary.opacity(0.35), VS.Color.textTertiary.opacity(0.18)]
+            return [VS.Color.textTertiary.opacity(0.4), VS.Color.textTertiary.opacity(0.2)]
         }
         if displayFill < 0.18 {
             return [VS.Color.routeEnd, VS.Color.warning.opacity(0.8)]
@@ -359,27 +363,31 @@ private struct DriveFuelTankBattery: View {
             }
 
             GeometryReader { geo in
-                let inset: CGFloat = 3
-                let pumpSize: CGFloat = 18
                 let innerW = geo.size.width - inset * 2
                 let innerH = geo.size.height - inset * 2
-                let w = max(10, innerW * displayFill)
-                // Keep the pump on the liquid tip, clamped so it never clips out.
-                let pumpCenterX = min(
-                    max(inset + pumpSize / 2, inset + w - pumpSize * 0.35),
-                    geo.size.width - inset - pumpSize / 2
-                )
+                let liquidW = max(10, innerW * displayFill)
+                // Absolute X where liquid ends — mask must use tank coords, not icon size.
+                let liquidEndX = inset + liquidW
 
                 RoundedRectangle(cornerRadius: 7, style: .continuous)
                     .fill(LinearGradient(colors: liquidColors, startPoint: .leading, endPoint: .trailing))
-                    .frame(width: w, height: innerH)
-                    .position(x: inset + w / 2, y: geo.size.height / 2)
+                    .frame(width: liquidW, height: innerH)
+                    .position(x: inset + liquidW / 2, y: geo.size.height / 2)
                     .opacity(isPaused ? 0.55 : 1)
 
-                // Pump rides the leading edge of the fill (not fixed at center).
-                VSIcon(icon: .gasPump, size: pumpSize, weight: .fill, tint: VS.Color.navPill)
-                    .position(x: pumpCenterX, y: geo.size.height / 2)
-                    .opacity(isPaused ? 0.5 : 1)
+                // Full-tank frames so the mask aligns to the liquid edge, not the 18pt icon.
+                ZStack {
+                    VSIcon(icon: .gasPump, size: pumpSize, weight: .fill, tint: .white.opacity(0.95))
+                        .frame(width: geo.size.width, height: geo.size.height)
+
+                    VSIcon(icon: .gasPump, size: pumpSize, weight: .fill, tint: VS.Color.navPill)
+                        .frame(width: geo.size.width, height: geo.size.height)
+                        .mask(alignment: .leading) {
+                            Rectangle()
+                                .frame(width: liquidEndX, height: geo.size.height)
+                        }
+                }
+                .opacity(isPaused ? 0.5 : 1)
             }
             .animation(.spring(response: 0.5, dampingFraction: 0.85), value: displayFill)
         }

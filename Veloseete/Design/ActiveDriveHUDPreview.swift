@@ -15,7 +15,7 @@ struct ActiveDriveHUDPreview: View {
         base.durationSec = 1458 + Double(tick) * 12
         base.thirst = 0.18 + drainWave * 0.4
         var intel = base.intelligence
-        intel.tankFillLevel = max(0.18, 0.78 - drainWave * 0.45)
+        intel.tankFillLevel = max(0.12, 0.72 - drainWave * 0.58)
         base.intelligence = intel
         return base
     }
