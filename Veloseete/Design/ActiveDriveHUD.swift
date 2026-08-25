@@ -304,7 +304,7 @@ private struct DriveWavyArc: Shape {
 
 // MARK: - Dynamic fuel tank battery
 
-/// Horizontal tank — liquid fills from the left; pump flips black over the fill, white over empty.
+/// Horizontal tank — liquid fills from the left; the pump rides the fill tip.
 private struct DriveFuelTankBattery: View {
     let fillLevel: Double?
     var isPaused: Bool = false
@@ -360,33 +360,28 @@ private struct DriveFuelTankBattery: View {
 
             GeometryReader { geo in
                 let inset: CGFloat = 3
+                let pumpSize: CGFloat = 18
                 let innerW = geo.size.width - inset * 2
                 let innerH = geo.size.height - inset * 2
                 let w = max(10, innerW * displayFill)
+                // Keep the pump on the liquid tip, clamped so it never clips out.
+                let pumpCenterX = min(
+                    max(inset + pumpSize / 2, inset + w - pumpSize * 0.35),
+                    geo.size.width - inset - pumpSize / 2
+                )
 
                 RoundedRectangle(cornerRadius: 7, style: .continuous)
                     .fill(LinearGradient(colors: liquidColors, startPoint: .leading, endPoint: .trailing))
                     .frame(width: w, height: innerH)
                     .position(x: inset + w / 2, y: geo.size.height / 2)
-                    .animation(.spring(response: 0.5, dampingFraction: 0.85), value: displayFill)
                     .opacity(isPaused ? 0.55 : 1)
-            }
 
-            // White pump always; black pump only where liquid sits
-            ZStack {
-                VSIcon(icon: .gasPump, size: 18, weight: .fill, tint: .white.opacity(0.95))
-
-                VSIcon(icon: .gasPump, size: 18, weight: .fill, tint: VS.Color.navPill)
-                    .mask(alignment: .leading) {
-                        GeometryReader { geo in
-                            Rectangle()
-                                .frame(width: max(0, geo.size.width * displayFill))
-                        }
-                    }
-                    .animation(.spring(response: 0.5, dampingFraction: 0.85), value: displayFill)
+                // Pump rides the leading edge of the fill (not fixed at center).
+                VSIcon(icon: .gasPump, size: pumpSize, weight: .fill, tint: VS.Color.navPill)
+                    .position(x: pumpCenterX, y: geo.size.height / 2)
+                    .opacity(isPaused ? 0.5 : 1)
             }
-            .compositingGroup()
-            .opacity(isPaused ? 0.5 : 1)
+            .animation(.spring(response: 0.5, dampingFraction: 0.85), value: displayFill)
         }
         .accessibilityLabel(tankLabel)
     }

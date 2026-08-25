@@ -400,7 +400,19 @@ struct DetailsListView: View {
                     "Garage",
                     subtitle: garageSubtitle,
                     onProfile: onProfile
-                )
+                ) {
+                    Button {
+                        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                        showAddVehicle = true
+                    } label: {
+                        VSIcon(icon: .plusCircle, size: 20, weight: .regular, tint: VS.Color.accent)
+                            .frame(width: 40, height: 40)
+                            .background(VS.Color.chip, in: Circle())
+                            .overlay(Circle().strokeBorder(VS.Color.hairline, lineWidth: 1))
+                    }
+                    .buttonStyle(ScaleButtonStyle())
+                    .accessibilityLabel("Add car")
+                }
 
                 garageErrorBanner
 

@@ -50,7 +50,7 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.veloseete.ios
         PRODUCT_NAME: Veloseete
         MARKETING_VERSION: "1.0.0"
-        CURRENT_PROJECT_VERSION: "28"
+        CURRENT_PROJECT_VERSION: "30"
         INFOPLIST_FILE: Veloseete/Info.plist
         GENERATE_INFOPLIST_FILE: false
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
@@ -103,7 +103,7 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.veloseete.ios.TripWidget
         PRODUCT_NAME: VeloseeteTripWidget
         MARKETING_VERSION: "1.0.0"
-        CURRENT_PROJECT_VERSION: "28"
+        CURRENT_PROJECT_VERSION: "30"
         INFOPLIST_FILE: VeloseeteTripWidget/Info.plist
         GENERATE_INFOPLIST_FILE: false
         DEVELOPMENT_TEAM: X978QRK3WP

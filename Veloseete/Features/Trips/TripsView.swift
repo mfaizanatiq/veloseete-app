@@ -46,7 +46,8 @@ struct TripsView: View {
     @State private var selectedVehicleId: String? = nil
     @State private var selectedTripId: String? = nil
     @State private var mapPosition: MapCameraPosition = .automatic
-    @State private var showTripPermissions = false
+    /// After "Let's roll" prompts for When In Use, start the trip once granted.
+    @State private var pendingManualStartAfterLocation = false
     @State private var reviewPendingTrip: PendingTripSave?
     @State private var isConfirmingAll = false
     @State private var detailTrip: Trip?
@@ -356,16 +357,16 @@ struct TripsView: View {
 
             // Auto-detect tip is the capsule only — no panel banner.
         }
+        .onChange(of: tripPermissions.locationStatus) { _, status in
+            guard pendingManualStartAfterLocation, status.isUsable else { return }
+            pendingManualStartAfterLocation = false
+            syncRecorderVehicle()
+            recorder.startManualTrip()
+        }
         .onDisappear {
             recorder.stopMapFollowUpdates()
             driveDrawerExpanded = false
             driveDrawerDragOffset = 0
-        }
-        .sheet(isPresented: $showTripPermissions) {
-            TripPermissionsOnboardingView {
-                showTripPermissions = false
-            }
-            .veloseeteSheet()
         }
         .sheet(item: $reviewPendingTrip) { pending in
             TripConfirmSheet(pending: pending) { next in
@@ -845,7 +846,7 @@ struct TripsView: View {
             if newValue {
                 tripPermissions.refreshStatuses()
                 guard tripPermissions.locationStatus.supportsBackgroundAutoTrack else {
-                    showTripPermissions = true
+                    requestLocationAccess(for: .autoTrack)
                     return
                 }
             }
@@ -882,6 +883,32 @@ struct TripsView: View {
     private func markAutoTrackNudgePrompted() {
         guard let uid = AuthService.shared.userId else { return }
         UserDefaults.standard.set(true, forKey: autoTrackNudgePromptedKey(for: uid))
+    }
+
+    private enum LocationAccessPurpose {
+        /// Manual "Let's roll" — When In Use is enough.
+        case manualStart
+        /// Background auto-detect — needs Always.
+        case autoTrack
+    }
+
+    /// Ask only for the missing system permission (or Settings if already denied).
+    /// Never opens the full welcome onboarding from drive actions.
+    private func requestLocationAccess(for purpose: LocationAccessPurpose) {
+        tripPermissions.refreshStatuses()
+        switch tripPermissions.locationStatus {
+        case .notDetermined:
+            tripPermissions.requestWhenInUseLocation()
+        case .whenInUse:
+            if purpose == .autoTrack {
+                tripPermissions.requestAlwaysLocation()
+            }
+            // Manual start is already usable in whenInUse — caller shouldn't reach here.
+        case .always:
+            break
+        case .denied, .restricted:
+            tripPermissions.openSettings()
+        }
     }
 
     @ViewBuilder
@@ -1010,8 +1037,10 @@ struct TripsView: View {
                 }
             } else {
                 PrimaryCTAButton(title: TrackyVoice.startCTA(), icon: .play) {
+                    tripPermissions.refreshStatuses()
                     guard tripPermissions.locationStatus.isUsable else {
-                        showTripPermissions = true
+                        pendingManualStartAfterLocation = true
+                        requestLocationAccess(for: .manualStart)
                         return
                     }
                     syncRecorderVehicle()
@@ -1525,7 +1554,7 @@ struct TripsView: View {
                 .padding(.horizontal, 28)
             if tripPermissions.locationStatus != .always {
                 Button {
-                    showTripPermissions = true
+                    requestLocationAccess(for: .autoTrack)
                 } label: {
                     HStack(spacing: 8) {
                         VSIcon(icon: .mapPin, size: 18, weight: .fill, tint: VS.Color.navPill)
