@@ -334,7 +334,8 @@ enum InsightGenerator {
         var bestEfficiency: Double?
         var longestFillStretch = 0.0
         var efficiencyIntervals: [Double] = []
-        for index in 1..<vehicleLogs.count {
+        // indices.dropFirst() is safe when empty — `1..<0` fatals in Swift.
+        for index in vehicleLogs.indices.dropFirst() {
             let previous = vehicleLogs[index - 1]
             let current = vehicleLogs[index]
             let stretch = current.odometerReading - previous.odometerReading
@@ -433,7 +434,7 @@ enum InsightGenerator {
         }
 
         func dateWhenFillStretch(_ target: Double) -> Date? {
-            for index in 1..<vehicleLogs.count {
+            for index in vehicleLogs.indices.dropFirst() {
                 let stretch = vehicleLogs[index].odometerReading - vehicleLogs[index - 1].odometerReading
                 if stretch >= target { return vehicleLogs[index].timestamp }
             }
@@ -452,7 +453,7 @@ enum InsightGenerator {
         }
 
         func eachFullTankEfficiency(_ body: (Date, Double) -> Bool) -> Date? {
-            for index in 1..<vehicleLogs.count {
+            for index in vehicleLogs.indices.dropFirst() {
                 let previous = vehicleLogs[index - 1]
                 let current = vehicleLogs[index]
                 guard current.isFullTank, previous.isFullTank else { continue }
@@ -824,7 +825,7 @@ enum InsightGenerator {
         var highlights: [PersonalHighlight] = []
 
         var bestEfficiency: Double?
-        for index in 1..<vehicleLogs.count {
+        for index in vehicleLogs.indices.dropFirst() {
             let previous = vehicleLogs[index - 1]
             let current = vehicleLogs[index]
             guard current.isFullTank, previous.isFullTank else { continue }
@@ -847,7 +848,7 @@ enum InsightGenerator {
         }
 
         var longestKm = 0.0
-        for index in 1..<vehicleLogs.count {
+        for index in vehicleLogs.indices.dropFirst() {
             let distance = vehicleLogs[index].odometerReading - vehicleLogs[index - 1].odometerReading
             if distance > longestKm { longestKm = distance }
         }

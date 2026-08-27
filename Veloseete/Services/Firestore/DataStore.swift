@@ -837,4 +837,170 @@ final class DataStore: ObservableObject {
             pendingTripCount: TripRecordingService.shared.pendingSaves.count
         )
     }
+
+    #if DEBUG
+    /// Portfolio screenshots — in-memory garage / fuels / driver without Firebase.
+    func seedProductShots() {
+        let coolray = "demo-coolray"
+        let desert = "demo-desert"
+        let now = Date()
+
+        userDocument = UserDocument(
+            userId: "portfolio-demo",
+            profile: UserProfile(
+                userName: "Faizan",
+                defaultCurrency: "QAR",
+                defaultDistanceUnit: "km"
+            ),
+            currentVehicleId: coolray
+        )
+
+        vehicles = [
+            Vehicle(
+                id: coolray,
+                nickname: "Coolray",
+                make: "Geely",
+                model: "Coolray",
+                fuelType: "petrol",
+                currentOdometer: 42_180,
+                fuelTankCapacity: 45,
+                currency: "QAR",
+                fuelVolumeUnit: "L",
+                icon: "suv",
+                paintColor: "white",
+                createdAt: now.addingTimeInterval(-400 * 86_400),
+                isArchived: false,
+                archivedAt: nil
+            ),
+            Vehicle(
+                id: desert,
+                nickname: "Desert Runner",
+                make: "Toyota",
+                model: "Land Cruiser",
+                fuelType: "petrol",
+                currentOdometer: 98_420,
+                fuelTankCapacity: 110,
+                currency: "QAR",
+                fuelVolumeUnit: "L",
+                icon: "suv",
+                paintColor: "black",
+                createdAt: now.addingTimeInterval(-220 * 86_400),
+                isArchived: false,
+                archivedAt: nil
+            ),
+            Vehicle(
+                id: "demo-pearl",
+                nickname: "Pearl",
+                make: "Toyota",
+                model: "Camry",
+                fuelType: "hybrid",
+                currentOdometer: 18_640,
+                fuelTankCapacity: 50,
+                currency: "QAR",
+                fuelVolumeUnit: "L",
+                icon: "sedan",
+                paintColor: "silver",
+                createdAt: now.addingTimeInterval(-90 * 86_400),
+                isArchived: false,
+                archivedAt: nil
+            ),
+        ]
+
+        fuelLogs = [
+            FuelLog(
+                id: "f1", vehicleId: coolray,
+                timestamp: now.addingTimeInterval(-45 * 86_400),
+                odometerReading: 40_820, fuelVolume: 38.2, pricePerUnit: 2.10,
+                totalCost: 80.22, currency: "QAR", isFullTank: true,
+                stationName: "WOQOD Al Waab"
+            ),
+            FuelLog(
+                id: "f2", vehicleId: coolray,
+                timestamp: now.addingTimeInterval(-28 * 86_400),
+                odometerReading: 41_290, fuelVolume: 36.5, pricePerUnit: 2.12,
+                totalCost: 77.38, currency: "QAR", isFullTank: true,
+                stationName: "Shell Nuaija"
+            ),
+            FuelLog(
+                id: "f3", vehicleId: coolray,
+                timestamp: now.addingTimeInterval(-14 * 86_400),
+                odometerReading: 41_760, fuelVolume: 37.8, pricePerUnit: 2.15,
+                totalCost: 81.27, currency: "QAR", isFullTank: true,
+                stationName: "Total Energies"
+            ),
+            FuelLog(
+                id: "f4", vehicleId: coolray,
+                timestamp: now.addingTimeInterval(-3 * 86_400),
+                odometerReading: 42_180, fuelVolume: 35.4, pricePerUnit: 2.18,
+                totalCost: 77.17, currency: "QAR", isFullTank: true,
+                stationName: "WOQOD Al Waab"
+            ),
+            FuelLog(
+                id: "f5", vehicleId: desert,
+                timestamp: now.addingTimeInterval(-10 * 86_400),
+                odometerReading: 97_900, fuelVolume: 72.0, pricePerUnit: 2.10,
+                totalCost: 151.2, currency: "QAR", isFullTank: true,
+                stationName: "WOQOD Pearl"
+            ),
+            FuelLog(
+                id: "f6", vehicleId: desert,
+                timestamp: now.addingTimeInterval(-2 * 86_400),
+                odometerReading: 98_420, fuelVolume: 68.5, pricePerUnit: 2.12,
+                totalCost: 145.22, currency: "QAR", isFullTank: true,
+                stationName: "Shell Airport"
+            ),
+        ]
+
+        trips = [
+            Trip(
+                id: "t1", vehicleId: coolray,
+                startedAt: now.addingTimeInterval(-2 * 86_400),
+                endedAt: now.addingTimeInterval(-2 * 86_400 + 1_500),
+                distanceKm: 18.6, durationSec: 1_500, avgSpeedKmh: 44, maxSpeedKmh: 78,
+                startCoordinate: .init(latitude: 25.2854, longitude: 51.5310),
+                endCoordinate: .init(latitude: 25.3170, longitude: 51.4800),
+                route: [], source: "auto"
+            ),
+            Trip(
+                id: "t2", vehicleId: coolray,
+                startedAt: now.addingTimeInterval(-86_400),
+                endedAt: now.addingTimeInterval(-86_400 + 1_200),
+                distanceKm: 12.4, durationSec: 1_200, avgSpeedKmh: 37, maxSpeedKmh: 68,
+                startCoordinate: nil, endCoordinate: nil, route: [], source: "auto"
+            ),
+            Trip(
+                id: "t3", vehicleId: coolray,
+                startedAt: now.addingTimeInterval(-20_000),
+                endedAt: now.addingTimeInterval(-18_500),
+                distanceKm: 8.1, durationSec: 1_100, avgSpeedKmh: 26, maxSpeedKmh: 54,
+                startCoordinate: nil, endCoordinate: nil, route: [], source: "manual"
+            ),
+            Trip(
+                id: "t4", vehicleId: desert,
+                startedAt: now.addingTimeInterval(-3 * 86_400),
+                endedAt: now.addingTimeInterval(-3 * 86_400 + 2_400),
+                distanceKm: 42.0, durationSec: 2_400, avgSpeedKmh: 63, maxSpeedKmh: 110,
+                startCoordinate: nil, endCoordinate: nil, route: [], source: "auto"
+            ),
+        ]
+
+        serviceLogs = [
+            ServiceLog(
+                id: "s1", vehicleId: coolray,
+                timestamp: now.addingTimeInterval(-60 * 86_400),
+                odometerReading: 40_200, serviceType: "Oil Change",
+                description: "Synthetic 5W-30", brand: "Castrol",
+                cost: 280, currency: "QAR",
+                nextServiceOdometer: 45_000, nextServiceDate: nil
+            ),
+        ]
+
+        manufacturerStandard = 6.35
+        archivedVehicles = []
+        isLoading = false
+        isLoaded = true
+        loadError = nil
+        loadWarnings = []
+    }
+    #endif
 }

@@ -56,6 +56,21 @@ struct VeloseeteApp: App {
                 ActiveDriveHUDPreview()
                     .preferredColorScheme(.dark)
                     .tint(VS.Color.accent)
+            } else if ProcessInfo.processInfo.arguments.contains("-TripsHeroPreview")
+                || ProcessInfo.processInfo.arguments.contains("-TripsHeroPreviewDrives")
+            {
+                TripsHeroPreview()
+                    .preferredColorScheme(.dark)
+                    .tint(VS.Color.accent)
+            } else if ProcessInfo.processInfo.arguments.contains("-ShotGarage")
+                || ProcessInfo.processInfo.arguments.contains("-ShotFuels")
+                || ProcessInfo.processInfo.arguments.contains("-ShotDriver")
+                || ProcessInfo.processInfo.arguments.contains("-ProductShotsPreview")
+            {
+                ProductShotsPreview()
+            } else if ProcessInfo.processInfo.arguments.contains("-MapHeroPreview") {
+                MapHeroPreview()
+                    .preferredColorScheme(.dark)
             } else {
                 appRoot
             }
