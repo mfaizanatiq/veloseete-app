@@ -23,17 +23,15 @@ struct FuelHistoryView: View {
         let distance: Double
     }
 
+    private var drivenKmByFillId: [String: Double] {
+        FillIntervalDistance.drivenKmByFillId(logs: store.fuelLogsForCurrentVehicle)
+    }
+
     private var groups: [MonthGroup] {
         let logs = store.fuelLogsForCurrentVehicle.sorted { $0.timestamp > $1.timestamp }
         guard !logs.isEmpty else { return [] }
 
-        // Distance credited to the month of the fill that closes each odometer interval.
-        var distanceByLogId: [String: Double] = [:]
-        let ascending = logs.sorted { $0.timestamp < $1.timestamp }
-        for index in 1..<ascending.count {
-            let delta = ascending[index].odometerReading - ascending[index - 1].odometerReading
-            if delta > 0 { distanceByLogId[ascending[index].id] = delta }
-        }
+        let distanceByLogId = drivenKmByFillId
 
         let calendar = Calendar.current
         var ordered: [String] = []
@@ -157,7 +155,8 @@ struct FuelHistoryView: View {
                             RefuelRowView(
                                 log: log,
                                 distanceUnit: store.defaultDistanceUnit,
-                                volumeUnit: volumeUnit
+                                volumeUnit: volumeUnit,
+                                drivenKm: drivenKmByFillId[log.id]
                             )
                             Image(systemName: "chevron.right")
                                 .font(.system(size: 12, weight: .semibold))

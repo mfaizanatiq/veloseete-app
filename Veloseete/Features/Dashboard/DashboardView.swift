@@ -113,7 +113,8 @@ struct DashboardView: View {
     }
 
     private func recentSection(_ logs: [FuelLog]) -> some View {
-        VStack(alignment: .leading, spacing: VS.Spacing.stack) {
+        let drivenById = FillIntervalDistance.drivenKmByFillId(logs: store.fuelLogsForCurrentVehicle)
+        return VStack(alignment: .leading, spacing: VS.Spacing.stack) {
             HStack(alignment: .firstTextBaseline) {
                 VSSectionHeader(title: TrackyVoice.Soft.recentFills)
                 Spacer(minLength: 8)
@@ -159,7 +160,8 @@ struct DashboardView: View {
                                 RefuelRowView(
                                     log: log,
                                     distanceUnit: store.defaultDistanceUnit,
-                                    volumeUnit: vehicle?.fuelVolumeUnit ?? VolumeFormat.liters
+                                    volumeUnit: vehicle?.fuelVolumeUnit ?? VolumeFormat.liters,
+                                    drivenKm: drivenById[log.id]
                                 )
                                 Image(systemName: "chevron.right")
                                     .font(.system(size: 12, weight: .semibold))
@@ -406,6 +408,8 @@ struct RefuelRowView: View {
     let log: FuelLog
     let distanceUnit: String
     var volumeUnit: String = VolumeFormat.liters
+    /// Kilometers driven in the interval this fill closes (since previous fill). Nil = first fill / unknown.
+    var drivenKm: Double? = nil
 
     var body: some View {
         HStack {
@@ -413,7 +417,7 @@ struct RefuelRowView: View {
                 Text(log.timestamp.formatted(date: .abbreviated, time: .omitted))
                     .font(VS.Typography.heading(14))
                     .foregroundStyle(VS.Color.textPrimary)
-                Text("\(VolumeFormat.format(log.fuelVolume, unit: volumeUnit)) · \(DistanceFormat.formatOdometer(log.odometerReading, unit: distanceUnit))")
+                Text(subtitle)
                     .font(VS.Typography.body(12))
                     .foregroundStyle(VS.Color.textTertiary)
                 if let station = log.stationName, !station.isEmpty {
@@ -429,5 +433,33 @@ struct RefuelRowView: View {
                 .foregroundStyle(VS.Color.textPrimary)
         }
         .padding(.vertical, 10)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(accessibilitySummary)
+    }
+
+    private var subtitle: String {
+        let volume = VolumeFormat.format(log.fuelVolume, unit: volumeUnit)
+        if let drivenKm, drivenKm > 0 {
+            return "\(volume) · \(DistanceFormat.formatDistance(drivenKm, unit: distanceUnit)) driven"
+        }
+        return "\(volume) · First fill"
+    }
+
+    private var accessibilitySummary: String {
+        let cost = CurrencyFormat.format(log.totalCost, currency: log.currency)
+        return "\(log.timestamp.formatted(date: .abbreviated, time: .omitted)), \(subtitle), \(cost)"
+    }
+}
+
+/// Odometer span closed by each fill (previous → this reading). First fill has no entry.
+enum FillIntervalDistance {
+    static func drivenKmByFillId(logs: [FuelLog]) -> [String: Double] {
+        let ascending = logs.sorted { $0.timestamp < $1.timestamp }
+        var map: [String: Double] = [:]
+        for index in ascending.indices.dropFirst() {
+            let delta = ascending[index].odometerReading - ascending[index - 1].odometerReading
+            if delta > 0 { map[ascending[index].id] = delta }
+        }
+        return map
     }
 }

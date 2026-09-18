@@ -46,6 +46,7 @@
 		698975EF12A294DC28B0C938 /* SplashView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4215F0FDD30582861414A9E /* SplashView.swift */; };
 		6D556A8BB6A6A0C51B46E80F /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 7E90D99435660B2C4EDFDD04 /* PrivacyInfo.xcprivacy */; };
 		6E09CF48C9D87661295B9013 /* EfficiencyFormatTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7F37175C7C18F5DCAA6D8C27 /* EfficiencyFormatTests.swift */; };
+		A1B2C3D4E5F60718293A4B5C /* FillIntervalDistanceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2C3D4E5F60718293A4B5C6D /* FillIntervalDistanceTests.swift */; };
 		7501512F21A76B272AE85F51 /* RefuelSheetView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E2D03F5821346DD9CB163CB /* RefuelSheetView.swift */; };
 		77BDCB559F4E40817A499C77 /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA8C64FAF2E09B5C9D1B38E7 /* Models.swift */; };
 		782EE8DD05D17D34697695F4 /* FirstVehicleOnboardingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 54F58D6F141189CF7CC4F41B /* FirstVehicleOnboardingView.swift */; };
@@ -163,6 +164,7 @@
 		748136528561ED9CFD5E5AE3 /* VeloseeteTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = VeloseeteTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		7E90D99435660B2C4EDFDD04 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		7F37175C7C18F5DCAA6D8C27 /* EfficiencyFormatTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EfficiencyFormatTests.swift; sourceTree = "<group>"; };
+		B2C3D4E5F60718293A4B5C6D /* FillIntervalDistanceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FillIntervalDistanceTests.swift; sourceTree = "<group>"; };
 		7F3FDF18656D6A596D783A1C /* VehicleMark.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VehicleMark.swift; sourceTree = "<group>"; };
 		8602C30F0FCDD1F45331D7B7 /* VehicleLearningModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VehicleLearningModel.swift; sourceTree = "<group>"; };
 		873D378B91DBE12238CE4761 /* AuthService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthService.swift; sourceTree = "<group>"; };
@@ -300,6 +302,7 @@
 			children = (
 				14616EDFBDE7DE5F2CAC1EB6 /* DriveMoodLogicTests.swift */,
 				7F37175C7C18F5DCAA6D8C27 /* EfficiencyFormatTests.swift */,
+				B2C3D4E5F60718293A4B5C6D /* FillIntervalDistanceTests.swift */,
 				3738A185CBBEAC71B33BB6C7 /* LiveDriveIntelligenceLogicTests.swift */,
 				31F93D6D540FE26880482CD8 /* TripTrackingLogicTests.swift */,
 				020629CBE43E82356A644590 /* TripTrackingStressTests.swift */,
@@ -761,6 +764,7 @@
 			files = (
 				AD2679EE80F1B30C0BBB46C8 /* DriveMoodLogicTests.swift in Sources */,
 				6E09CF48C9D87661295B9013 /* EfficiencyFormatTests.swift in Sources */,
+				A1B2C3D4E5F60718293A4B5C /* FillIntervalDistanceTests.swift in Sources */,
 				0A22220FE162A567473FBF24 /* LiveDriveIntelligenceLogicTests.swift in Sources */,
 				032D4284B7BD9687B15C3C1B /* TripTrackingLogicTests.swift in Sources */,
 				C9ACFF4D49EC096289E347E2 /* TripTrackingStressTests.swift in Sources */,
@@ -790,7 +794,7 @@
 				CODE_SIGN_ENTITLEMENTS = VeloseeteTripWidget/VeloseeteTripWidgetDebug.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 33;
+				CURRENT_PROJECT_VERSION = 34;
 				DEVELOPMENT_TEAM = X978QRK3WP;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = VeloseeteTripWidget/Info.plist;
@@ -897,7 +901,7 @@
 				CODE_SIGN_ENTITLEMENTS = Veloseete/VeloseeteDebug.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 33;
+				CURRENT_PROJECT_VERSION = 34;
 				DEVELOPMENT_TEAM = X978QRK3WP;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = Veloseete/Info.plist;
@@ -921,7 +925,7 @@
 				CODE_SIGN_ENTITLEMENTS = Veloseete/Veloseete.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 33;
+				CURRENT_PROJECT_VERSION = 34;
 				DEVELOPMENT_TEAM = X978QRK3WP;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = Veloseete/Info.plist;
@@ -963,7 +967,7 @@
 				CODE_SIGN_ENTITLEMENTS = VeloseeteTripWidget/VeloseeteTripWidget.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 33;
+				CURRENT_PROJECT_VERSION = 34;
 				DEVELOPMENT_TEAM = X978QRK3WP;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = VeloseeteTripWidget/Info.plist;
