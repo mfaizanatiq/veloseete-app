@@ -125,8 +125,10 @@ private struct CarPlayStatusWidgetView: View {
 
             HStack(spacing: 6) {
                 hotPoint(
-                    value: snapshot.efficiencyLPer100Km.map { String(format: "%.1f", $0) } ?? "—",
-                    label: "L/100",
+                    value: snapshot.efficiencyLPer100Km.map {
+                        EfficiencyFormat.displayNumber($0)
+                    } ?? "—",
+                    label: EfficiencyFormat.current.shortLabel,
                     icon: "leaf.fill",
                     compact: true
                 )
@@ -179,8 +181,10 @@ private struct CarPlayStatusWidgetView: View {
 
             HStack(spacing: 8) {
                 hotPoint(
-                    value: snapshot.efficiencyLPer100Km.map { String(format: "%.1f", $0) } ?? "—",
-                    label: "L/100 km",
+                    value: snapshot.efficiencyLPer100Km.map {
+                        EfficiencyFormat.displayNumber($0)
+                    } ?? "—",
+                    label: EfficiencyFormat.current.fullLabel,
                     icon: "leaf.fill",
                     compact: false
                 )

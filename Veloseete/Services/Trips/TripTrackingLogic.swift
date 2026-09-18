@@ -273,12 +273,21 @@ enum TripTrackingLogic {
 }
 
 enum OdometerReconciliation {
-    static func estimated(verifiedKm: Double, trackedKm: Double) -> Double {
-        verifiedKm + max(0, trackedKm)
+    static func estimated(verifiedKm: Double, trackedKm: Double, gpsScale: Double = 1.0) -> Double {
+        VehicleLearningModel.estimatedKm(
+            verifiedKm: verifiedKm,
+            trackedKm: trackedKm,
+            gpsScale: gpsScale
+        )
     }
 
-    static func variance(enteredKm: Double, verifiedKm: Double, trackedKm: Double) -> Double {
-        enteredKm - estimated(verifiedKm: verifiedKm, trackedKm: trackedKm)
+    static func variance(
+        enteredKm: Double,
+        verifiedKm: Double,
+        trackedKm: Double,
+        gpsScale: Double = 1.0
+    ) -> Double {
+        enteredKm - estimated(verifiedKm: verifiedKm, trackedKm: trackedKm, gpsScale: gpsScale)
     }
 }
 

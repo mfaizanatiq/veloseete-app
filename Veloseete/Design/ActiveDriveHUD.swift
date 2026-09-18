@@ -28,6 +28,7 @@ struct ActiveDriveHUDModel: Equatable {
 
 struct ActiveDriveHUDContent: View {
     let model: ActiveDriveHUDModel
+    @ObservedObject private var efficiencyUnit = EfficiencyUnitStore.shared
     var pulseOpacity: Double = 1
 
     var body: some View {
@@ -46,7 +47,10 @@ struct ActiveDriveHUDContent: View {
                 hudDivider
                 hudStat(formatDuration(model.durationSec), "time")
                 hudDivider
-                hudStat(String(format: "%.1f", model.estL100), "L/100")
+                hudStat(
+                    EfficiencyFormat.displayNumber(model.estL100, unit: efficiencyUnit.unit),
+                    efficiencyUnit.unit.shortLabel
+                )
             }
 
             // Range copy left · dynamic tank bar right

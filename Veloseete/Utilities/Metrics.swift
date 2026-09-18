@@ -103,6 +103,23 @@ struct EfficiencyMetrics {
     let recentLogs: [FuelLog]
 }
 
+/// One measured full-tank → full-tank stretch (partial fills between anchors count as fuel).
+struct FullTankEfficiencyInterval: Equatable {
+    let endedAt: Date
+    /// Closing fill id (the full tank that ends this interval).
+    let closingFillId: String
+    let distanceKm: Double
+    let fuelLiters: Double
+
+    var litersPer100km: Double? {
+        EfficiencyFormat.litersPer100km(distanceKm: distanceKm, fuelLiters: fuelLiters)
+    }
+
+    var kmPerLiter: Double? {
+        EfficiencyFormat.kmPerLiter(distanceKm: distanceKm, fuelLiters: fuelLiters)
+    }
+}
+
 enum MetricsCalculator {
     static func compute(vehicle: Vehicle, logs: [FuelLog], now: Date = Date()) -> EfficiencyMetrics {
         let vehicleLogs = logs
@@ -113,9 +130,12 @@ enum MetricsCalculator {
         // A rolling, distance-weighted result is less sensitive to one unusual fill
         // than comparing the brochure against only the latest interval.
         let recentIntervals = intervals.suffix(3)
-        let recentDistance = recentIntervals.reduce(0) { $0 + $1.distance }
-        let recentFuel = recentIntervals.reduce(0) { $0 + $1.fuel }
-        let current = recentDistance > 0 ? (recentFuel / recentDistance) * 100 : nil
+        let recentDistance = recentIntervals.reduce(0) { $0 + $1.distanceKm }
+        let recentFuel = recentIntervals.reduce(0) { $0 + $1.fuelLiters }
+        let current = EfficiencyFormat.litersPer100km(
+            totalDistanceKm: recentDistance,
+            totalFuelLiters: recentFuel
+        )
 
         let cal = Calendar.current
         let startOfMonth = cal.date(from: cal.dateComponents([.year, .month], from: now)) ?? now
@@ -132,9 +152,12 @@ enum MetricsCalculator {
         // Attribute a fill-to-fill interval to the month in which its closing fill occurred.
         // This excludes the first fill (which has no measured distance) and all partial fills.
         let monthIntervals = intervals.filter { $0.endedAt >= startOfMonth }
-        let totalDistance = monthIntervals.reduce(0) { $0 + $1.distance }
-        let intervalFuel = monthIntervals.reduce(0) { $0 + $1.fuel }
-        let avgEfficiency = totalDistance > 0 ? (intervalFuel / totalDistance) * 100 : nil
+        let totalDistance = monthIntervals.reduce(0) { $0 + $1.distanceKm }
+        let intervalFuel = monthIntervals.reduce(0) { $0 + $1.fuelLiters }
+        let avgEfficiency = EfficiencyFormat.litersPer100km(
+            totalDistanceKm: totalDistance,
+            totalFuelLiters: intervalFuel
+        )
 
         let recent = Array(vehicleLogs.reversed().prefix(5))
 
@@ -150,15 +173,33 @@ enum MetricsCalculator {
         )
     }
 
-    private struct FullTankInterval {
-        let endedAt: Date
-        let distance: Double
-        let fuel: Double
+    /// Measured full-tank intervals for a vehicle (partial fills between anchors included in fuel).
+    static func fullTankIntervals(vehicleId: String, logs: [FuelLog]) -> [FullTankEfficiencyInterval] {
+        let vehicleLogs = logs
+            .filter { $0.vehicleId == vehicleId }
+            .sorted { $0.timestamp < $1.timestamp }
+        return fullTankIntervals(in: vehicleLogs)
     }
 
-    private static func fullTankIntervals(in logs: [FuelLog]) -> [FullTankInterval] {
+    /// Economy for the tank closed by this fill, or nil if it isn’t a valid full→full close.
+    static func intervalEfficiency(
+        closingFillId: String,
+        vehicleId: String,
+        logs: [FuelLog]
+    ) -> FullTankEfficiencyInterval? {
+        fullTankIntervals(vehicleId: vehicleId, logs: logs)
+            .first { $0.closingFillId == closingFillId }
+    }
+
+    static func bestLitersPer100km(vehicleId: String, logs: [FuelLog]) -> Double? {
+        fullTankIntervals(vehicleId: vehicleId, logs: logs)
+            .compactMap(\.litersPer100km)
+            .min()
+    }
+
+    private static func fullTankIntervals(in logs: [FuelLog]) -> [FullTankEfficiencyInterval] {
         guard logs.count >= 2 else { return [] }
-        var result: [FullTankInterval] = []
+        var result: [FullTankEfficiencyInterval] = []
         var anchor: FuelLog?
         var fuelSinceAnchor = 0.0
 
@@ -173,7 +214,14 @@ enum MetricsCalculator {
             guard log.isFullTank else { continue }
             let distance = log.odometerReading - currentAnchor.odometerReading
             if distance > 0 {
-                result.append(FullTankInterval(endedAt: log.timestamp, distance: distance, fuel: fuelSinceAnchor))
+                result.append(
+                    FullTankEfficiencyInterval(
+                        endedAt: log.timestamp,
+                        closingFillId: log.id,
+                        distanceKm: distance,
+                        fuelLiters: fuelSinceAnchor
+                    )
+                )
             }
             anchor = log
             fuelSinceAnchor = 0
@@ -713,7 +761,7 @@ enum InsightGenerator {
             quest(
                 id: "best-tank", emoji: "🏆", title: "Best tank", category: .efficiency,
                 current: bestEfficiency == nil ? 0 : 1, target: 1, unitLabel: "PB",
-                earnedDetail: bestEfficiency.map { String(format: "%.1f L/100km personal best", $0) } ?? "Earned",
+                earnedDetail: bestEfficiency.map { "\(EfficiencyFormat.format($0)) personal best" } ?? "Earned",
                 lockedDetail: "Log two full tanks to set a personal best",
                 unlockedAt: dateWhenBestTank()
             ),
@@ -721,7 +769,7 @@ enum InsightGenerator {
                 id: "spec-beater", emoji: "✨", title: "Spec beater", category: .efficiency,
                 current: beatsSpec ? 1 : 0, target: 1, unitLabel: "win",
                 earnedDetail: "Under the factory brochure number",
-                lockedDetail: "Beat manufacturer L/100km on a tank",
+                lockedDetail: "Beat manufacturer \(EfficiencyFormat.current.fullLabel) on a tank",
                 unlockedAt: manufacturerStandard.flatMap { spec in dateWhenEfficiency { $0 <= spec } }
             ),
             {
@@ -743,14 +791,14 @@ enum InsightGenerator {
                     emoji: "👑",
                     title: "Efficient king",
                     detail: efficientKing
-                        ? (avgEfficiency.map { String(format: "Avg %.1f L/100 — throne secured", $0) } ?? "Crowned")
+                        ? (avgEfficiency.map { "Avg \(EfficiencyFormat.format($0, style: .short)) — throne secured" } ?? "Crowned")
                         : (manufacturerStandard != nil
                             ? "Average ≤ 95% of brochure spec"
-                            : "Post a personal best at or under 7.5 L/100"),
+                            : "Post a personal best at or under \(EfficiencyFormat.format(7.5))"),
                     unlocked: efficientKing,
                     category: .efficiency,
                     progress: kingProgress,
-                    progressLabel: avgEfficiency.map { String(format: "Avg %.1f L/100", $0) } ?? "Need full-tank pairs",
+                    progressLabel: avgEfficiency.map { "Avg \(EfficiencyFormat.format($0, style: .short))" } ?? "Need full-tank pairs",
                     unlockedAt: efficientKing ? dateWhenAvgBeatsSpec() : nil
                 )
             }(),
@@ -768,12 +816,14 @@ enum InsightGenerator {
                     emoji: "💧",
                     title: "Lean machine",
                     detail: leanUnlocked
-                        ? (bestEfficiency.map { String(format: "Best %.1f L/100km", $0) } ?? "Lean")
-                        : "Land a tank at or under 7.0 L/100km",
+                        ? (bestEfficiency.map { "Best \(EfficiencyFormat.format($0))" } ?? "Lean")
+                        : "Land a tank at or under \(EfficiencyFormat.format(7.0))",
                     unlocked: leanUnlocked,
                     category: .efficiency,
                     progress: leanProgress,
-                    progressLabel: bestEfficiency.map { String(format: "Best %.1f · goal 7.0", $0) } ?? "Need full-tank pairs",
+                    progressLabel: bestEfficiency.map {
+                        "Best \(EfficiencyFormat.displayNumber($0)) · goal \(EfficiencyFormat.displayNumber(7.0))"
+                    } ?? "Need full-tank pairs",
                     unlockedAt: leanUnlocked ? dateWhenEfficiency { $0 <= 7.0 } : nil
                 )
             }(),
@@ -842,7 +892,7 @@ enum InsightGenerator {
                     id: "best-tank",
                     emoji: "🏆",
                     label: "Best tank",
-                    value: String(format: "%.1f L/100km", bestEfficiency)
+                    value: EfficiencyFormat.format(bestEfficiency)
                 )
             )
         }
@@ -936,17 +986,12 @@ enum InsightGenerator {
         if let current = metrics.current,
            let manufacturerStandard,
            current <= manufacturerStandard {
-            let saved = manufacturerStandard - current
             insights.append(
                 FunInsight(
                     kind: .celebrate,
                     emoji: "✨",
                     title: "Beating the factory number",
-                    message: String(
-                        format: "Your last tanks came in %.1f L/100km under the %.1f brochure spec.",
-                        saved,
-                        manufacturerStandard
-                    )
+                    message: "Your last tanks came in at \(EfficiencyFormat.format(current)) versus the \(EfficiencyFormat.format(manufacturerStandard)) brochure spec."
                 )
             )
         }

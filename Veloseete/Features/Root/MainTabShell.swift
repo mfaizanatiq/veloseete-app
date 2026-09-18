@@ -2231,6 +2231,7 @@ struct ProfileView: View {
     @EnvironmentObject private var auth: AuthService
     @EnvironmentObject private var store: DataStore
     @EnvironmentObject private var avatarStore: ProfileAvatarStore
+    @ObservedObject private var efficiencyUnit = EfficiencyUnitStore.shared
     @Environment(\.dismiss) private var dismiss
     @State private var selectedPhoto: PhotosPickerItem?
     @State private var avatarError: String?
@@ -2335,6 +2336,18 @@ struct ProfileView: View {
                     LabeledContent("Name", value: store.userName.isEmpty ? "—" : store.userName)
                     LabeledContent("Currency", value: store.userDocument?.profile.defaultCurrency ?? "QAR")
                     LabeledContent("Distance", value: store.defaultDistanceUnit == "mi" ? "Miles" : "Kilometres")
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("Fuel efficiency")
+                            .font(VS.Typography.body(13))
+                            .foregroundStyle(VS.Color.textSecondary)
+                        EfficiencyUnitToggle()
+                        Text(efficiencyUnit.unit.higherIsBetter
+                            ? "Higher km/L is better"
+                            : "Lower L/100km is better")
+                            .font(VS.Typography.body(11))
+                            .foregroundStyle(VS.Color.textTertiary)
+                    }
+                    .padding(.vertical, 4)
 
                     VStack(alignment: .leading, spacing: 4) {
                         LabeledContent("Email", value: auth.user?.email ?? "Hidden / not shared")
@@ -2846,6 +2859,7 @@ struct ProfileView: View {
 
 private struct EditAccountDrawer: View {
     @Environment(\.dismiss) private var dismiss
+    @ObservedObject private var efficiencyUnit = EfficiencyUnitStore.shared
     @Binding var draftName: String
     @Binding var draftCurrency: String
     @Binding var draftDistance: String
@@ -2908,6 +2922,18 @@ private struct EditAccountDrawer: View {
                             distanceChip("km", title: "Kilometres")
                             distanceChip("mi", title: "Miles")
                         }
+                    }
+
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("Fuel efficiency")
+                            .font(VS.Typography.body(12, weight: .medium))
+                            .foregroundStyle(VS.Color.textTertiary)
+                        EfficiencyUnitToggle()
+                        Text(efficiencyUnit.unit.higherIsBetter
+                            ? "Higher numbers mean better economy"
+                            : "Lower numbers mean better economy")
+                            .font(VS.Typography.body(11))
+                            .foregroundStyle(VS.Color.textTertiary)
                     }
 
                     if let errorMessage {

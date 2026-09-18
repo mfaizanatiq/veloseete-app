@@ -39,9 +39,11 @@ enum TrackyVoice {
         }
     }
 
-    static func odometerCaption(live: Bool, pendingIn: Bool) -> String {
+    static func odometerCaption(live: Bool, pendingIn: Bool, learning: Bool = false, calibrated: Bool = false) -> String {
         if live { return "Tracky count · live" }
         if pendingIn { return "Tracky count · pending in" }
+        if calibrated { return "Tracky count · calibrated" }
+        if learning { return "Tracky count · learning" }
         return "Tracky count · estimated"
     }
 

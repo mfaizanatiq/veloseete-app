@@ -3,6 +3,7 @@ import SwiftUI
 struct DashboardView: View {
     @EnvironmentObject private var store: DataStore
     @EnvironmentObject private var avatarStore: ProfileAvatarStore
+    @ObservedObject private var efficiencyUnit = EfficiencyUnitStore.shared
     var onProfile: () -> Void
 
     @State private var showRefuel = false
@@ -38,7 +39,8 @@ struct DashboardView: View {
                         efficiency: metrics.current,
                         manufacturerStandard: store.manufacturerStandard,
                         refuelCount: metrics.efficiencySampleCount,
-                        distanceUnit: store.defaultDistanceUnit
+                        distanceUnit: store.defaultDistanceUnit,
+                        efficiencyUnit: efficiencyUnit.unit
                     )
 
                     PrimaryCTAButton {
@@ -46,7 +48,12 @@ struct DashboardView: View {
                         showRefuel = true
                     }
 
-                    MetricsRow(metrics: metrics, currency: vehicle.currency, unit: store.defaultDistanceUnit)
+                    MetricsRow(
+                        metrics: metrics,
+                        currency: vehicle.currency,
+                        unit: store.defaultDistanceUnit,
+                        efficiencyUnit: efficiencyUnit.unit
+                    )
 
                     recentSection(metrics.recentLogs)
                 } else {
@@ -179,6 +186,7 @@ struct HeroCard: View {
     let manufacturerStandard: Double?
     let refuelCount: Int
     let distanceUnit: String
+    var efficiencyUnit: EfficiencyUnit = .litersPer100km
 
     private var vibe: EfficiencyVibe {
         DashboardCopy.vibe(efficiency: efficiency, standard: manufacturerStandard, refuelCount: refuelCount)
@@ -210,21 +218,31 @@ struct HeroCard: View {
 
             VStack(alignment: .leading, spacing: 6) {
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
-                    Text(efficiency.map { String(format: "%.1f", $0) } ?? "–.–")
+                    Text(EfficiencyFormat.displayNumber(efficiency, unit: efficiencyUnit))
                         .font(VS.Typography.heading(64, weight: .bold))
                         .foregroundStyle(VS.Color.navPill)
                         .contentTransition(.numericText())
-                    Text("L/100")
+                        .animation(.snappy(duration: 0.25), value: efficiencyUnit)
+                    Text(efficiencyUnit.shortLabel)
                         .font(VS.Typography.heading(18, weight: .bold))
                         .foregroundStyle(VS.Color.navPill.opacity(0.65))
                 }
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel(
+                    efficiency.map {
+                        "\(EfficiencyFormat.format($0, unit: efficiencyUnit)). \(efficiencyUnit.accessibilityLabel)"
+                    } ?? "Efficiency unavailable"
+                )
+
                 Text(status.text)
                     .font(VS.Typography.body(14, weight: .medium))
                     .foregroundStyle(VS.Color.navPill.opacity(0.75))
             }
 
+            EfficiencyUnitToggle(compact: true, onAccent: true)
+
             if let efficiency, let manufacturerStandard, manufacturerStandard > 0 {
-                brochureGauge(current: efficiency, standard: manufacturerStandard)
+                brochureGauge(currentL100: efficiency, standardL100: manufacturerStandard)
             } else if efficiency == nil {
                 Text(TrackyVoice.Soft.fuelsHeroHint)
                     .font(VS.Typography.body(13))
@@ -253,14 +271,16 @@ struct HeroCard: View {
         .clipShape(RoundedRectangle(cornerRadius: VS.Radius.card, style: .continuous))
     }
 
-    /// Lower L/100km is better and sits left of the brochure tick — the fill
-    /// stretches from the tick toward your reading.
-    private func brochureGauge(current: Double, standard: Double) -> some View {
-        let lower = standard * 0.6
-        let upper = standard * 1.4
-        let clamped = min(max(current, lower), upper)
+    /// Geometry stays in L/100km (lower = better = left of brochure tick).
+    /// Labels convert when the user prefers km/L.
+    private func brochureGauge(currentL100: Double, standardL100: Double) -> some View {
+        let lower = standardL100 * 0.6
+        let upper = standardL100 * 1.4
+        let clamped = min(max(currentL100, lower), upper)
         let fraction = (clamped - lower) / (upper - lower)
-        let better = current <= standard
+        let better = EfficiencyFormat.isBetterThanSpec(currentL100: currentL100, standardL100: standardL100)
+        let youLabel = EfficiencyFormat.displayNumber(currentL100, unit: efficiencyUnit)
+        let brochureLabel = EfficiencyFormat.displayNumber(standardL100, unit: efficiencyUnit)
 
         return VStack(alignment: .leading, spacing: 8) {
             GeometryReader { geo in
@@ -291,13 +311,18 @@ struct HeroCard: View {
                 .frame(height: 16)
             }
             .frame(height: 16)
+            .accessibilityLabel(
+                better
+                    ? "Efficiency better than brochure"
+                    : "Efficiency thirstier than brochure"
+            )
 
             HStack {
-                Text(String(format: "You %.1f", current))
+                Text("You \(youLabel)")
                     .font(VS.Typography.body(11, weight: .semibold))
                     .foregroundStyle(VS.Color.navPill)
                 Spacer()
-                Text(String(format: "Brochure %.1f", standard))
+                Text("Brochure \(brochureLabel)")
                     .font(VS.Typography.body(11, weight: .medium))
                     .foregroundStyle(VS.Color.navPill.opacity(0.55))
             }
@@ -335,6 +360,7 @@ struct MetricsRow: View {
     let metrics: EfficiencyMetrics
     let currency: String
     let unit: String
+    var efficiencyUnit: EfficiencyUnit = .litersPer100km
 
     var body: some View {
         HStack(spacing: VS.Spacing.gutter) {
@@ -344,8 +370,10 @@ struct MetricsRow: View {
                 icon: .gasPump
             )
             bentoCard(
-                value: metrics.avgEfficiency.map { String(format: "%.1f", $0) } ?? "—",
-                label: metrics.avgEfficiency == nil ? "Avg L/100" : "Avg L/100",
+                value: metrics.avgEfficiency.map {
+                    EfficiencyFormat.displayNumber($0, unit: efficiencyUnit)
+                } ?? "—",
+                label: "Avg \(efficiencyUnit.shortLabel)",
                 icon: .gauge
             )
         }

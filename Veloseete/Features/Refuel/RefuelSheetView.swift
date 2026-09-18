@@ -396,9 +396,20 @@ struct RefuelSheetView: View {
                         weight: .fill,
                         tint: abs(varianceKm) <= 2 ? VS.Color.success : VS.Color.warning
                     )
-                    Text(String(format: "%@%.1f km vs estimate", varianceKm >= 0 ? "+" : "", varianceKm))
-                        .font(VS.Typography.body(12, weight: .medium))
-                        .foregroundStyle(VS.Color.textSecondary)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(String(format: "%@%.1f km vs estimate", varianceKm >= 0 ? "+" : "", varianceKm))
+                            .font(VS.Typography.body(12, weight: .medium))
+                            .foregroundStyle(VS.Color.textSecondary)
+                        if let estimate {
+                            Text(
+                                estimate.isCalibrated
+                                    ? "Calibrated to your dash"
+                                    : (estimate.isLearning ? "Learning your GPS→dash scale" : "Raw GPS estimate")
+                            )
+                            .font(VS.Typography.body(11))
+                            .foregroundStyle(VS.Color.textTertiary)
+                        }
+                    }
                 }
                 .padding(.horizontal, 12)
                 .padding(.vertical, 10)

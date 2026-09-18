@@ -9,15 +9,31 @@ struct OdometerEstimate: Equatable {
     var confirmedTrackedKm: Double
     /// Finished drives waiting in My Drives — real km, not yet in history.
     var pendingTrackedKm: Double
+    /// Learned GPS→dash scale (1.0 = uncalibrated / trust GPS).
+    var gpsScale: Double
+    /// How many successful scale updates this vehicle has.
+    var scaleSampleCount: Int
 
-    /// Confirmed + pending distance since the last fuel/service reading.
+    /// Confirmed + pending distance since the last fuel/service reading (raw GPS).
     var trackedSinceKm: Double { confirmedTrackedKm + pendingTrackedKm }
 
-    /// Best live picture of the dash: verified reading + all GPS since then.
-    var estimatedKm: Double { verifiedKm + trackedSinceKm }
+    /// Best live picture of the dash: verified reading + calibrated GPS since then.
+    var estimatedKm: Double {
+        VehicleLearningModel.estimatedKm(
+            verifiedKm: verifiedKm,
+            trackedKm: trackedSinceKm,
+            gpsScale: gpsScale
+        )
+    }
+
+    /// Unscaled GPS sum — used when learning the next scale observation.
+    var rawEstimatedKm: Double { verifiedKm + trackedSinceKm }
 
     /// True when unconfirmed drives are part of the estimate.
     var includesPending: Bool { pendingTrackedKm > 0.05 }
+
+    var isCalibrated: Bool { scaleSampleCount >= 3 }
+    var isLearning: Bool { scaleSampleCount > 0 && scaleSampleCount < 3 }
 }
 
 @MainActor
@@ -108,12 +124,16 @@ final class DataStore: ObservableObject {
             .filter { $0.vehicleId == vehicleId && $0.endedAt > verifiedAt && $0.endedAt <= date }
             .reduce(0) { $0 + $1.distanceKm }
 
+        let learning = VehicleLearningStore.shared.state(for: vehicleId)
+
         return OdometerEstimate(
             verifiedKm: verifiedKm,
             verifiedAt: verifiedAt,
             verifiedSource: source,
             confirmedTrackedKm: confirmed,
-            pendingTrackedKm: pending
+            pendingTrackedKm: pending,
+            gpsScale: learning.gpsScale,
+            scaleSampleCount: learning.scaleSampleCount
         )
     }
 
@@ -559,6 +579,15 @@ final class DataStore: ObservableObject {
         let id = try await FirestoreRepository.shared.addFuelLog(userId: userId, input: input)
         try await FirestoreRepository.shared.updateVehicleOdometer(vehicleId: vehicleId, odometer: odometerReading)
 
+        // Learn GPS→dash scale + range from this refill before the new log becomes the anchor.
+        applyLearningFromNewFuelReading(
+            vehicleId: vehicleId,
+            newDashKm: odometerReading,
+            fuelVolume: fuelVolume,
+            isFullTank: isFullTank,
+            timestamp: timestamp
+        )
+
         let log = FuelLog(
             id: id,
             vehicleId: vehicleId,
@@ -582,6 +611,73 @@ final class DataStore: ObservableObject {
         }
         publishCarPlayWidgetState()
         VehicleInsightScheduler.shared.refresh(using: self)
+    }
+
+    /// Capture scale/range learning from a newly entered dash reading.
+    private func applyLearningFromNewFuelReading(
+        vehicleId: String,
+        newDashKm: Double,
+        fuelVolume: Double,
+        isFullTank: Bool,
+        timestamp: Date
+    ) {
+        // Estimate *before* this fill becomes the verified anchor.
+        let estimateBefore = odometerEstimate(vehicleId: vehicleId, through: timestamp)
+        let previousDash = estimateBefore?.verifiedKm
+            ?? vehicles.first(where: { $0.id == vehicleId })?.currentOdometer
+            ?? newDashKm
+        let gpsTracked = estimateBefore?.trackedSinceKm ?? 0
+
+        let vehicleLogs = fuelLogs
+            .filter { $0.vehicleId == vehicleId && $0.timestamp < timestamp }
+            .sorted { $0.timestamp < $1.timestamp }
+        let previousFull = vehicleLogs.last(where: \.isFullTank)
+        let isFullTankCycle = isFullTank && previousFull != nil
+        let actualRange: Double? = {
+            guard isFullTankCycle, let previousFull else { return nil }
+            let range = newDashKm - previousFull.odometerReading
+            return range > 0 ? range : nil
+        }()
+
+        let learning = VehicleLearningStore.shared.state(for: vehicleId)
+        let efficiency = MetricsCalculator.fullTankIntervals(vehicleId: vehicleId, logs: fuelLogs)
+            .suffix(5)
+            .reduce(into: (km: 0.0, fuel: 0.0)) { acc, interval in
+                acc.km += interval.distanceKm
+                acc.fuel += interval.fuelLiters
+            }
+        let litersPer100 = EfficiencyFormat.litersPer100km(
+            totalDistanceKm: efficiency.km,
+            totalFuelLiters: efficiency.fuel
+        ) ?? manufacturerStandard ?? 8.5
+
+        let tank = vehicles.first(where: { $0.id == vehicleId })?.fuelTankCapacity
+        let priorFillLiters = previousFull?.fuelVolume ?? fuelVolume
+        let predictedBudget = VehicleLearningModel.rangeBudgetKm(
+            state: learning,
+            lastFillLiters: priorFillLiters,
+            isFullTank: previousFull?.isFullTank ?? true,
+            litersPer100km: litersPer100,
+            patternTypicalRangeKm: nil,
+            tankCapacityLiters: tank
+        ).km
+
+        let cycleFuel: Double = {
+            guard isFullTankCycle, let previousFull else { return fuelVolume }
+            let since = vehicleLogs.filter { $0.timestamp > previousFull.timestamp }
+            return since.reduce(0) { $0 + $1.fuelVolume } + fuelVolume
+        }()
+
+        _ = VehicleLearningStore.shared.learnFromRefill(
+            vehicleId: vehicleId,
+            previousDashKm: previousDash,
+            newDashKm: newDashKm,
+            gpsTrackedKm: gpsTracked,
+            actualRangeKm: actualRange,
+            fuelLiters: cycleFuel,
+            isFullTankCycle: isFullTankCycle,
+            predictedBudgetKm: isFullTankCycle ? predictedBudget : nil
+        )
     }
 
     func updateFuelLog(_ log: FuelLog) async throws {

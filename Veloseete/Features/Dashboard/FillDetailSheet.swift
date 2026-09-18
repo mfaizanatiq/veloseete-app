@@ -6,6 +6,7 @@ import MapKit
 struct FillDetailSheet: View {
     @EnvironmentObject private var store: DataStore
     @Environment(\.dismiss) private var dismiss
+    @ObservedObject private var efficiencyUnit = EfficiencyUnitStore.shared
 
     let log: FuelLog
 
@@ -44,11 +45,13 @@ struct FillDetailSheet: View {
         return distance > 0 ? distance : nil
     }
 
-    /// L/100km for the interval this fill closes — only meaningful full-tank to full-tank.
+    /// L/100km for the interval this fill closes — includes partials since prior full tank.
     private var intervalEfficiency: Double? {
-        guard let previousLog, let distance = distanceSincePrevious else { return nil }
-        guard currentLog.isFullTank, previousLog.isFullTank, currentLog.fuelVolume > 0 else { return nil }
-        return (currentLog.fuelVolume / distance) * 100
+        MetricsCalculator.intervalEfficiency(
+            closingFillId: currentLog.id,
+            vehicleId: currentLog.vehicleId,
+            logs: store.fuelLogs
+        )?.litersPer100km
     }
 
     private var stationCoordinate: CLLocationCoordinate2D? {
@@ -206,14 +209,17 @@ struct FillDetailSheet: View {
                 Text("THIS TANK")
                     .font(VS.Typography.body(11, weight: .medium))
                     .foregroundStyle(VS.Color.textTertiary)
-                Text(String(format: "%.1f L/100km", efficiency))
+                Text(EfficiencyFormat.format(efficiency, unit: efficiencyUnit.unit))
                     .font(VS.Typography.heading(20, weight: .bold))
                     .foregroundStyle(VS.Color.textPrimary)
             }
             Spacer()
             if let standard = store.manufacturerStandard, standard > 0 {
-                let deviation = Int((((efficiency - standard) / standard) * 100).rounded())
-                Text(deviation <= 0 ? "\(abs(deviation))% under spec" : "\(deviation)% over spec")
+                let deviation = Int(EfficiencyFormat.deviationPercent(
+                    currentL100: efficiency,
+                    standardL100: standard
+                ).rounded())
+                Text(deviation <= 0 ? "\(abs(deviation))% better than spec" : "\(deviation)% thirstier than spec")
                     .font(VS.Typography.body(12, weight: .medium))
                     .foregroundStyle(deviation <= 0 ? VS.Color.accentSecondary : VS.Color.warning)
             }

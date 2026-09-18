@@ -10,10 +10,16 @@ enum GarageHealthLogic {
         let odoKm = estimate?.estimatedKm ?? vehicle.currentOdometer
         let year = Calendar.current.component(.year, from: vehicle.createdAt)
         let fuelCount = store.fuelLogs.filter { $0.vehicleId == vehicle.id }.count
+        let estLabel: String = {
+            if estimate?.isCalibrated == true { return "CAL" }
+            if estimate?.isLearning == true { return "LRN" }
+            return "EST"
+        }()
         return GarageVehicleCardSnapshot(
             odometerLabel: DistanceFormat.formatOdometer(odoKm, unit: unit),
             yearLabel: String(year),
-            fuelCount: fuelCount
+            fuelCount: fuelCount,
+            estimateTag: estLabel
         )
     }
 }
@@ -22,11 +28,12 @@ struct GarageVehicleCardSnapshot: Equatable {
     var odometerLabel: String
     var yearLabel: String
     var fuelCount: Int
+    var estimateTag: String
 
-    /// Figma meta row: `143000 km  EST  2023  24 fuels`
+    /// Figma meta row: `143000 km  EST  2023  24 fuels` (EST→LRN→CAL as learning advances)
     var metaLine: String {
         let fuels = fuelCount == 1 ? "1 fuel" : "\(fuelCount) fuels"
-        return "\(odometerLabel)  EST  \(yearLabel)  \(fuels)"
+        return "\(odometerLabel)  \(estimateTag)  \(yearLabel)  \(fuels)"
     }
 }
 

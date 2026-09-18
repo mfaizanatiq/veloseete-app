@@ -46,7 +46,8 @@ final class VehicleInsightScheduler {
             logs: logs,
             estimatedOdometer: estimatedOdometer,
             tankCapacityLiters: vehicle.fuelTankCapacity,
-            brochureL100km: store.manufacturerStandard
+            brochureL100km: store.manufacturerStandard,
+            learning: VehicleLearningStore.shared.state(for: vehicle.id)
         ), fuel.shouldNotify {
             await scheduleFuel(fuel, vehicleName: vehicleName, driverName: driverName, center: center)
         }
@@ -216,6 +217,7 @@ enum FuelInsightLogic {
         estimatedOdometer: Double?,
         tankCapacityLiters: Double? = nil,
         brochureL100km: Double? = nil,
+        learning: VehicleLearningState = .default,
         now: Date = Date(),
         calendar: Calendar = .current
     ) -> FuelPrediction? {
@@ -234,13 +236,17 @@ enum FuelInsightLogic {
             ?? brochureL100km
             ?? defaultEfficiencyFallback
 
-        // Range this fill should cover.
-        let budget = rangeBudget(
-            lastFill: last,
-            pattern: pattern,
+        // Range this fill should cover — prefers learned EWMA when available.
+        let budgetTuple = VehicleLearningModel.rangeBudgetKm(
+            state: learning,
+            lastFillLiters: last.fuelVolume,
+            isFullTank: last.isFullTank,
             litersPer100km: efficiency,
+            patternTypicalRangeKm: pattern.typicalRangeKm,
+            patternSampleCount: pattern.sampleCount,
             tankCapacityLiters: tankCapacityLiters
         )
+        let budget = RangeBudget(km: budgetTuple.km, confidence: budgetTuple.confidence)
         guard budget.km > 30 else { return nil }
 
         let kmLeft = budget.km - kmSince

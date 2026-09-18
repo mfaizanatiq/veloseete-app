@@ -31,6 +31,7 @@ enum LiveDriveIntelligenceLogic {
         thirst: Double,
         sessionAvgSpeedKmh: Double,
         distanceUnit: String,
+        learning: VehicleLearningState = .default,
         now: Date = Date()
     ) -> Snapshot {
         let burn = burnPosition(
@@ -65,6 +66,7 @@ enum LiveDriveIntelligenceLogic {
             estimatedOdometer: odometer,
             tankCapacityLiters: tankCapacityLiters,
             brochureL100km: brochureL100km,
+            learning: learning,
             now: now
         )
 
@@ -234,7 +236,7 @@ enum LiveDriveIntelligenceLogic {
     ) -> String {
         let fillAge = lastFill.timestamp.formatted(date: .abbreviated, time: .omitted)
         guard baseline > 0 else {
-            return "Live \(String(format: "%.1f", live)) L/100 · filled \(fillAge)"
+            return "Live \(EfficiencyFormat.format(live, style: .short)) · filled \(fillAge)"
         }
         let deltaPct = Int((((live - baseline) / baseline) * 100).rounded())
         if thirstyNow && deltaPct >= 10 {

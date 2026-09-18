@@ -579,7 +579,8 @@ struct TripsView: View {
             logs: store.fuelLogs.filter { $0.vehicleId == vehicle.id },
             estimatedOdometer: estimate?.estimatedKm ?? vehicle.currentOdometer,
             tankCapacityLiters: vehicle.fuelTankCapacity,
-            brochureL100km: store.manufacturerStandard
+            brochureL100km: store.manufacturerStandard,
+            learning: VehicleLearningStore.shared.state(for: vehicle.id)
         )
         guard let prediction, prediction.urgency >= .watch, prediction.confidence >= 0.4 else {
             return nil
@@ -708,7 +709,8 @@ struct TripsView: View {
             liveEstL100: mood?.estL100 ?? baseline,
             thirst: mood?.thirst ?? 0.3,
             sessionAvgSpeedKmh: snap.avgSpeedKmh,
-            distanceUnit: store.defaultDistanceUnit
+            distanceUnit: store.defaultDistanceUnit,
+            learning: VehicleLearningStore.shared.state(for: vehicleId)
         )
 
         ActiveDriveHUDContent(
@@ -804,7 +806,9 @@ struct TripsView: View {
     private func odometerCaption(estimate: OdometerEstimate?, liveKm: Double) -> String {
         TrackyVoice.odometerCaption(
             live: liveKm > 0.05,
-            pendingIn: estimate?.includesPending == true
+            pendingIn: estimate?.includesPending == true,
+            learning: estimate?.isLearning == true,
+            calibrated: estimate?.isCalibrated == true
         )
     }
 

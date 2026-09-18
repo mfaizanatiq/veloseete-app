@@ -74,8 +74,8 @@ struct TripLiveActivityWidget: Widget {
                                 emphasis: true
                             )
                             MetricCell(
-                                value: String(format: "%.1f", context.state.estL100),
-                                label: "L/100",
+                                value: EfficiencyFormat.displayNumber(context.state.estL100),
+                                label: EfficiencyFormat.current.shortLabel.uppercased(),
                                 tint: .white,
                                 emphasis: true
                             )
@@ -168,7 +168,7 @@ private struct CarPlayTripActivityView: View {
 
             Spacer(minLength: 0)
 
-            Text(String(format: "%.1f L/100", context.state.estL100))
+            Text(EfficiencyFormat.format(context.state.estL100, style: .short))
                 .font(.title2.weight(.bold).monospacedDigit())
                 .foregroundStyle(.white)
                 .contentTransition(.numericText())
@@ -231,8 +231,8 @@ private struct TripLockScreenView: View {
                     emphasis: true
                 )
                 MetricCell(
-                    value: String(format: "%.1f", context.state.estL100),
-                    label: "L/100",
+                    value: EfficiencyFormat.displayNumber(context.state.estL100),
+                    label: EfficiencyFormat.current.shortLabel.uppercased(),
                     tint: .white,
                     emphasis: true
                 )
@@ -259,7 +259,8 @@ private struct TripLockScreenView: View {
         .accessibilityElement(children: .combine)
         .accessibilityLabel(
             "\(mood.lockHeadline), score \(context.state.driveScore), "
-                + String(format: "%.1f L/100, %.1f km", context.state.estL100, context.state.distanceKm)
+                + "\(EfficiencyFormat.format(context.state.estL100, style: .short)), "
+                + String(format: "%.1f km", context.state.distanceKm)
         )
     }
 }
