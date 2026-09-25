@@ -41,6 +41,94 @@ struct PendingTripSave: Codable, Equatable, Identifiable {
     var route: [TripCoordinate]
     var source: String
     var suggestedOdometer: Double
+    var role: String = TripRole.driver.rawValue
+    /// Five speed-band sample counts. Missing on drives queued before the histogram.
+    var speedBuckets: [Int] = []
+
+    var tripRole: TripRole { TripRole(rawValue: role) ?? .driver }
+
+    init(
+        id: UUID,
+        vehicleId: String,
+        vehicleName: String,
+        startedAt: Date,
+        endedAt: Date,
+        distanceKm: Double,
+        durationSec: Double,
+        avgSpeedKmh: Double,
+        maxSpeedKmh: Double,
+        startCoordinate: TripCoordinate?,
+        endCoordinate: TripCoordinate?,
+        route: [TripCoordinate],
+        source: String,
+        suggestedOdometer: Double,
+        role: String = TripRole.driver.rawValue,
+        speedBuckets: [Int] = []
+    ) {
+        self.id = id
+        self.vehicleId = vehicleId
+        self.vehicleName = vehicleName
+        self.startedAt = startedAt
+        self.endedAt = endedAt
+        self.distanceKm = distanceKm
+        self.durationSec = durationSec
+        self.avgSpeedKmh = avgSpeedKmh
+        self.maxSpeedKmh = maxSpeedKmh
+        self.startCoordinate = startCoordinate
+        self.endCoordinate = endCoordinate
+        self.route = route
+        self.source = source
+        self.suggestedOdometer = suggestedOdometer
+        self.role = role
+        self.speedBuckets = speedBuckets
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id, vehicleId, vehicleName, startedAt, endedAt
+        case distanceKm, durationSec, avgSpeedKmh, maxSpeedKmh
+        case startCoordinate, endCoordinate, route, source, suggestedOdometer
+        case role, speedBuckets
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        vehicleId = try container.decode(String.self, forKey: .vehicleId)
+        vehicleName = try container.decode(String.self, forKey: .vehicleName)
+        startedAt = try container.decode(Date.self, forKey: .startedAt)
+        endedAt = try container.decode(Date.self, forKey: .endedAt)
+        distanceKm = try container.decode(Double.self, forKey: .distanceKm)
+        durationSec = try container.decode(Double.self, forKey: .durationSec)
+        avgSpeedKmh = try container.decode(Double.self, forKey: .avgSpeedKmh)
+        maxSpeedKmh = try container.decode(Double.self, forKey: .maxSpeedKmh)
+        startCoordinate = try container.decodeIfPresent(TripCoordinate.self, forKey: .startCoordinate)
+        endCoordinate = try container.decodeIfPresent(TripCoordinate.self, forKey: .endCoordinate)
+        route = try container.decode([TripCoordinate].self, forKey: .route)
+        source = try container.decode(String.self, forKey: .source)
+        suggestedOdometer = try container.decode(Double.self, forKey: .suggestedOdometer)
+        role = try container.decodeIfPresent(String.self, forKey: .role) ?? TripRole.driver.rawValue
+        speedBuckets = try container.decodeIfPresent([Int].self, forKey: .speedBuckets) ?? []
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(vehicleId, forKey: .vehicleId)
+        try container.encode(vehicleName, forKey: .vehicleName)
+        try container.encode(startedAt, forKey: .startedAt)
+        try container.encode(endedAt, forKey: .endedAt)
+        try container.encode(distanceKm, forKey: .distanceKm)
+        try container.encode(durationSec, forKey: .durationSec)
+        try container.encode(avgSpeedKmh, forKey: .avgSpeedKmh)
+        try container.encode(maxSpeedKmh, forKey: .maxSpeedKmh)
+        try container.encodeIfPresent(startCoordinate, forKey: .startCoordinate)
+        try container.encodeIfPresent(endCoordinate, forKey: .endCoordinate)
+        try container.encode(route, forKey: .route)
+        try container.encode(source, forKey: .source)
+        try container.encode(suggestedOdometer, forKey: .suggestedOdometer)
+        try container.encode(role, forKey: .role)
+        try container.encode(speedBuckets, forKey: .speedBuckets)
+    }
 }
 
 @MainActor
@@ -89,6 +177,8 @@ final class TripRecordingService: NSObject, ObservableObject {
     private var lastLocation: CLLocation?
     private var distanceMeters: Double = 0
     private var maxSpeedMps: Double = 0
+    /// Samples in <50, 50–80, 80–110, 110–160, 160+ km/h.
+    private var speedBucketCounts: [Int] = [0, 0, 0, 0, 0]
     private var automotiveSince: Date?
     private var stationarySince: Date?
     private var lastLiveActivityUpdate = Date.distantPast
@@ -596,6 +686,7 @@ final class TripRecordingService: NSObject, ObservableObject {
         lastLocationAccuracy = nil
         distanceMeters = 0
         maxSpeedMps = 0
+        speedBucketCounts = [0, 0, 0, 0, 0]
         automotiveSince = nil
         automotiveCorroborated = false
         lastPedestrianAt = nil
@@ -693,7 +784,8 @@ final class TripRecordingService: NSObject, ObservableObject {
             endCoordinate: recordedRoute.last,
             route: routeForSave,
             source: source,
-            suggestedOdometer: baseOdometer + distanceKm
+            suggestedOdometer: baseOdometer + distanceKm,
+            speedBuckets: speedBucketCounts
         )
         pendingSaves.insert(pending, at: 0)
         persistPendingSaves()
@@ -799,6 +891,7 @@ final class TripRecordingService: NSObject, ObservableObject {
         lastLocation = nil
         distanceMeters = 0
         maxSpeedMps = 0
+        speedBucketCounts = [0, 0, 0, 0, 0]
         automotiveSince = nil
         automotiveCorroborated = false
         lastPedestrianAt = nil
@@ -1032,6 +1125,12 @@ final class TripRecordingService: NSObject, ObservableObject {
 
         let speed = max(0, location.speed)
         if speed > maxSpeedMps { maxSpeedMps = speed }
+        if location.speed >= 0 {
+            let band = SpeedBands.index(for: speed * 3.6)
+            if speedBucketCounts.indices.contains(band) {
+                speedBucketCounts[band] += 1
+            }
+        }
 
         // Auto-end by GPS when nearly stopped for a while
         let speedKmh = speed * 3.6

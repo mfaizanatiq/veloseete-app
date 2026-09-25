@@ -175,6 +175,24 @@ struct TripsView: View {
     }
 
     @ViewBuilder
+    /// Rough fuel for this leg, from the car's recent consumption. Passenger legs are skipped.
+    private func estimatedFuelLabel(distanceKm: Double, vehicleId: String, counts: Bool) -> String? {
+        guard counts, distanceKm >= 0.2 else { return nil }
+        let vehicle = store.vehicles.first { $0.id == vehicleId }
+            ?? store.archivedVehicles.first { $0.id == vehicleId }
+        guard let vehicle else { return nil }
+        let logs = store.fuelLogs.filter { $0.vehicleId == vehicle.id }
+        let litersPer100 = DriveMoodBaseline.resolve(
+            vehicle: vehicle,
+            logs: logs,
+            manufacturerStandard: store.manufacturerStandard
+        )
+        guard litersPer100 > 0 else { return nil }
+        let liters = distanceKm * litersPer100 / 100
+        guard liters >= 0.05 else { return nil }
+        return "~\(VolumeFormat.format(liters, unit: vehicle.fuelVolumeUnit))"
+    }
+
     private func driveRow(_ trip: Trip, showsDay: Bool) -> some View {
         Button {
             UIImpactFeedbackGenerator(style: .light).impactOccurred()
@@ -189,7 +207,8 @@ struct TripsView: View {
             DriveRowView(
                 trip: trip,
                 unit: store.defaultDistanceUnit,
-                showsDay: showsDay
+                showsDay: showsDay,
+                fuel: estimatedFuelLabel(distanceKm: trip.distanceKm, vehicleId: trip.vehicleId, counts: trip.countsAsDriven)
             )
         }
         .buttonStyle(.plain)
@@ -1095,7 +1114,7 @@ struct TripsView: View {
                     .highPriorityGesture(driveDrawerGesture(from: .content))
             } else {
                 ScrollView {
-                    LazyVStack(spacing: 10) {
+                    LazyVStack(spacing: 8) {
                         if !filteredPendingTrips.isEmpty {
                             HStack(spacing: 8) {
                                 Text(TrackyVoice.reviewRequired())
@@ -1140,7 +1159,12 @@ struct TripsView: View {
                                 } label: {
                                     PendingDriveRowView(
                                         pending: pending,
-                                        unit: store.defaultDistanceUnit
+                                        unit: store.defaultDistanceUnit,
+                                        fuel: estimatedFuelLabel(
+                                            distanceKm: pending.distanceKm,
+                                            vehicleId: pending.vehicleId,
+                                            counts: pending.tripRole == .driver
+                                        )
                                     )
                                 }
                                 .buttonStyle(.plain)
@@ -1877,6 +1901,7 @@ private struct VeloseeteMapCharacter: View {
 struct PendingDriveRowView: View {
     let pending: PendingTripSave
     let unit: String
+    var fuel: String? = nil
 
     private var dayTitle: String {
         let formatter = DateFormatter()
@@ -1885,63 +1910,25 @@ struct PendingDriveRowView: View {
     }
 
     private var durationFormatted: String {
-        let total = Int(pending.durationSec)
-        let hours = total / 3600
-        let minutes = (total % 3600) / 60
-        return hours > 0 ? "\(hours)h \(minutes)m" : "\(max(minutes, 1))m"
+        DriveListCopy.duration(pending.durationSec)
     }
 
-    private var distanceValue: String {
+    private var distanceLabel: String {
         DistanceFormat.formatDistance(pending.distanceKm, unit: unit)
-            .replacingOccurrences(of: " km", with: "")
-            .replacingOccurrences(of: " mi", with: "")
     }
 
     var body: some View {
-        HStack(spacing: 14) {
-            VStack(alignment: .leading, spacing: 6) {
-                HStack(alignment: .firstTextBaseline, spacing: 6) {
-                    Text(distanceValue)
-                        .font(VS.Typography.heading(28, weight: .bold))
-                        .foregroundStyle(VS.Color.textPrimary)
-                    Text(unit == "mi" ? "mi" : "km")
-                        .font(VS.Typography.heading(14, weight: .bold))
-                        .foregroundStyle(VS.Color.textTertiary)
-                    Text(TrackyVoice.Soft.pendingBadge)
-                        .font(VS.Typography.body(9, weight: .bold))
-                        .foregroundStyle(VS.Color.navPill)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 4)
-                        .background(VS.Color.warning, in: Capsule())
-                }
-
-                Text("\(dayTitle) · \(pending.startedAt.formatted(date: .omitted, time: .shortened)) – \(pending.endedAt.formatted(date: .omitted, time: .shortened))")
-                    .font(VS.Typography.body(13, weight: .medium))
-                    .foregroundStyle(VS.Color.textTertiary)
-
-                Text(durationFormatted)
-                    .font(VS.Typography.heading(13, weight: .bold))
-                    .foregroundStyle(VS.Color.textSecondary)
-            }
-
-            Spacer(minLength: 6)
-
-            MiniRoutePreview(routeId: pending.id.uuidString, route: pending.route)
-                .frame(width: 56, height: 56)
-
-            VSIcon(icon: .caretLeft, size: 16, weight: .bold, tint: VS.Color.warning)
-                .rotationEffect(.degrees(180))
-        }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 14)
-        .background(VS.Color.chip, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 22, style: .continuous)
-                .stroke(VS.Color.warning.opacity(0.28), lineWidth: 1)
+        DriveListRow(
+            routeId: pending.id.uuidString,
+            route: pending.route,
+            start: "\(dayTitle) · \(pending.startedAt.formatted(date: .omitted, time: .shortened))",
+            duration: durationFormatted,
+            distance: distanceLabel,
+            fuel: fuel,
+            note: "Needs review"
         )
-        .contentShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(TrackyVoice.Soft.pendingSection). \(dayTitle), \(DistanceFormat.formatDistance(pending.distanceKm, unit: unit)), \(durationFormatted)")
+        .accessibilityLabel("\(TrackyVoice.Soft.pendingSection). \(dayTitle), \(distanceLabel), \(durationFormatted)")
         .accessibilityHint("Opens this drive for confirmation")
     }
 }
@@ -1950,6 +1937,7 @@ struct DriveRowView: View {
     let trip: Trip
     let unit: String
     var showsDay: Bool = true
+    var fuel: String? = nil
 
     private var dayTitle: String {
         let f = DateFormatter()
@@ -1957,66 +1945,97 @@ struct DriveRowView: View {
         return f.string(from: trip.startedAt)
     }
 
-    private var distanceValue: String {
-        let km = trip.distanceKm
-        if unit == "mi" {
-            let mi = km * 0.621371
-            return String(format: mi >= 100 ? "%.0f" : "%.1f", mi)
-        }
-        return String(format: km >= 100 ? "%.0f" : "%.1f", km)
+    private var startLabel: String {
+        let time = trip.startedAt.formatted(date: .omitted, time: .shortened)
+        return showsDay ? "\(dayTitle) · \(time)" : time
     }
 
-    private var timeLine: String {
-        let range = "\(trip.startedAt.formatted(date: .omitted, time: .shortened)) – \(trip.endedAt.formatted(date: .omitted, time: .shortened))"
-        return showsDay ? "\(dayTitle) · \(range)" : range
-    }
-
-    private var speedLine: String {
-        let speed = unit == "mi"
-            ? String(format: "%.0f mph", trip.maxSpeedKmh * 0.621371)
-            : String(format: "%.0f km/h", trip.maxSpeedKmh)
-        return "\(trip.durationFormatted) · \(speed) top"
+    private var durationLabel: String {
+        var line = DriveListCopy.duration(trip.durationSec)
+        if trip.tripRole == .passenger { line += " · Passenger" }
+        return line
     }
 
     var body: some View {
-        HStack(spacing: 14) {
-            VStack(alignment: .leading, spacing: 6) {
-                HStack(alignment: .firstTextBaseline, spacing: 6) {
-                    Text(distanceValue)
-                        .font(VS.Typography.heading(28, weight: .bold))
-                        .foregroundStyle(VS.Color.textPrimary)
-                    Text(unit == "mi" ? "mi" : "km")
-                        .font(VS.Typography.heading(14, weight: .bold))
-                        .foregroundStyle(VS.Color.textTertiary)
-                }
-
-                Text(timeLine)
-                    .font(VS.Typography.body(13, weight: .medium))
-                    .foregroundStyle(VS.Color.textTertiary)
-
-                Text(speedLine)
-                    .font(VS.Typography.heading(13, weight: .bold))
-                    .foregroundStyle(VS.Color.textSecondary)
-            }
-
-            Spacer(minLength: 8)
-
-            MiniRoutePreview(routeId: trip.id, route: trip.route)
-                .frame(width: 56, height: 56)
-        }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 14)
-        .background(VS.Color.chip, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 22, style: .continuous)
-                .stroke(VS.Color.hairline, lineWidth: 1)
+        DriveListRow(
+            routeId: trip.id,
+            route: trip.route,
+            start: startLabel,
+            duration: durationLabel,
+            distance: DistanceFormat.formatDistance(trip.distanceKm, unit: unit),
+            fuel: fuel
         )
-        .contentShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(startLabel), \(durationLabel), \(DistanceFormat.formatDistance(trip.distanceKm, unit: unit)) driven\(fuel.map { ", about \($0) fuel" } ?? "")")
     }
 }
 
-struct MiniRoutePreview: View {
-    var routeId: String = "preview"
+private enum DriveListCopy {
+    static func duration(_ seconds: Double) -> String {
+        let total = Int(seconds)
+        let hours = total / 3600
+        let minutes = (total % 3600) / 60
+        if hours > 0 && minutes > 0 { return "\(hours) hr \(minutes) min" }
+        if hours == 1 { return "1 hour" }
+        if hours > 1 { return "\(hours) hours" }
+        return "\(max(minutes, 1)) min"
+    }
+}
+
+private struct DriveListRow: View {
+    var routeId: String
+    var route: [TripCoordinate]
+    var start: String
+    var duration: String
+    var distance: String
+    var fuel: String? = nil
+    var note: String? = nil
+
+    var body: some View {
+        HStack(alignment: .center, spacing: 12) {
+            MiniRoutePreview(routeId: routeId, route: route)
+                .frame(width: 56, height: 44)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(start)
+                    .font(VS.Typography.heading(16, weight: .bold))
+                    .foregroundStyle(VS.Color.textPrimary)
+                HStack(spacing: 6) {
+                    Text(duration)
+                        .font(VS.Typography.body(13, weight: .medium))
+                        .foregroundStyle(VS.Color.textTertiary)
+                    if let note {
+                        Text(note)
+                            .font(VS.Typography.body(11, weight: .bold))
+                            .foregroundStyle(VS.Color.warning)
+                    }
+                }
+            }
+            Spacer(minLength: 8)
+            VStack(alignment: .trailing, spacing: 3) {
+                Text(distance)
+                    .font(VS.Typography.heading(17, weight: .bold))
+                    .foregroundStyle(VS.Color.accent)
+                if let fuel {
+                    Text(fuel)
+                        .font(VS.Typography.mono(12, weight: .medium))
+                        .foregroundStyle(VS.Color.textTertiary)
+                }
+            }
+        }
+        .padding(.leading, 10)
+        .padding(.trailing, 14)
+        .padding(.vertical, 10)
+        .background(VS.Color.chip, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .stroke(VS.Color.hairline, lineWidth: 1)
+        )
+        .contentShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+    }
+}
+
+private struct MiniRoutePreview: View {
+    var routeId: String
     let route: [TripCoordinate]
 
     private var displayRoute: [TripCoordinate] {
@@ -2028,12 +2047,12 @@ struct MiniRoutePreview: View {
             let points = displayRoute
             guard points.count >= 2 else {
                 var path = Path()
-                path.move(to: CGPoint(x: size.width * 0.2, y: size.height * 0.7))
+                path.move(to: CGPoint(x: size.width * 0.22, y: size.height * 0.72))
                 path.addQuadCurve(
-                    to: CGPoint(x: size.width * 0.8, y: size.height * 0.3),
-                    control: CGPoint(x: size.width * 0.5, y: size.height * 0.9)
+                    to: CGPoint(x: size.width * 0.78, y: size.height * 0.28),
+                    control: CGPoint(x: size.width * 0.48, y: size.height * 0.92)
                 )
-                context.stroke(path, with: .color(VS.Color.textSecondary.opacity(0.5)), lineWidth: 2)
+                context.stroke(path, with: .color(VS.Color.accent.opacity(0.7)), lineWidth: 2)
                 return
             }
 
@@ -2042,9 +2061,7 @@ struct MiniRoutePreview: View {
             let minLat = lats.min()!, maxLat = lats.max()!
             let minLng = lngs.min()!, maxLng = lngs.max()!
             let midLat = (minLat + maxLat) / 2
-
-            // Aspect-fit in meters so the path is centered — not stretched to corners.
-            let pad: CGFloat = 7
+            let pad: CGFloat = 4
             let availW = max(size.width - pad * 2, 1)
             let availH = max(size.height - pad * 2, 1)
             let metersPerDegLat = 111_320.0
@@ -2070,15 +2087,8 @@ struct MiniRoutePreview: View {
                 style: StrokeStyle(lineWidth: 2.2, lineCap: .round, lineJoin: .round)
             )
         }
-        .padding(6)
-        .background(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .fill(Color.black.opacity(0.35))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .stroke(VS.Color.hairline, lineWidth: 1)
-                )
-        )
+        .background(Color.black.opacity(0.28), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .accessibilityHidden(true)
     }
 }
 
@@ -2126,17 +2136,6 @@ struct TripDetailView: View {
         )
     }
 
-    private var distanceValue: String {
-        let km = trip.distanceKm
-        if unit == "mi" {
-            let mi = km * 0.621371
-            return String(format: mi >= 100 ? "%.0f" : "%.1f", mi)
-        }
-        return String(format: km >= 100 ? "%.0f" : "%.1f", km)
-    }
-
-    private var unitLabel: String { unit == "mi" ? "mi" : "km" }
-
     private var vehicleName: String {
         store.vehicles.first(where: { $0.id == trip.vehicleId })?.nickname
             ?? store.archivedVehicles.first(where: { $0.id == trip.vehicleId })?.nickname
@@ -2155,40 +2154,19 @@ struct TripDetailView: View {
                                 .stroke(VS.Color.hairline, lineWidth: 1)
                         )
 
-                    VStack(alignment: .leading, spacing: 8) {
-                        HStack(alignment: .firstTextBaseline, spacing: 8) {
-                            Text(distanceValue)
-                                .font(VS.Typography.heading(56, weight: .bold))
-                                .foregroundStyle(VS.Color.textPrimary)
-                                .minimumScaleFactor(0.55)
-                                .lineLimit(1)
-                            Text(unitLabel)
-                                .font(VS.Typography.heading(20, weight: .bold))
-                                .foregroundStyle(VS.Color.textTertiary)
-                            Spacer(minLength: 8)
-                            Text(trip.source == "auto" ? "AUTO" : "MANUAL")
-                                .font(VS.Typography.body(10, weight: .bold))
-                                .foregroundStyle(VS.Color.navPill)
-                                .padding(.horizontal, 10)
-                                .padding(.vertical, 5)
-                                .background(VS.Color.accent, in: Capsule())
-                        }
+                    TripReviewSummary(
+                        startedAt: trip.startedAt,
+                        distanceKm: trip.distanceKm,
+                        durationSec: trip.durationSec,
+                        maxSpeedKmh: trip.maxSpeedKmh,
+                        avgSpeedKmh: trip.avgSpeedKmh,
+                        vehicleName: vehicleName,
+                        unit: unit,
+                        speedBuckets: trip.speedBuckets,
+                        role: trip.tripRole
+                    )
 
-                        Text(trip.startedAt.formatted(date: .complete, time: .omitted))
-                            .font(VS.Typography.heading(16, weight: .bold))
-                            .foregroundStyle(VS.Color.textPrimary)
-
-                        Text("\(trip.startedAt.formatted(date: .omitted, time: .shortened)) – \(trip.endedAt.formatted(date: .omitted, time: .shortened))")
-                            .font(VS.Typography.body(14, weight: .medium))
-                            .foregroundStyle(VS.Color.textTertiary)
-                    }
-
-                    HStack(spacing: 10) {
-                        detailHeroStat(trip.durationFormatted, "Drive time")
-                        detailHeroStat(speed(trip.avgSpeedKmh), "Average")
-                        detailHeroStat(speed(trip.maxSpeedKmh), "Top speed")
-                    }
-
+                    if trip.countsAsDriven {
                     HStack(spacing: 12) {
                         VSIcon(icon: .checkCircle, size: 22, weight: .fill, tint: VS.Color.success)
                         VStack(alignment: .leading, spacing: 4) {
@@ -2210,21 +2188,11 @@ struct TripDetailView: View {
                         RoundedRectangle(cornerRadius: 22, style: .continuous)
                             .stroke(VS.Color.hairline, lineWidth: 1)
                     )
-
-                    HStack(spacing: 0) {
-                        detailMetric("\(trip.route.count)", "Route points", .mapPin)
-                        Rectangle().fill(VS.Color.divider).frame(width: 1, height: 48)
-                        detailMetric(trip.route.count >= 10 ? "Good" : "Partial", "GPS quality", .target)
-                        Rectangle().fill(VS.Color.divider).frame(width: 1, height: 48)
-                        detailMetric(unitLabel, "Distance unit", .roadHorizon)
+                    } else {
+                        Text("Passenger trip. It stays in your log and off the odometer.")
+                            .font(VS.Typography.body(13, weight: .medium))
+                            .foregroundStyle(VS.Color.textTertiary)
                     }
-                    .padding(.vertical, 16)
-                    .padding(.horizontal, 8)
-                    .background(VS.Color.chip, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 22, style: .continuous)
-                            .stroke(VS.Color.hairline, lineWidth: 1)
-                    )
 
                     if let shareError {
                         Text(shareError)
@@ -2398,42 +2366,4 @@ struct TripDetailView: View {
             .overlay(Circle().stroke(Color.white.opacity(0.85), lineWidth: 2))
     }
 
-    private func detailHeroStat(_ value: String, _ label: String) -> some View {
-        VStack(alignment: .leading, spacing: 5) {
-            Text(value)
-                .font(VS.Typography.heading(20, weight: .bold))
-                .foregroundStyle(VS.Color.textPrimary)
-                .lineLimit(1)
-                .minimumScaleFactor(0.7)
-            Text(label)
-                .font(VS.Typography.body(12, weight: .medium))
-                .foregroundStyle(VS.Color.textTertiary)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(14)
-        .background(VS.Color.chip, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .stroke(VS.Color.hairline, lineWidth: 1)
-        )
-    }
-
-    private func detailMetric(_ value: String, _ label: String, _ icon: VSIconName) -> some View {
-        VStack(spacing: 6) {
-            VSIcon(icon: icon, size: 18, weight: .duotone, tint: VS.Color.accent)
-            Text(value)
-                .font(VS.Typography.heading(15, weight: .bold))
-                .foregroundStyle(VS.Color.textPrimary)
-            Text(label)
-                .font(VS.Typography.body(11, weight: .medium))
-                .foregroundStyle(VS.Color.textTertiary)
-        }
-        .frame(maxWidth: .infinity)
-    }
-
-    private func speed(_ kmh: Double) -> String {
-        unit == "mi"
-            ? String(format: "%.0f mph", kmh * 0.621371)
-            : String(format: "%.0f km/h", kmh)
-    }
 }

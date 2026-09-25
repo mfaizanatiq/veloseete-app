@@ -367,6 +367,8 @@ final class FirestoreRepository {
         var endCoordinate: TripCoordinate?
         var route: [TripCoordinate]
         var source: String
+        var role: String = TripRole.driver.rawValue
+        var speedBuckets: [Int] = []
     }
 
     func createTrip(userId: String, input: NewTripInput) async throws -> String {
@@ -382,6 +384,8 @@ final class FirestoreRepository {
             "maxSpeedKmh": input.maxSpeedKmh,
             "route": input.route.map { ["lat": $0.latitude, "lng": $0.longitude] },
             "source": input.source,
+            "role": input.role,
+            "speedBuckets": input.speedBuckets,
             "createdAt": FieldValue.serverTimestamp(),
             "updatedAt": FieldValue.serverTimestamp()
         ]

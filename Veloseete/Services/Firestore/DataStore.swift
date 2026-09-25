@@ -117,7 +117,12 @@ final class DataStore: ObservableObject {
         let source = anchor?.2 ?? "Vehicle reading"
 
         let confirmed = trips
-            .filter { $0.vehicleId == vehicleId && $0.endedAt > verifiedAt && $0.endedAt <= date }
+            .filter {
+                $0.vehicleId == vehicleId
+                    && $0.countsAsDriven
+                    && $0.endedAt > verifiedAt
+                    && $0.endedAt <= date
+            }
             .reduce(0) { $0 + $1.distanceKm }
 
         let pending = TripRecordingService.shared.pendingSaves
@@ -820,7 +825,9 @@ final class DataStore: ObservableObject {
             startCoordinate: pending.startCoordinate,
             endCoordinate: pending.endCoordinate,
             route: pending.route,
-            source: pending.source
+            source: pending.source,
+            role: pending.role,
+            speedBuckets: pending.speedBuckets
         )
 
         let id = try await FirestoreRepository.shared.createTrip(userId: userId, input: input)
@@ -851,7 +858,9 @@ final class DataStore: ObservableObject {
             startCoordinate: pending.startCoordinate,
             endCoordinate: pending.endCoordinate,
             route: pending.route,
-            source: pending.source
+            source: pending.source,
+            role: pending.role,
+            speedBuckets: pending.speedBuckets
         )
         trips.insert(trip, at: 0)
         publishCarPlayWidgetState()

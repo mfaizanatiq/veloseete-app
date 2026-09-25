@@ -70,6 +70,53 @@ struct TripCoordinate: Codable, Equatable, Hashable {
     var longitude: Double
 }
 
+enum TripRole: String, Codable, Equatable {
+    case driver
+    case passenger
+
+    var label: String {
+        switch self {
+        case .driver: "Driver"
+        case .passenger: "Passenger"
+        }
+    }
+}
+
+/// Time spent in each speed band. Counts are GPS samples; an empty set falls back to avg/max.
+enum SpeedBands {
+    static let labels = ["<50", "50–80", "80–110", "110–160", "160+"]
+
+    static func index(for kmh: Double) -> Int {
+        if kmh < 50 { return 0 }
+        if kmh < 80 { return 1 }
+        if kmh < 110 { return 2 }
+        if kmh < 160 { return 3 }
+        return 4
+    }
+
+    static func fractions(counts: [Int], avgKmh: Double, maxKmh: Double) -> [Double] {
+        let padded = (counts + [0, 0, 0, 0, 0]).prefix(5)
+        let total = padded.reduce(0, +)
+        if total > 0 {
+            return padded.map { Double($0) / Double(total) }
+        }
+        return estimated(avgKmh: avgKmh, maxKmh: max(maxKmh, avgKmh))
+    }
+
+    /// Older drives have no sample histogram. Shape one around the recorded average and top speed.
+    private static func estimated(avgKmh: Double, maxKmh: Double) -> [Double] {
+        var weights = [Double](repeating: 0.04, count: 5)
+        let avg = index(for: avgKmh)
+        let top = index(for: maxKmh)
+        weights[avg] += 0.62
+        if avg > 0 { weights[avg - 1] += 0.14 }
+        if avg < 4 { weights[avg + 1] += 0.1 }
+        if top != avg { weights[top] += 0.16 }
+        let sum = weights.reduce(0, +)
+        return weights.map { $0 / max(sum, 0.001) }
+    }
+}
+
 struct Trip: Identifiable, Equatable {
     var id: String
     var vehicleId: String
@@ -83,6 +130,14 @@ struct Trip: Identifiable, Equatable {
     var endCoordinate: TripCoordinate?
     var route: [TripCoordinate]
     var source: String // "auto" | "manual"
+    /// "driver" or "passenger". Missing on older trips means the person was driving.
+    var role: String = TripRole.driver.rawValue
+    /// Five speed-band sample counts. Empty on trips recorded before the histogram.
+    var speedBuckets: [Int] = []
+
+    var tripRole: TripRole { TripRole(rawValue: role) ?? .driver }
+    /// Passenger legs are logged, but they are not kilometres this car was driven by you.
+    var countsAsDriven: Bool { tripRole == .driver }
 }
 
 extension Trip {
@@ -125,7 +180,9 @@ extension Trip {
             startCoordinate: coord("startCoord"),
             endCoordinate: coord("endCoord"),
             route: route,
-            source: FirestoreDecode.string(data["source"], fallback: "manual")
+            source: FirestoreDecode.string(data["source"], fallback: "manual"),
+            role: FirestoreDecode.string(data["role"], fallback: TripRole.driver.rawValue),
+            speedBuckets: FirestoreDecode.intArray(data["speedBuckets"])
         )
     }
 }
@@ -150,6 +207,11 @@ enum FirestoreDecode {
         if let s = any as? String { return s }
         if let n = any as? NSNumber { return n.stringValue }
         return fallback
+    }
+
+    static func intArray(_ any: Any?) -> [Int] {
+        guard let values = any as? [Any] else { return [] }
+        return values.map { Int(double($0).rounded()) }
     }
 
     static func bool(_ any: Any?, fallback: Bool = false) -> Bool {

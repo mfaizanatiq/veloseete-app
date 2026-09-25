@@ -12,11 +12,7 @@ struct TripConfirmSheet: View {
 
     @State private var isSaving = false
     @State private var errorMessage: String?
-
-    private var distanceValue: String {
-        let km = pending.distanceKm
-        return String(format: km >= 100 ? "%.0f" : "%.1f", km)
-    }
+    @State private var role: TripRole = .driver
 
     private var queuePeers: [PendingTripSave] {
         recorder.pendingSaves
@@ -51,45 +47,31 @@ struct TripConfirmSheet: View {
                             )
                     }
 
-                    VStack(alignment: .leading, spacing: 8) {
-                        HStack(spacing: 8) {
-                            Text(pending.vehicleName)
-                                .font(VS.Typography.body(14, weight: .semibold))
-                                .foregroundStyle(VS.Color.textTertiary)
-                            if let queueIndex, queuePeers.count > 1 {
-                                Text("· \(queueIndex) of \(queuePeers.count)")
-                                    .font(VS.Typography.body(13, weight: .semibold))
-                                    .foregroundStyle(VS.Color.warning)
-                            }
-                        }
+                    if let queueIndex, queuePeers.count > 1 {
+                        Text("\(queueIndex) of \(queuePeers.count)")
+                            .font(VS.Typography.body(13, weight: .semibold))
+                            .foregroundStyle(VS.Color.warning)
+                    }
 
-                        HStack(alignment: .firstTextBaseline, spacing: 8) {
-                            Text(distanceValue)
-                                .font(VS.Typography.heading(56, weight: .bold))
-                                .foregroundStyle(VS.Color.textPrimary)
-                                .minimumScaleFactor(0.55)
-                                .lineLimit(1)
-                            Text("km")
-                                .font(VS.Typography.heading(20, weight: .bold))
-                                .foregroundStyle(VS.Color.textTertiary)
-                        }
+                    TripReviewSummary(
+                        startedAt: pending.startedAt,
+                        distanceKm: pending.distanceKm,
+                        durationSec: pending.durationSec,
+                        maxSpeedKmh: pending.maxSpeedKmh,
+                        avgSpeedKmh: pending.avgSpeedKmh,
+                        vehicleName: pending.vehicleName,
+                        unit: store.defaultDistanceUnit,
+                        speedBuckets: pending.speedBuckets,
+                        role: role,
+                        roleSelection: $role
+                    )
 
-                        Text(TrackyVoice.confirmHeadline())
-                            .font(VS.Typography.heading(18, weight: .bold))
-                            .foregroundStyle(VS.Color.textPrimary)
-
-                        Text("\(pending.startedAt.formatted(date: .abbreviated, time: .shortened)) – \(pending.endedAt.formatted(date: .omitted, time: .shortened))")
-                            .font(VS.Typography.body(14, weight: .medium))
+                    if role == .passenger {
+                        Text("Logged as a passenger. This distance stays off your odometer.")
+                            .font(VS.Typography.body(13, weight: .medium))
                             .foregroundStyle(VS.Color.textTertiary)
-                    }
-
-                    HStack(spacing: 10) {
-                        confirmMetric(formatDuration(pending.durationSec), "Duration")
-                        confirmMetric(String(format: "%.0f", pending.avgSpeedKmh), "Avg km/h")
-                        confirmMetric(String(format: "%.0f", pending.maxSpeedKmh), "Top km/h")
-                    }
-
-                    if let estimateKm {
+                            .fixedSize(horizontal: false, vertical: true)
+                    } else if let estimateKm {
                         HStack(spacing: 12) {
                             VSIcon(icon: .gauge, size: 22, weight: .duotone, tint: VS.Color.accent)
                             VStack(alignment: .leading, spacing: 4) {
@@ -168,40 +150,14 @@ struct TripConfirmSheet: View {
         .veloseeteSheet()
     }
 
-    private func confirmMetric(_ value: String, _ label: String) -> some View {
-        VStack(alignment: .leading, spacing: 5) {
-            Text(value)
-                .font(VS.Typography.heading(20, weight: .bold))
-                .foregroundStyle(VS.Color.textPrimary)
-                .lineLimit(1)
-                .minimumScaleFactor(0.7)
-            Text(label)
-                .font(VS.Typography.body(12, weight: .medium))
-                .foregroundStyle(VS.Color.textTertiary)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(14)
-        .background(VS.Color.chip, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .stroke(VS.Color.hairline, lineWidth: 1)
-        )
-    }
-
-    private func formatDuration(_ sec: Double) -> String {
-        let total = Int(sec)
-        let h = total / 3600
-        let m = (total % 3600) / 60
-        if h > 0 { return "\(h)h \(m)m" }
-        return "\(max(m, 1))m"
-    }
-
     private func save() async {
         guard !isSaving else { return }
         isSaving = true
         errorMessage = nil
         do {
-            _ = try await store.saveTrip(pending, odometer: pending.suggestedOdometer, applyOdometer: false)
+            var saving = pending
+            saving.role = role.rawValue
+            _ = try await store.saveTrip(saving, odometer: pending.suggestedOdometer, applyOdometer: false)
             recorder.markPendingSaved(id: pending.id)
             let next = recorder.pendingSaves
                 .filter { $0.vehicleId == pending.vehicleId }
@@ -287,5 +243,209 @@ private struct PendingTripRouteMap: View {
         .mapControlVisibility(.hidden)
         .preferredColorScheme(.dark)
         .accessibilityLabel("Recorded trip route")
+    }
+}
+
+/// Shared facts for a drive review and a saved drive: role, headline stats, speed bands.
+struct TripReviewSummary: View {
+    var startedAt: Date
+    var distanceKm: Double
+    var durationSec: Double
+    var maxSpeedKmh: Double
+    var avgSpeedKmh: Double
+    var vehicleName: String
+    var unit: String
+    var speedBuckets: [Int]
+    var role: TripRole
+    var roleSelection: Binding<TripRole>? = nil
+
+    private var distanceLabel: String {
+        DistanceFormat.formatDistance(distanceKm, unit: unit)
+    }
+
+    private var durationLabel: String {
+        let total = Int(durationSec)
+        let hours = total / 3600
+        let minutes = (total % 3600) / 60
+        if hours > 0 { return "\(hours)h \(minutes)m" }
+        return "\(max(minutes, 1))m"
+    }
+
+    private var topSpeedLabel: String {
+        let value = unit == "mi" ? maxSpeedKmh * 0.621371 : maxSpeedKmh
+        let suffix = unit == "mi" ? "mph" : "km/h"
+        return String(format: "%.0f %@", value, suffix)
+    }
+
+    private var headline: String {
+        let time = startedAt.formatted(date: .omitted, time: .shortened)
+        if Calendar.current.isDateInToday(startedAt) { return "Today, \(time)" }
+        if Calendar.current.isDateInYesterday(startedAt) { return "Yesterday, \(time)" }
+        let day = startedAt.formatted(.dateTime.weekday(.abbreviated).month(.abbreviated).day())
+        return "\(day), \(time)"
+    }
+
+    private var fractions: [Double] {
+        SpeedBands.fractions(counts: speedBuckets, avgKmh: avgSpeedKmh, maxKmh: maxSpeedKmh)
+    }
+
+    /// Same km/h buckets, labeled in the user's unit.
+    private var bandLabels: [String] {
+        unit == "mi" ? ["<31", "31–50", "50–68", "68–99", "99+"] : SpeedBands.labels
+    }
+
+    private var bandColors: [Color] {
+        [
+            VS.Color.accentSecondary,
+            VS.Color.accent,
+            VS.Color.warning,
+            Color(hex: 0xF97316),
+            VS.Color.routeEnd
+        ]
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(headline)
+                    .font(VS.Typography.heading(22, weight: .bold))
+                    .foregroundStyle(VS.Color.textPrimary)
+                Text("\(distanceLabel)  ·  \(durationLabel)")
+                    .font(VS.Typography.body(14, weight: .medium))
+                    .foregroundStyle(VS.Color.textTertiary)
+            }
+
+            HStack(spacing: 10) {
+                reviewFact(icon: .car, title: "Vehicle", value: vehicleName)
+                reviewFact(
+                    icon: role == .passenger ? .user : .gauge,
+                    title: "Role",
+                    value: role.label
+                )
+            }
+
+            if let roleSelection {
+                HStack(spacing: 8) {
+                    ForEach([TripRole.driver, .passenger], id: \.self) { item in
+                        Button {
+                            UISelectionFeedbackGenerator().selectionChanged()
+                            roleSelection.wrappedValue = item
+                        } label: {
+                            Text(item == .driver ? "I'm driving" : "I'm a passenger")
+                                .font(VS.Typography.heading(13, weight: .semibold))
+                                .foregroundStyle(role == item ? VS.Color.navPill : VS.Color.textSecondary)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 12)
+                                .background(role == item ? VS.Color.accent : VS.Color.chip, in: Capsule())
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+
+            HStack(spacing: 8) {
+                reviewStat(distanceLabel, "Distance")
+                reviewStat(durationLabel, "Duration")
+                reviewStat(topSpeedLabel, "Top")
+            }
+
+            speedDistribution
+        }
+    }
+
+    private var speedDistribution: some View {
+        let shares = fractions
+        return VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Text("Speed")
+                    .font(VS.Typography.mono(10, weight: .bold))
+                    .foregroundStyle(VS.Color.textTertiary)
+                Spacer()
+                Text(unit == "mi" ? "MPH" : "KM/H")
+                    .font(VS.Typography.mono(10, weight: .bold))
+                    .foregroundStyle(VS.Color.textTertiary)
+            }
+
+            GeometryReader { geo in
+                HStack(spacing: 0) {
+                    ForEach(shares.indices, id: \.self) { index in
+                        Rectangle()
+                            .fill(bandColors[index])
+                            .frame(width: geo.size.width * shares[index])
+                    }
+                }
+            }
+            .frame(height: 10)
+            .clipShape(Capsule())
+
+            HStack(alignment: .top, spacing: 4) {
+                ForEach(bandLabels.indices, id: \.self) { index in
+                    VStack(spacing: 3) {
+                        Circle()
+                            .fill(bandColors[index])
+                            .frame(width: 6, height: 6)
+                        Text(bandLabels[index])
+                            .font(VS.Typography.mono(9, weight: .medium))
+                            .foregroundStyle(VS.Color.textTertiary)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.7)
+                        Text("\(Int((shares[index] * 100).rounded()))%")
+                            .font(VS.Typography.heading(12, weight: .bold))
+                            .foregroundStyle(VS.Color.textPrimary)
+                    }
+                    .frame(maxWidth: .infinity)
+                }
+            }
+        }
+        .padding(14)
+        .background(VS.Color.chip, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .stroke(VS.Color.hairline, lineWidth: 1)
+        )
+    }
+
+    private func reviewFact(icon: VSIconName, title: String, value: String) -> some View {
+        HStack(spacing: 10) {
+            VSIcon(icon: icon, size: 16, weight: .fill, tint: VS.Color.textSecondary)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title.uppercased())
+                    .font(VS.Typography.mono(9, weight: .bold))
+                    .foregroundStyle(VS.Color.textTertiary)
+                Text(value)
+                    .font(VS.Typography.heading(14, weight: .bold))
+                    .foregroundStyle(VS.Color.textPrimary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(VS.Color.chip, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .stroke(VS.Color.hairline, lineWidth: 1)
+        )
+    }
+
+    private func reviewStat(_ value: String, _ label: String) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(label.uppercased())
+                .font(VS.Typography.mono(9, weight: .bold))
+                .foregroundStyle(VS.Color.textTertiary)
+            Text(value)
+                .font(VS.Typography.heading(16, weight: .bold))
+                .foregroundStyle(VS.Color.textPrimary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.6)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(12)
+        .background(VS.Color.chip, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .stroke(VS.Color.hairline, lineWidth: 1)
+        )
     }
 }
