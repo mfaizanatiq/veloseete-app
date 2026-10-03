@@ -343,12 +343,19 @@ struct FunInsight: Identifiable {
 enum InsightGenerator {
     /// Lifetime GPS trip distance, falling back to odometer span from fuel logs.
     static func totalKilometersDriven(trips: [Trip], logs: [FuelLog], vehicleId: String?) -> Double {
+        // Across the garage, sum each car on its own: odometer readings from
+        // different cars can't be subtracted from each other.
+        guard let vehicleId else {
+            let ids = Set(trips.map(\.vehicleId)).union(logs.map(\.vehicleId))
+            return ids.reduce(0) { $0 + totalKilometersDriven(trips: trips, logs: logs, vehicleId: $1) }
+        }
+
         let tripKm = trips
-            .filter { vehicleId == nil || $0.vehicleId == vehicleId }
+            .filter { $0.vehicleId == vehicleId }
             .reduce(0) { $0 + max(0, $1.distanceKm) }
 
         let vehicleLogs = logs
-            .filter { vehicleId == nil || $0.vehicleId == vehicleId }
+            .filter { $0.vehicleId == vehicleId }
             .sorted { $0.timestamp < $1.timestamp }
         let odoSpan: Double = {
             guard let first = vehicleLogs.first, let last = vehicleLogs.last else { return 0 }

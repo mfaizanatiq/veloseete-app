@@ -41,6 +41,8 @@ enum TrackyMood: String, CaseIterable, Identifiable {
 /// Inline mood picker — compact row on Driver profile (no full-screen card).
 struct TrackyInlineMoodRow: View {
     @AppStorage("veloseete.tracky.mood") private var trackyMoodRaw: String = TrackyMood.chill.rawValue
+    /// Inside a settings list: no card chrome, the section header names it.
+    var embedded = false
 
     private var trackyMood: TrackyMood {
         TrackyMood(rawValue: trackyMoodRaw) ?? .chill
@@ -59,10 +61,12 @@ struct TrackyInlineMoodRow: View {
                         .foregroundStyle(VS.Color.textPrimary)
                 }
                 Spacer(minLength: 0)
-                Text(TrackyVoice.Soft.trackyInlineHint)
-                    .font(VS.TextStyle.caption2())
-                    .foregroundStyle(VS.Color.textTertiary)
-                    .multilineTextAlignment(.trailing)
+                if !embedded {
+                    Text(TrackyVoice.Soft.trackyInlineHint)
+                        .font(VS.TextStyle.caption2())
+                        .foregroundStyle(VS.Color.textTertiary)
+                        .multilineTextAlignment(.trailing)
+                }
             }
 
             ScrollView(.horizontal, showsIndicators: false) {
@@ -73,8 +77,13 @@ struct TrackyInlineMoodRow: View {
                 }
             }
         }
-        .padding(VS.Spacing.card)
-        .glassCard(elevated: true)
+        .padding(embedded ? 0 : VS.Spacing.card)
+        .padding(.vertical, embedded ? 6 : 0)
+        .background {
+            if !embedded {
+                Color.clear.glassCard(elevated: true)
+            }
+        }
         .onChange(of: trackyMoodRaw) { _, newValue in
             TrackyAppIcon.apply(mood: TrackyMood(rawValue: newValue) ?? .chill)
         }

@@ -19,7 +19,8 @@ import sys
 import urllib.error
 import urllib.request
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, time, timedelta, timezone
+from zoneinfo import ZoneInfo
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -30,6 +31,8 @@ CLI_CLIENT_SECRET = "j9iVZfS8kkCEFUPaAeJV0sAi"
 DEMO_EMAIL = "demo@veloseete.app"
 DEMO_PASSWORD = "VeloseeteDemo2026!"
 DEMO_NAME = "Demo Driver"
+# Demo drives are set in Dubai; start times are local wall-clock times.
+LOCAL_TZ = ZoneInfo("Asia/Dubai")
 PRIMARY_VEHICLE_ID = "demo_vehicle_pearl"
 
 COLLECTIONS = ("vehicles", "fuelLogs", "serviceLogs", "trips", "productFeedback", "featureRequests")
@@ -262,8 +265,12 @@ def seed_trip(
     max_speed: float,
     waypoint_keys: list[str],
     source: str,
+    local_start: tuple[int, int],
 ) -> None:
-    started = now - timedelta(days=days_ago, hours=8)
+    # Real wall-clock start (e.g. 07:45 Dubai). Offsetting `now` by a fixed number of
+    # hours gave every drive the same time of day, which skewed the Driver profile.
+    day = (now.astimezone(LOCAL_TZ) - timedelta(days=days_ago)).date()
+    started = datetime.combine(day, time(*local_start), tzinfo=LOCAL_TZ).astimezone(timezone.utc)
     ended = started + timedelta(minutes=duration_min)
     waypoints = [DUBAI[key] for key in waypoint_keys]
     route = route_through_waypoints(waypoints, points_per_leg=7)
@@ -425,10 +432,13 @@ def seed_demo_data(token: str, project: str, user_id: str) -> None:
         (85, 19.8, 40, 30, 76, ["marina", "palm_trunk", "atlantis", "marina"], "auto"),
         (98, 6.5, 15, 26, 50, ["dic", "marina"], "manual"),
     ]
-    for args in pearl_trips:
+    # Weekday commuter: out in the morning, home in the early evening.
+    pearl_times = [(7, 45), (8, 10), (18, 20), (7, 55), (17, 40), (8, 30), (18, 5),
+                   (7, 50), (13, 15), (8, 0), (18, 45), (10, 30), (16, 50), (8, 15)]
+    for args, start in zip(pearl_trips, pearl_times):
         seed_trip(token, project, user_id, "demo_vehicle_pearl", now,
                   days_ago=args[0], km=args[1], duration_min=args[2], avg=args[3],
-                  max_speed=args[4], waypoint_keys=args[5], source=args[6])
+                  max_speed=args[4], waypoint_keys=args[5], source=args[6], local_start=start)
     for svc in [
         (70, 39650, "oil", "5W-30 synthetic + filter", 420.0, 47650, 150),
         (28, 42680, "tires", "Rotation + alignment check", 280.0, None, None),
@@ -455,10 +465,12 @@ def seed_demo_data(token: str, project: str, user_id: str) -> None:
         (72, 58.0, 65, 54, 120, ["marina", "szr_mall", "business_bay", "difc"], "auto"),
         (90, 36.5, 42, 52, 108, ["jvc", "barsha", "moe"], "auto"),
     ]
-    for args in sand_trips:
+    # Daytime runs across town.
+    sand_times = [(10, 0), (15, 30), (9, 15), (16, 45), (11, 20), (14, 0), (9, 40), (17, 10), (12, 30)]
+    for args, start in zip(sand_trips, sand_times):
         seed_trip(token, project, user_id, "demo_vehicle_sandstorm", now,
                   days_ago=args[0], km=args[1], duration_min=args[2], avg=args[3],
-                  max_speed=args[4], waypoint_keys=args[5], source=args[6])
+                  max_speed=args[4], waypoint_keys=args[5], source=args[6], local_start=start)
     for svc in [
         (48, 124200, "oil", "Diesel service + fuel filter", 890.0, 129200, 120),
         (12, 127400, "tires", "All-terrain rotation", 420.0, None, None),
@@ -485,10 +497,12 @@ def seed_demo_data(token: str, project: str, user_id: str) -> None:
         (65, 17.5, 25, 42, 108, ["marina", "szr_mall", "downtown"], "auto"),
         (82, 9.6, 14, 41, 90, ["media_city", "dic", "marina"], "auto"),
     ]
-    for args in flash_trips:
+    # Evening and late-night drives in the sport sedan.
+    flash_times = [(19, 30), (21, 15), (18, 50), (22, 40), (20, 5), (9, 10), (19, 45), (23, 10), (20, 30), (18, 20)]
+    for args, start in zip(flash_trips, flash_times):
         seed_trip(token, project, user_id, "demo_vehicle_flash", now,
                   days_ago=args[0], km=args[1], duration_min=args[2], avg=args[3],
-                  max_speed=args[4], waypoint_keys=args[5], source=args[6])
+                  max_speed=args[4], waypoint_keys=args[5], source=args[6], local_start=start)
     for svc in [
         (42, 59800, "oil", "BMW LL-14FE + micro filter", 780.0, 64800, 180),
         (6, 62100, "inspection", "Pre-summer AC + brake check", 650.0, None, None),
@@ -510,10 +524,11 @@ def seed_demo_data(token: str, project: str, user_id: str) -> None:
         (310, 11.0, 22, 30, 65, ["downtown", "business_bay", "marina"], "auto"),
         (360, 6.2, 14, 27, 52, ["marina", "jbr"], "manual"),
     ]
-    for args in spark_trips:
+    spark_times = [(8, 20), (12, 40), (17, 30), (9, 5), (18, 0)]
+    for args, start in zip(spark_trips, spark_times):
         seed_trip(token, project, user_id, "demo_vehicle_spark", now,
                   days_ago=args[0], km=args[1], duration_min=args[2], avg=args[3],
-                  max_speed=args[4], waypoint_keys=args[5], source=args[6])
+                  max_speed=args[4], waypoint_keys=args[5], source=args[6], local_start=start)
     seed_service(token, project, user_id, "demo_vehicle_spark", currency, now,
                  days_ago=200, odo=87800, kind="oil", desc="Final service before archiving",
                  cost=320.0, next_odo=None, next_days=None)

@@ -986,11 +986,21 @@ private func vehicleAppearancePreview(
     )
 }
 
+/// Cheap change detection for the driver snapshot (array buffers compare by identity first).
+struct DriverSnapshotInputs: Equatable {
+    var trips: [Trip]
+    var vehicles: [Vehicle]
+    var fuelLogs: [FuelLog]
+    var unit: String
+}
+
 struct DriverProfileView: View {
     @EnvironmentObject private var store: DataStore
     let onProfile: () -> Void
     @State private var showBadges = false
     @State private var selectedBadge: DriverAchievement?
+    @State private var snapshot = DriverProfileSnapshot()
+    @State private var recordTrip: Trip?
 
     private var unit: String { store.defaultDistanceUnit }
     private var displayName: String {
@@ -1039,52 +1049,20 @@ struct DriverProfileView: View {
     }
 
     private var driverHeaderSubtitle: String {
-        let drives = store.tripsForActiveVehicles.count
-        let road = DistanceFormat.formatDistance(totalKm, unit: unit)
+        let drives = snapshot.lifetimeDrives
+        let road = DistanceFormat.formatOdometer(totalKm, unit: unit)
         if drives == 0 { return "\(road) all-time · start a drive" }
-        return "\(drives) drive\(drives == 1 ? "" : "s") · \(road) all-time"
+        // Lifetime totals live here once, so the driver card can stay about identity.
+        let wheel = DriverProfileFormat.hours(snapshot.lifetimeSeconds)
+        return "\(drives) drive\(drives == 1 ? "" : "s") · \(road) · \(wheel)"
     }
 
-    private var monthTrips: [Trip] {
-        let start = Calendar.current.date(from: Calendar.current.dateComponents([.year, .month], from: Date())) ?? Date()
-        return store.tripsForActiveVehicles.filter { $0.startedAt >= start }
+    private var snapshotInputs: DriverSnapshotInputs {
+        DriverSnapshotInputs(trips: store.trips, vehicles: store.vehicles, fuelLogs: store.fuelLogs, unit: unit)
     }
 
-    private var monthKm: Double {
-        monthTrips.reduce(0) { $0 + max(0, $1.distanceKm) }
-    }
-
-    private var lastMonthKm: Double {
-        let cal = Calendar.current
-        guard let thisStart = cal.date(from: cal.dateComponents([.year, .month], from: Date())),
-              let lastStart = cal.date(byAdding: .month, value: -1, to: thisStart) else { return 0 }
-        return store.tripsForActiveVehicles
-            .filter { $0.startedAt >= lastStart && $0.startedAt < thisStart }
-            .reduce(0) { $0 + max(0, $1.distanceKm) }
-    }
-
-    private var monthKmTrend: String? {
-        guard lastMonthKm > 5, monthKm > 0 else { return nil }
-        let change = ((monthKm - lastMonthKm) / lastMonthKm) * 100
-        if abs(change) < 3 { return "Holding steady vs last month" }
-        let absVal = Int(abs(change).rounded())
-        return change > 0 ? "↑ \(absVal)% vs last month" : "↓ \(absVal)% vs last month"
-    }
-
-    /// 0 = calm, 1 = spirited — from recent trip top speeds (driver style, not car thirst).
-    private var driverStyleScore: Double {
-        let recent = Array(monthTrips.suffix(12))
-        guard !recent.isEmpty else { return 0.22 }
-        let avgTop = recent.map(\.maxSpeedKmh).reduce(0, +) / Double(recent.count)
-        return min(max((avgTop - 45) / 85, 0.08), 1)
-    }
-
-    private var monthRoadHours: Double {
-        monthTrips.reduce(0) { $0 + $1.durationSec } / 3600
-    }
-
-    private var monthTopSpeedKmh: Double {
-        monthTrips.map(\.maxSpeedKmh).max() ?? 0
+    private func rebuildSnapshot() {
+        snapshot = DriverProfileSnapshot.build(trips: store.tripsForActiveVehicles, lifetimeKm: totalKm, unit: unit)
     }
 
     var body: some View {
@@ -1111,9 +1089,38 @@ struct DriverProfileView: View {
                         .accessibilityLabel("\(unlockedCount) of \(achievements.count) badges")
                     }
 
-                    driverStatusCard
-                    driverMonthSection
-                    TrackyInlineMoodRow()
+                    DriverIdentityCard(snapshot: snapshot, displayName: displayName, unit: unit) {
+                        shareDriverCard()
+                    }
+
+                    VStack(alignment: .leading, spacing: VS.Spacing.stack) {
+                        VSSectionHeader(title: "Rhythm", subtitle: "Every drive, last \(DriverProfileSnapshot.heatmapWeeks) weeks")
+                        DriverRhythmCard(snapshot: snapshot)
+                    }
+
+                    VStack(alignment: .leading, spacing: VS.Spacing.stack) {
+                        VSSectionHeader(title: "Last 30 days", subtitle: "Rolling, so it never resets on the 1st")
+                        DriverLast30Card(snapshot: snapshot, unit: unit)
+                    }
+
+                    if !snapshot.records.isEmpty {
+                        VStack(alignment: .leading, spacing: VS.Spacing.stack) {
+                            VSSectionHeader(title: "Personal records", subtitle: "Tap one to relive the drive")
+                            DriverRecordsRow(records: snapshot.records) { record in
+                                guard let id = record.tripId else { return }
+                                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                                recordTrip = store.trips.first { $0.id == id }
+                            }
+                        }
+                    }
+
+                    if snapshot.peakHour != nil {
+                        VStack(alignment: .leading, spacing: VS.Spacing.stack) {
+                            VSSectionHeader(title: "Your hours", subtitle: "When you usually drive")
+                            DriverHoursCard(hourCounts: snapshot.hourCounts, peakHour: snapshot.peakHour)
+                        }
+                    }
+
                     topInsightSection
                     badgesHubPreview
                 }
@@ -1131,144 +1138,32 @@ struct DriverProfileView: View {
                     .presentationDetents([.medium, .large])
                     .veloseeteSheet()
             }
+            .sheet(item: $recordTrip) { trip in
+                TripDetailView(trip: trip, unit: unit)
+                    .veloseeteSheet()
+            }
+            .onAppear(perform: rebuildSnapshot)
+            .onChange(of: snapshotInputs) { _, _ in rebuildSnapshot() }
         }
     }
 
-    /// How you’re driving — activity + style. Car fuel lives in Garage.
-    private var driverStatusCard: some View {
-        let vibe = driverActivityVibe
-        let toneColor: Color = {
-            switch vibe.tone {
-            case .excellent, .good: return VS.Color.accent
-            case .watch: return VS.Color.warning
-            case .learning, .neutral: return VS.Color.textSecondary
-            }
-        }()
-
-        return VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 10) {
-                Text(vibe.emoji)
-                    .font(.system(size: 28))
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Your driving")
-                        .font(VS.TextStyle.caption2(.bold))
-                        .foregroundStyle(VS.Color.textTertiary)
-                    Text(vibe.label)
-                        .font(VS.TextStyle.title3())
-                        .foregroundStyle(VS.Color.textPrimary)
-                    Text(vibe.detail)
-                        .font(VS.TextStyle.footnote())
-                        .foregroundStyle(toneColor.opacity(0.95))
-                }
-                Spacer(minLength: 0)
-            }
-
-            DriverStyleSpectrumBar(thirst: driverStyleScore)
-
-            HStack {
-                Label("Calm", systemImage: "leaf.fill")
-                    .font(VS.TextStyle.caption2(.bold))
-                    .foregroundStyle(VS.Color.accent.opacity(0.85))
-                Spacer(minLength: 0)
-                Label("Spirited", systemImage: "bolt.fill")
-                    .font(VS.TextStyle.caption2(.bold))
-                    .foregroundStyle(VS.Color.routeEnd.opacity(0.9))
-            }
-        }
-        .padding(VS.Spacing.card)
-        .glassCard(elevated: true)
-    }
-
-    private var driverActivityVibe: (label: String, emoji: String, detail: String, tone: EfficiencyVibe.Tone) {
-        let count = monthTrips.count
-        let hours = monthRoadHours
-        let hoursText = hours < 1
-            ? (count == 0 ? "No drives yet this month" : "Under an hour on the road")
-            : String(format: "%.0fh on the road this month", hours)
-
-        if count == 0 {
-            return ("Ready when you are", "👋", "Log a drive to see your style", .learning)
-        }
-        if count == 1 {
-            return ("First miles in", "🛣️", hoursText, .good)
-        }
-        if count < 5 {
-            return ("Easing into the month", "🧭", "\(count) drives · \(hoursText)", .neutral)
-        }
-        if count < 12 {
-            return ("Building a rhythm", "🎯", "\(count) drives · \(hoursText)", .good)
-        }
-        if driverStyleScore >= 0.7 {
-            return ("Spirited month", "⚡", "\(count) drives · higher top speeds", .watch)
-        }
-        return ("Road regular", "🏆", "\(count) drives · \(hoursText)", .excellent)
-    }
-
-    /// This month — your road time, not the car’s thirst.
-    private var driverMonthSection: some View {
-        let drivenDetail = monthTrips.isEmpty
-            ? "No drives yet this month"
-            : "\(monthTrips.count) drive\(monthTrips.count == 1 ? "" : "s") · \(monthRoadHours < 1 ? "<1h" : String(format: "%.0fh", monthRoadHours)) on road"
-        let topSpeedText: String = {
-            guard monthTopSpeedKmh > 0 else { return "—" }
-            if unit == "mi" {
-                return String(format: "%.0f", monthTopSpeedKmh * 0.621371)
-            }
-            return String(format: "%.0f", monthTopSpeedKmh)
-        }()
-        let topSpeedUnit = unit == "mi" ? "mph" : "km/h"
-        let hoursValue = monthTrips.isEmpty
-            ? "—"
-            : (monthRoadHours < 1 ? "<1" : String(format: "%.0f", monthRoadHours))
-
-        return VStack(alignment: .leading, spacing: VS.Spacing.stack) {
-            VSSectionHeader(title: "This month", subtitle: "Your time on the road")
-
-            VStack(alignment: .leading, spacing: 6) {
-                Text("Distance")
-                    .font(VS.TextStyle.caption2(.bold))
-                    .foregroundStyle(VS.Color.textTertiary)
-                Text(monthKm > 0 ? DistanceFormat.formatDistance(monthKm, unit: unit) : "—")
-                    .font(VS.TextStyle.display())
-                    .foregroundStyle(VS.Color.textPrimary)
-                    .minimumScaleFactor(0.55)
-                    .lineLimit(1)
-                    .contentTransition(.numericText())
-                if let trend = monthKmTrend {
-                    Text(trend)
-                        .font(VS.TextStyle.caption(.semibold))
-                        .foregroundStyle(trend.contains("↑") ? VS.Color.accent : VS.Color.textSecondary)
-                } else {
-                    Text(drivenDetail)
-                        .font(VS.TextStyle.caption())
-                        .foregroundStyle(VS.Color.textSecondary)
-                }
-            }
-            .padding(VS.Spacing.card)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .glassCard(elevated: true)
-
-            HStack(spacing: VS.Spacing.gutter) {
-                DriverStatChip(
-                    icon: .car,
-                    value: monthTrips.isEmpty ? "—" : "\(monthTrips.count)",
-                    label: "Drives",
-                    detail: monthTrips.isEmpty ? "Track a trip" : drivenDetail
-                )
-                DriverStatChip(
-                    icon: .roadHorizon,
-                    value: hoursValue,
-                    label: "Hours",
-                    detail: monthTrips.isEmpty ? "No road time yet" : "Time behind the wheel"
-                )
-                DriverStatChip(
-                    icon: .gauge,
-                    value: topSpeedText,
-                    label: "Top \(topSpeedUnit)",
-                    detail: monthTopSpeedKmh > 0 ? "Peak this month" : "Needs a drive"
-                )
-            }
-        }
+    /// Renders the driver card as a standalone image — the thing people post.
+    @MainActor
+    private func shareDriverCard() {
+        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        let card = DriverIdentityCard(snapshot: snapshot, displayName: displayName, unit: unit)
+            .frame(width: 360)
+            .padding(20)
+            .background(VS.Color.bgPrimary)
+            .environment(\.colorScheme, .dark)
+        let renderer = ImageRenderer(content: card)
+        renderer.scale = 3
+        guard let image = renderer.uiImage,
+              let root = UIApplication.shared.veloseeteTopViewController else { return }
+        // Present UIKit's share sheet directly; wrapped in a SwiftUI sheet it renders blank.
+        let controller = UIActivityViewController(activityItems: [image], applicationActivities: nil)
+        controller.popoverPresentationController?.sourceView = root.view
+        root.present(controller, animated: true)
     }
 
     private var topInsightSection: some View {
@@ -2367,6 +2262,15 @@ struct ProfileView: View {
                     }
                 } header: {
                     Text("Account")
+                }
+                .listRowBackground(VS.Color.bgSecondary)
+
+                Section {
+                    TrackyInlineMoodRow(embedded: true)
+                } header: {
+                    Text("App icon")
+                } footer: {
+                    Text("Tracky's mood sets your Home Screen icon.")
                 }
                 .listRowBackground(VS.Color.bgSecondary)
 
