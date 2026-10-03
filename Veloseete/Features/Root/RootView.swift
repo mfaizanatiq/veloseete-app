@@ -89,11 +89,11 @@ struct RootView: View {
     private func connectionBanner(_ text: String, retry: @escaping () -> Void) -> some View {
         HStack(alignment: .top, spacing: 12) {
             Text(text)
-                .font(VS.Typography.body(12))
+                .font(VS.TextStyle.caption())
                 .foregroundStyle(VS.Color.error)
                 .frame(maxWidth: .infinity, alignment: .leading)
             Button("Retry", action: retry)
-                .font(VS.Typography.body(12, weight: .semibold))
+                .font(VS.TextStyle.caption(.semibold))
                 .foregroundStyle(VS.Color.navPill)
                 .padding(.horizontal, 10)
                 .padding(.vertical, 6)
@@ -123,7 +123,7 @@ private struct LoadingView: View {
 
                 if let message {
                     Text(message)
-                        .font(VS.Typography.body(14))
+                        .font(VS.TextStyle.callout())
                         .foregroundStyle(VS.Color.textSecondary)
                         .multilineTextAlignment(.center)
                         .padding(.horizontal, 32)
@@ -132,7 +132,7 @@ private struct LoadingView: View {
 
                 if let retryTitle, let onRetry {
                     Button(retryTitle, action: onRetry)
-                        .font(VS.Typography.body(14, weight: .semibold))
+                        .font(VS.TextStyle.callout(.semibold))
                         .foregroundStyle(VS.Color.navPill)
                         .padding(.horizontal, 18)
                         .padding(.vertical, 10)

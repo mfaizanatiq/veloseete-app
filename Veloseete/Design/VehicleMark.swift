@@ -587,7 +587,7 @@ struct VehicleMarkPickerCell: View {
                     .shadow(color: selected ? VS.Color.accent.opacity(0.22) : .clear, radius: 10, y: 2)
 
                 Text(style.label)
-                    .font(VS.Typography.heading(12, weight: selected ? .bold : .semibold))
+                    .font(VS.TextStyle.tag(selected ? .bold : .semibold))
                     .foregroundStyle(selected ? VS.Color.accent : VS.Color.textTertiary)
                     .lineLimit(1)
                     .minimumScaleFactor(0.85)
@@ -690,7 +690,7 @@ struct VehiclePaintSwatchRow: View {
                             .frame(width: 42, height: 42)
 
                             Text(color.label)
-                                .font(VS.Typography.body(10, weight: paint == color ? .bold : .medium))
+                                .font(VS.TextStyle.caption2(paint == color ? .bold : .medium))
                                 .foregroundStyle(paint == color ? VS.Color.accent : VS.Color.textTertiary)
                                 .lineLimit(1)
                         }

@@ -36,7 +36,7 @@ struct ActiveDriveHUDPreview: View {
             .ignoresSafeArea()
             .overlay {
                 Text("MAP FROZEN")
-                    .font(VS.Typography.mono(11, weight: .bold))
+                    .font(VS.TextStyle.label())
                     .foregroundStyle(Color.white.opacity(0.18))
                     .tracking(2)
             }
@@ -68,14 +68,14 @@ struct ActiveDriveHUDPreview: View {
 
             HStack(spacing: 10) {
                 Text("Pause")
-                    .font(VS.Typography.heading(16, weight: .bold))
+                    .font(VS.TextStyle.headline())
                     .foregroundStyle(VS.Color.textPrimary)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 16)
                     .background(VS.Color.divider, in: Capsule())
 
                 Text("End drive")
-                    .font(VS.Typography.heading(16, weight: .bold))
+                    .font(VS.TextStyle.headline())
                     .foregroundStyle(VS.Color.navPill)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 16)

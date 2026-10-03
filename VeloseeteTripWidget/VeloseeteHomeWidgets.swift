@@ -130,15 +130,15 @@ private struct FuelPulseWidgetView: View {
     private var emptyState: some View {
         VStack(alignment: .leading, spacing: 6) {
             Label("Fuel Pulse", systemImage: "fuelpump.fill")
-                .font(.caption.weight(.semibold))
+                .font(VSTextStyle.caption(.semibold))
                 .foregroundStyle(VeloseeteWidgetStyle.accent)
             Spacer(minLength: 0)
             Text("Waiting for sync")
-                .font(.headline)
+                .font(VSTextStyle.headline(.semibold))
                 .lineLimit(2)
                 .minimumScaleFactor(0.85)
             Text("Open Veloseete once")
-                .font(.caption)
+                .font(VSTextStyle.caption())
                 .foregroundStyle(VeloseeteWidgetStyle.secondary)
                 .lineLimit(1)
             Spacer(minLength: 0)
@@ -150,10 +150,10 @@ private struct FuelPulseWidgetView: View {
         VStack(alignment: .leading, spacing: 4) {
             HStack(spacing: 5) {
                 Image(systemName: "fuelpump.fill")
-                    .font(.caption.weight(.semibold))
+                    .font(VSTextStyle.caption(.semibold))
                     .foregroundStyle(VeloseeteWidgetStyle.accent)
                 Text("FUEL")
-                    .font(.system(size: 10, weight: .bold))
+                    .font(VSTextStyle.label())
                     .foregroundStyle(VeloseeteWidgetStyle.secondary)
                 Spacer(minLength: 0)
             }
@@ -162,20 +162,20 @@ private struct FuelPulseWidgetView: View {
 
             if let days = s.daysSinceLastFuel {
                 Text("\(days)")
-                    .font(.system(size: 36, weight: .bold, design: .rounded).monospacedDigit())
+                    .font(VSTextStyle.displaySmall())
                     .foregroundStyle(days >= 10 ? VeloseeteWidgetStyle.warning : .white)
                     .minimumScaleFactor(0.7)
                     .lineLimit(1)
                 Text(days == 0 ? "filled today" : days == 1 ? "day since fill" : "days since fill")
-                    .font(.caption.weight(.medium))
+                    .font(VSTextStyle.caption(.medium))
                     .foregroundStyle(VeloseeteWidgetStyle.secondary)
                     .lineLimit(1)
                     .minimumScaleFactor(0.85)
             } else {
                 Text("—")
-                    .font(.system(size: 36, weight: .bold, design: .rounded))
+                    .font(VSTextStyle.displaySmall())
                 Text("no fills yet")
-                    .font(.caption)
+                    .font(VSTextStyle.caption())
                     .foregroundStyle(VeloseeteWidgetStyle.secondary)
                     .lineLimit(1)
             }
@@ -183,7 +183,7 @@ private struct FuelPulseWidgetView: View {
             Spacer(minLength: 0)
 
             Text(s.efficiencyLPer100Km.map { String(format: "%.1f L/100", $0) } ?? "Eff —")
-                .font(.caption.weight(.semibold).monospacedDigit())
+                .font(VSTextStyle.caption(.semibold).monospacedDigit())
                 .foregroundStyle(VeloseeteWidgetStyle.accent)
                 .lineLimit(1)
                 .minimumScaleFactor(0.8)
@@ -195,7 +195,7 @@ private struct FuelPulseWidgetView: View {
         HStack(alignment: .center, spacing: 12) {
             VStack(alignment: .leading, spacing: 4) {
                 Label(s.vehicleName, systemImage: "fuelpump.fill")
-                    .font(.caption.weight(.semibold))
+                    .font(VSTextStyle.caption(.semibold))
                     .foregroundStyle(VeloseeteWidgetStyle.accent)
                     .lineLimit(1)
                     .minimumScaleFactor(0.85)
@@ -204,27 +204,27 @@ private struct FuelPulseWidgetView: View {
 
                 if let days = s.daysSinceLastFuel {
                     Text("\(days)d")
-                        .font(.system(size: 42, weight: .bold, design: .rounded).monospacedDigit())
+                        .font(VSTextStyle.displaySmall())
                         .minimumScaleFactor(0.7)
                         .lineLimit(1)
                     Text(days == 0 ? "Filled today" : "Since last pump")
-                        .font(.caption)
+                        .font(VSTextStyle.caption())
                         .foregroundStyle(VeloseeteWidgetStyle.secondary)
                         .lineLimit(1)
                 } else {
                     Text("Fresh")
-                        .font(.system(size: 28, weight: .bold, design: .rounded))
+                        .font(VSTextStyle.title())
                         .minimumScaleFactor(0.8)
                         .lineLimit(1)
                     Text("Log a fill to start")
-                        .font(.caption)
+                        .font(VSTextStyle.caption())
                         .foregroundStyle(VeloseeteWidgetStyle.secondary)
                         .lineLimit(1)
                 }
 
                 if let station = s.lastStationName, !station.isEmpty {
                     Text(station)
-                        .font(.caption2.weight(.medium))
+                        .font(VSTextStyle.caption2(.medium))
                         .foregroundStyle(VeloseeteWidgetStyle.secondary)
                         .lineLimit(1)
                         .minimumScaleFactor(0.85)
@@ -272,11 +272,11 @@ private struct FuelPulseWidgetView: View {
     private func metricTile(title: String, value: String) -> some View {
         VStack(alignment: .leading, spacing: 1) {
             Text(title.uppercased())
-                .font(.system(size: 8, weight: .bold))
+                .font(VSTextStyle.label())
                 .foregroundStyle(VeloseeteWidgetStyle.secondary)
                 .lineLimit(1)
             Text(value)
-                .font(.caption.weight(.bold).monospacedDigit())
+                .font(VSTextStyle.caption(.bold).monospacedDigit())
                 .lineLimit(1)
                 .minimumScaleFactor(0.65)
         }
@@ -319,11 +319,11 @@ private struct LiveDriveWidgetView: View {
             if s.vehicleID == nil {
                 VStack(alignment: .leading, spacing: 6) {
                     Label("Live Drive", systemImage: "car.fill")
-                        .font(.caption.weight(.semibold))
+                        .font(VSTextStyle.caption(.semibold))
                         .foregroundStyle(VeloseeteWidgetStyle.accent)
                     Spacer(minLength: 0)
                     Text("Select a car to arm tracking")
-                        .font(.headline)
+                        .font(VSTextStyle.headline(.semibold))
                         .lineLimit(3)
                         .minimumScaleFactor(0.85)
                     Spacer(minLength: 0)
@@ -345,11 +345,11 @@ private struct LiveDriveWidgetView: View {
                     .fill(s.trackingState == .paused ? VeloseeteWidgetStyle.warning : VeloseeteWidgetStyle.live)
                     .frame(width: 7, height: 7)
                 Text(s.trackingState == .paused ? "PAUSED" : "LIVE")
-                    .font(.system(size: 10, weight: .bold))
+                    .font(VSTextStyle.label())
                     .foregroundStyle(s.trackingState == .paused ? VeloseeteWidgetStyle.warning : VeloseeteWidgetStyle.live)
                 Spacer(minLength: 4)
                 Text(s.vehicleName)
-                    .font(.caption2.weight(.semibold))
+                    .font(VSTextStyle.caption2(.semibold))
                     .foregroundStyle(VeloseeteWidgetStyle.secondary)
                     .lineLimit(1)
                     .minimumScaleFactor(0.8)
@@ -359,11 +359,11 @@ private struct LiveDriveWidgetView: View {
 
             HStack(alignment: .lastTextBaseline, spacing: 4) {
                 Text(s.distanceKm, format: .number.precision(.fractionLength(1)))
-                    .font(.system(size: family == .systemMedium ? 40 : 34, weight: .bold, design: .rounded).monospacedDigit())
+                    .font(family == .systemMedium ? VSTextStyle.displaySmall() : VSTextStyle.largeTitle().monospacedDigit())
                     .minimumScaleFactor(0.7)
                     .lineLimit(1)
                 Text("km")
-                    .font(.caption.weight(.semibold))
+                    .font(VSTextStyle.caption(.semibold))
                     .foregroundStyle(VeloseeteWidgetStyle.secondary)
             }
 
@@ -375,7 +375,7 @@ private struct LiveDriveWidgetView: View {
                 }
             } else {
                 Text("\(Int(s.currentSpeedKmh.rounded())) km/h · \(VeloseeteWidgetFormat.duration(s.durationSec))")
-                    .font(.caption.weight(.semibold).monospacedDigit())
+                    .font(VSTextStyle.caption(.semibold).monospacedDigit())
                     .foregroundStyle(VeloseeteWidgetStyle.secondary)
                     .lineLimit(1)
                     .minimumScaleFactor(0.8)
@@ -388,23 +388,23 @@ private struct LiveDriveWidgetView: View {
         VStack(alignment: .leading, spacing: 4) {
             HStack(spacing: 5) {
                 Image(systemName: "car.side.fill")
-                    .font(.caption.weight(.semibold))
+                    .font(VSTextStyle.caption(.semibold))
                     .foregroundStyle(VeloseeteWidgetStyle.accent)
                 Text(s.autoTrackingEnabled ? "ARMED" : "IDLE")
-                    .font(.system(size: 10, weight: .bold))
+                    .font(VSTextStyle.label())
                     .foregroundStyle(VeloseeteWidgetStyle.secondary)
                 Spacer(minLength: 0)
             }
 
             Text(s.vehicleName)
-                .font(.headline)
+                .font(VSTextStyle.headline(.semibold))
                 .lineLimit(1)
                 .minimumScaleFactor(0.85)
 
             Text(s.autoTrackingEnabled
                  ? "Auto-detect ON — watching"
                  : "Auto-detect OFF — enable in Drives")
-                .font(.caption)
+                .font(VSTextStyle.caption())
                 .foregroundStyle(VeloseeteWidgetStyle.secondary)
                 .lineLimit(2)
                 .minimumScaleFactor(0.85)
@@ -413,14 +413,14 @@ private struct LiveDriveWidgetView: View {
 
             HStack(alignment: .firstTextBaseline, spacing: 6) {
                 Text(String(format: "%.0f km odo", s.estimatedOdometerKm ?? s.odometerKm))
-                    .font(.caption.weight(.semibold).monospacedDigit())
+                    .font(VSTextStyle.caption(.semibold).monospacedDigit())
                     .foregroundStyle(VeloseeteWidgetStyle.accent)
                     .lineLimit(1)
                     .minimumScaleFactor(0.8)
                 Spacer(minLength: 4)
                 if s.pendingTripCount > 0 {
                     Text("\(s.pendingTripCount) to review")
-                        .font(.caption2.weight(.bold))
+                        .font(VSTextStyle.caption2(.bold))
                         .foregroundStyle(VeloseeteWidgetStyle.warning)
                         .lineLimit(1)
                         .minimumScaleFactor(0.8)
@@ -433,11 +433,11 @@ private struct LiveDriveWidgetView: View {
     private func driveChip(_ value: String, _ label: String) -> some View {
         VStack(alignment: .leading, spacing: 1) {
             Text(value)
-                .font(.caption.weight(.bold).monospacedDigit())
+                .font(VSTextStyle.caption(.bold).monospacedDigit())
                 .lineLimit(1)
                 .minimumScaleFactor(0.7)
             Text(label.uppercased())
-                .font(.system(size: 8, weight: .bold))
+                .font(VSTextStyle.label())
                 .foregroundStyle(VeloseeteWidgetStyle.secondary)
                 .lineLimit(1)
         }
@@ -474,10 +474,10 @@ private struct ReviewQueueWidgetView: View {
         VStack(alignment: .leading, spacing: 4) {
             HStack(spacing: 5) {
                 Image(systemName: "checkmark.seal.fill")
-                    .font(.caption.weight(.semibold))
+                    .font(VSTextStyle.caption(.semibold))
                     .foregroundStyle(s.pendingTripCount > 0 ? VeloseeteWidgetStyle.warning : VeloseeteWidgetStyle.accent)
                 Text("REVIEW")
-                    .font(.system(size: 10, weight: .bold))
+                    .font(VSTextStyle.label())
                     .foregroundStyle(VeloseeteWidgetStyle.secondary)
                 Spacer(minLength: 0)
             }
@@ -485,7 +485,7 @@ private struct ReviewQueueWidgetView: View {
             Spacer(minLength: 0)
 
             Text("\(s.pendingTripCount)")
-                .font(.system(size: 42, weight: .bold, design: .rounded).monospacedDigit())
+                .font(VSTextStyle.displaySmall())
                 .foregroundStyle(s.pendingTripCount > 0 ? VeloseeteWidgetStyle.warning : .white)
                 .minimumScaleFactor(0.7)
                 .lineLimit(1)
@@ -493,7 +493,7 @@ private struct ReviewQueueWidgetView: View {
             Text(s.pendingTripCount == 0
                  ? "All caught up"
                  : s.pendingTripCount == 1 ? "drive waiting" : "drives waiting")
-                .font(.caption.weight(.semibold))
+                .font(VSTextStyle.caption(.semibold))
                 .foregroundStyle(VeloseeteWidgetStyle.secondary)
                 .lineLimit(1)
                 .minimumScaleFactor(0.85)
@@ -501,7 +501,7 @@ private struct ReviewQueueWidgetView: View {
             Spacer(minLength: 0)
 
             Text(s.pendingTripCount > 0 ? "Open My Drives" : s.vehicleName)
-                .font(.caption2.weight(.medium))
+                .font(VSTextStyle.caption2(.medium))
                 .foregroundStyle(VeloseeteWidgetStyle.accent)
                 .lineLimit(1)
                 .minimumScaleFactor(0.85)

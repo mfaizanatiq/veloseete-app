@@ -112,7 +112,7 @@ struct RefuelSheetView: View {
                 VStack(alignment: .leading, spacing: 28) {
                     if carPlayDraft != nil {
                         Label("From CarPlay", systemImage: "car.side.fill")
-                            .font(VS.Typography.body(13, weight: .semibold))
+                            .font(VS.TextStyle.footnote(.semibold))
                             .foregroundStyle(VS.Color.accent)
                             .padding(.horizontal, 14)
                             .padding(.vertical, 10)
@@ -134,7 +134,7 @@ struct RefuelSheetView: View {
                                 price,
                                 VolumeFormat.suffix(volumeUnit)
                             ))
-                                .font(VS.Typography.body(13, weight: .medium))
+                                .font(VS.TextStyle.footnote(.medium))
                                 .foregroundStyle(VS.Color.accentSecondary)
                         }
 
@@ -147,7 +147,7 @@ struct RefuelSheetView: View {
 
                         if !isEditing, let entered = Double(odometer), entered < lastOdometer {
                             Text("Below last reading (\(DistanceFormat.formatOdometer(lastOdometer, unit: "km")))")
-                                .font(VS.Typography.body(12))
+                                .font(VS.TextStyle.caption())
                                 .foregroundStyle(VS.Color.warning)
                         }
                     }
@@ -155,7 +155,7 @@ struct RefuelSheetView: View {
                     // Fill details
                     VStack(alignment: .leading, spacing: 16) {
                         Toggle("Full tank", isOn: $isFullTank)
-                            .font(VS.Typography.heading(15))
+                            .font(VS.TextStyle.headline(.semibold))
                             .foregroundStyle(VS.Color.textPrimary)
                             .tint(VS.Color.accent)
                             .padding(14)
@@ -173,13 +173,13 @@ struct RefuelSheetView: View {
 
                     if let errorMessage {
                         Text(errorMessage)
-                            .font(VS.Typography.body(13))
+                            .font(VS.TextStyle.footnote())
                             .foregroundStyle(VS.Color.error)
                     }
 
                     if showSuccess {
                         Text("Saved")
-                            .font(VS.Typography.body(13))
+                            .font(VS.TextStyle.footnote())
                             .foregroundStyle(VS.Color.success)
                     }
                 }
@@ -250,10 +250,10 @@ struct RefuelSheetView: View {
                 Image(systemName: "mappin.and.ellipse")
                     .foregroundStyle(VS.Color.accent)
                 Text("Station")
-                    .font(VS.Typography.body(12, weight: .medium))
+                    .font(VS.TextStyle.caption(.medium))
                     .foregroundStyle(VS.Color.textTertiary)
                 Text("Optional")
-                    .font(VS.Typography.body(10, weight: .semibold))
+                    .font(VS.TextStyle.caption2(.semibold))
                     .foregroundStyle(VS.Color.textTertiary.opacity(0.75))
                 Spacer(minLength: 0)
                 if isResolvingStation {
@@ -262,14 +262,14 @@ struct RefuelSheetView: View {
                         .tint(VS.Color.accent)
                 } else if let station, !stationSkipped, station.distanceMeters > 0 {
                     Text(distanceLabel(for: station))
-                        .font(VS.Typography.body(12))
+                        .font(VS.TextStyle.caption())
                         .foregroundStyle(VS.Color.textTertiary)
                 }
             }
 
             if let station, !stationSkipped {
                 Text(station.name)
-                    .font(VS.Typography.heading(15))
+                    .font(VS.TextStyle.headline(.semibold))
                     .foregroundStyle(VS.Color.textPrimary)
                     .lineLimit(1)
             }
@@ -277,12 +277,12 @@ struct RefuelSheetView: View {
             if stationLookupFailed, station == nil, !isResolvingStation {
                 HStack(spacing: 10) {
                     Text("Couldn’t find stations nearby.")
-                        .font(VS.Typography.body(12))
+                        .font(VS.TextStyle.caption())
                         .foregroundStyle(VS.Color.textTertiary)
                     Button("Retry") {
                         Task { await resolveStation(forceRefresh: true) }
                     }
-                    .font(VS.Typography.body(12, weight: .semibold))
+                    .font(VS.TextStyle.caption(.semibold))
                     .foregroundStyle(VS.Color.accent)
                 }
             }
@@ -307,14 +307,14 @@ struct RefuelSheetView: View {
                     stationSkipped = true
                     station = nil
                 }
-                .font(VS.Typography.body(13, weight: .semibold))
+                .font(VS.TextStyle.footnote(.semibold))
                 .foregroundStyle(VS.Color.textSecondary)
 
                 Button {
                     showStationMap = true
                 } label: {
                     Label("Map", systemImage: "map")
-                        .font(VS.Typography.body(13, weight: .semibold))
+                        .font(VS.TextStyle.footnote(.semibold))
                 }
                 .foregroundStyle(VS.Color.accent)
 
@@ -371,20 +371,20 @@ struct RefuelSheetView: View {
                 Spacer()
                 if let estimate {
                     Text("~" + String(format: "%.0f", estimate.estimatedKm))
-                        .font(VS.Typography.body(11, weight: .semibold))
+                        .font(VS.TextStyle.caption2(.semibold))
                         .foregroundStyle(VS.Color.accent)
                 }
             }
 
             TextField(lastOdometer > 0 ? String(format: "%.0f", lastOdometer) : "0", text: $odometer)
                 .keyboardType(.numberPad)
-                .font(VS.Typography.heading(32, weight: .bold))
+                .font(VS.TextStyle.largeTitle())
                 .foregroundStyle(VS.Color.textPrimary)
                 .vsInputField()
 
             if let estimate, estimate.includesPending {
                 Text(TrackyVoice.Calm.estimateIncludesPending)
-                    .font(VS.Typography.body(12, weight: .medium))
+                    .font(VS.TextStyle.caption(.medium))
                     .foregroundStyle(VS.Color.textTertiary)
             }
 
@@ -398,7 +398,7 @@ struct RefuelSheetView: View {
                     )
                     VStack(alignment: .leading, spacing: 2) {
                         Text(String(format: "%@%.1f km vs estimate", varianceKm >= 0 ? "+" : "", varianceKm))
-                            .font(VS.Typography.body(12, weight: .medium))
+                            .font(VS.TextStyle.caption(.medium))
                             .foregroundStyle(VS.Color.textSecondary)
                         if let estimate {
                             Text(
@@ -406,7 +406,7 @@ struct RefuelSheetView: View {
                                     ? "Calibrated to your dash"
                                     : (estimate.isLearning ? "Learning your GPS→dash scale" : "Raw GPS estimate")
                             )
-                            .font(VS.Typography.body(11))
+                            .font(VS.TextStyle.caption2())
                             .foregroundStyle(VS.Color.textTertiary)
                         }
                     }
@@ -426,10 +426,10 @@ struct RefuelSheetView: View {
             HStack {
                 TextField("0.00", text: $totalCost)
                     .keyboardType(.decimalPad)
-                    .font(VS.Typography.heading(22, weight: .semibold))
+                    .font(VS.TextStyle.title2(.semibold))
                     .foregroundStyle(VS.Color.textPrimary)
                 Text(selectedCurrency)
-                    .font(VS.Typography.body(15, weight: .medium))
+                    .font(VS.TextStyle.body(.medium))
                     .foregroundStyle(VS.Color.textTertiary)
             }
             .vsInputField()
@@ -467,10 +467,10 @@ struct RefuelSheetView: View {
             HStack {
                 TextField("0.0", text: $liters)
                     .keyboardType(.decimalPad)
-                    .font(VS.Typography.heading(22, weight: .semibold))
+                    .font(VS.TextStyle.title2(.semibold))
                     .foregroundStyle(VS.Color.textPrimary)
                 Text(VolumeFormat.suffix(volumeUnit))
-                    .font(VS.Typography.body(15, weight: .medium))
+                    .font(VS.TextStyle.body(.medium))
                     .foregroundStyle(VS.Color.textTertiary)
             }
             .vsInputField()
@@ -479,7 +479,7 @@ struct RefuelSheetView: View {
 
     private func fieldLabel(_ text: String) -> some View {
         Text(text)
-            .font(VS.Typography.body(13, weight: .medium))
+            .font(VS.TextStyle.footnote(.medium))
             .foregroundStyle(VS.Color.textTertiary)
     }
 

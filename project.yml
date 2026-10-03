@@ -98,6 +98,9 @@ targets:
       - path: VeloseeteTripWidget/PrivacyInfo.xcprivacy
         buildPhase: resources
       - path: Shared
+      # Same fonts as the app so widgets and Live Activities use the type scale.
+      - path: Veloseete/Resources/Fonts
+        buildPhase: resources
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.veloseete.ios.TripWidget

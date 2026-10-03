@@ -139,11 +139,11 @@ struct MainTabHeader<Accessory: View>: View {
         HStack(alignment: .top, spacing: 12) {
             VStack(alignment: .leading, spacing: 6) {
                 Text(title)
-                    .font(VS.Typography.heading(28, weight: .bold))
+                    .font(VS.TextStyle.title())
                     .foregroundStyle(VS.Color.textPrimary)
                 if let subtitle {
                     Text(subtitle)
-                        .font(VS.Typography.body(14))
+                        .font(VS.TextStyle.callout())
                         .foregroundStyle(VS.Color.textSecondary)
                         .lineLimit(1)
                 }
@@ -213,7 +213,7 @@ struct BottomNavBar: View {
 
                         if active == item && !isCompact {
                             Text(item.label)
-                                .font(VS.Typography.heading(14))
+                                .font(VS.TextStyle.subheadline(.semibold))
                                 .foregroundStyle(.white)
                                 .lineLimit(1)
                                 .transition(.opacity.combined(with: .move(edge: .trailing)))
@@ -309,10 +309,10 @@ struct PlaceholderPane: View {
         VStack(spacing: 12) {
             VSIcon(icon: icon, size: 40, weight: .regular, tint: VS.Color.accent)
             Text(title)
-                .font(VS.Typography.heading(22))
+                .font(VS.TextStyle.title2(.semibold))
                 .foregroundStyle(VS.Color.textPrimary)
             Text(subtitle)
-                .font(VS.Typography.body(14))
+                .font(VS.TextStyle.callout())
                 .foregroundStyle(VS.Color.textSecondary)
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 32)
@@ -467,7 +467,7 @@ struct DetailsListView: View {
     private var garageErrorBanner: some View {
         if let archiveError {
             Text(archiveError)
-                .font(VS.Typography.body(12))
+                .font(VS.TextStyle.caption())
                 .foregroundStyle(VS.Color.error)
         }
     }
@@ -502,12 +502,12 @@ struct DetailsListView: View {
     private func garageBentoStat(value: String, label: String) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(value)
-                .font(VS.Typography.heading(26, weight: .bold))
+                .font(VS.TextStyle.title())
                 .foregroundStyle(VS.Color.textPrimary)
                 .lineLimit(1)
                 .minimumScaleFactor(0.6)
             Text(label)
-                .font(VS.Typography.body(12, weight: .medium))
+                .font(VS.TextStyle.caption(.medium))
                 .foregroundStyle(VS.Color.textTertiary)
         }
         .padding(14)
@@ -521,10 +521,10 @@ struct DetailsListView: View {
     private func garageBentoCount(_ value: Int, _ label: String) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             Text("\(value)")
-                .font(VS.Typography.heading(32, weight: .bold))
+                .font(VS.TextStyle.largeTitle())
                 .foregroundStyle(VS.Color.textPrimary)
             Text(label)
-                .font(VS.Typography.body(12, weight: .medium))
+                .font(VS.TextStyle.caption(.medium))
                 .foregroundStyle(VS.Color.textTertiary)
         }
         .padding(14)
@@ -672,7 +672,7 @@ private struct VehicleEditorView: View {
 
                     if let errorMessage {
                         Text(errorMessage)
-                            .font(VS.Typography.body(13))
+                            .font(VS.TextStyle.footnote())
                             .foregroundStyle(VS.Color.error)
                     }
                 }
@@ -709,7 +709,7 @@ private struct VehicleEditorView: View {
                                     ProgressView().tint(VS.Color.textPrimary)
                                 }
                                 Text("Set as active")
-                                    .font(VS.Typography.heading(15, weight: .semibold))
+                                    .font(VS.TextStyle.headline(.semibold))
                             }
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 14)
@@ -726,7 +726,7 @@ private struct VehicleEditorView: View {
                             }
                         } label: {
                             Text("Archive vehicle")
-                                .font(VS.Typography.body(14, weight: .semibold))
+                                .font(VS.TextStyle.callout(.semibold))
                                 .foregroundStyle(VS.Color.error)
                                 .frame(maxWidth: .infinity)
                                 .padding(.vertical, 12)
@@ -735,7 +735,7 @@ private struct VehicleEditorView: View {
                         .disabled(isSaving || isSettingActive)
                     } else if store.vehicles.count > 1 {
                         Text("Set another car active before archiving this one.")
-                            .font(VS.Typography.body(12))
+                            .font(VS.TextStyle.caption())
                             .foregroundStyle(VS.Color.textTertiary)
                             .multilineTextAlignment(.center)
                             .frame(maxWidth: .infinity)
@@ -794,7 +794,7 @@ private struct VehicleEditorView: View {
                 VStack(alignment: .leading, spacing: 8) {
                     PhotosPicker(selection: $selectedPhoto, matching: .images) {
                         Text(previewImage == nil ? "Add car photo" : "Change photo")
-                            .font(VS.Typography.body(14, weight: .semibold))
+                            .font(VS.TextStyle.callout(.semibold))
                             .foregroundStyle(VS.Color.accent)
                     }
                     .disabled(isPreparingCrop)
@@ -805,13 +805,13 @@ private struct VehicleEditorView: View {
                             removeExistingPhoto = true
                             draftPhoto = nil
                         }
-                        .font(VS.Typography.body(13, weight: .medium))
+                        .font(VS.TextStyle.footnote(.medium))
                         .foregroundStyle(VS.Color.textSecondary)
                     }
 
                     if isPreparingCrop {
                         ProgressView("Opening photo…")
-                            .font(VS.Typography.body(12))
+                            .font(VS.TextStyle.caption())
                             .tint(VS.Color.accent)
                     }
                 }
@@ -838,7 +838,7 @@ private struct VehicleEditorView: View {
 
     private func fieldLabel(_ text: String) -> some View {
         Text(text)
-            .font(VS.Typography.body(13, weight: .medium))
+            .font(VS.TextStyle.footnote(.medium))
             .foregroundStyle(VS.Color.textTertiary)
     }
 
@@ -851,7 +851,7 @@ private struct VehicleEditorView: View {
         VStack(alignment: .leading, spacing: 10) {
             fieldLabel(label)
             TextField(placeholder, text: text)
-                .font(large ? VS.Typography.heading(24, weight: .semibold) : VS.Typography.heading(20, weight: .semibold))
+                .font(large ? VS.TextStyle.title2(.semibold) : VS.TextStyle.title2(.semibold))
                 .foregroundStyle(VS.Color.textPrimary)
                 .vsInputField()
         }
@@ -869,10 +869,10 @@ private struct VehicleEditorView: View {
             HStack {
                 TextField(placeholder, text: text)
                     .keyboardType(suffix == "km" ? .numberPad : .decimalPad)
-                    .font(large ? VS.Typography.heading(32, weight: .bold) : VS.Typography.heading(22, weight: .semibold))
+                    .font(large ? VS.TextStyle.largeTitle() : VS.TextStyle.title2(.semibold))
                     .foregroundStyle(VS.Color.textPrimary)
                 Text(suffix)
-                    .font(VS.Typography.body(15, weight: .medium))
+                    .font(VS.TextStyle.body(.medium))
                     .foregroundStyle(VS.Color.textTertiary)
             }
             .vsInputField()
@@ -1100,7 +1100,7 @@ struct DriverProfileView: View {
                             showBadges = true
                         } label: {
                             Text("\(unlockedCount)/\(achievements.count)")
-                                .font(VS.Typography.mono(11, weight: .bold))
+                                .font(VS.TextStyle.label())
                                 .foregroundStyle(VS.Color.accent)
                                 .padding(.horizontal, 10)
                                 .padding(.vertical, 6)
@@ -1151,13 +1151,13 @@ struct DriverProfileView: View {
                     .font(.system(size: 28))
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Your driving")
-                        .font(VS.Typography.body(10, weight: .bold))
+                        .font(VS.TextStyle.caption2(.bold))
                         .foregroundStyle(VS.Color.textTertiary)
                     Text(vibe.label)
-                        .font(VS.Typography.heading(18, weight: .bold))
+                        .font(VS.TextStyle.title3())
                         .foregroundStyle(VS.Color.textPrimary)
                     Text(vibe.detail)
-                        .font(VS.Typography.body(13))
+                        .font(VS.TextStyle.footnote())
                         .foregroundStyle(toneColor.opacity(0.95))
                 }
                 Spacer(minLength: 0)
@@ -1167,11 +1167,11 @@ struct DriverProfileView: View {
 
             HStack {
                 Label("Calm", systemImage: "leaf.fill")
-                    .font(VS.Typography.body(9, weight: .bold))
+                    .font(VS.TextStyle.caption2(.bold))
                     .foregroundStyle(VS.Color.accent.opacity(0.85))
                 Spacer(minLength: 0)
                 Label("Spirited", systemImage: "bolt.fill")
-                    .font(VS.Typography.body(9, weight: .bold))
+                    .font(VS.TextStyle.caption2(.bold))
                     .foregroundStyle(VS.Color.routeEnd.opacity(0.9))
             }
         }
@@ -1226,21 +1226,21 @@ struct DriverProfileView: View {
 
             VStack(alignment: .leading, spacing: 6) {
                 Text("Distance")
-                    .font(VS.Typography.body(11, weight: .bold))
+                    .font(VS.TextStyle.caption2(.bold))
                     .foregroundStyle(VS.Color.textTertiary)
                 Text(monthKm > 0 ? DistanceFormat.formatDistance(monthKm, unit: unit) : "—")
-                    .font(VS.Typography.heading(44, weight: .bold))
+                    .font(VS.TextStyle.display())
                     .foregroundStyle(VS.Color.textPrimary)
                     .minimumScaleFactor(0.55)
                     .lineLimit(1)
                     .contentTransition(.numericText())
                 if let trend = monthKmTrend {
                     Text(trend)
-                        .font(VS.Typography.body(12, weight: .semibold))
+                        .font(VS.TextStyle.caption(.semibold))
                         .foregroundStyle(trend.contains("↑") ? VS.Color.accent : VS.Color.textSecondary)
                 } else {
                     Text(drivenDetail)
-                        .font(VS.Typography.body(12))
+                        .font(VS.TextStyle.caption())
                         .foregroundStyle(VS.Color.textSecondary)
                 }
             }
@@ -1281,10 +1281,10 @@ struct DriverProfileView: View {
             } else {
                 VStack(alignment: .leading, spacing: 6) {
                     Text(TrackyVoice.Soft.emptyInsightsTitle)
-                        .font(VS.Typography.heading(16))
+                        .font(VS.TextStyle.headline(.semibold))
                         .foregroundStyle(VS.Color.textPrimary)
                     Text(TrackyVoice.Soft.emptyInsightsBody)
-                        .font(VS.Typography.body(13))
+                        .font(VS.TextStyle.footnote())
                         .foregroundStyle(VS.Color.textSecondary)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -1305,13 +1305,13 @@ struct DriverProfileView: View {
     private func funInsightCard(_ insight: FunInsight) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(insightKindLabel(insight.kind))
-                .font(VS.Typography.body(11, weight: .medium))
+                .font(VS.TextStyle.caption2(.medium))
                 .foregroundStyle(insightTint(insight.kind))
             Text(insight.title)
-                .font(VS.Typography.body(15, weight: .semibold))
+                .font(VS.TextStyle.body(.semibold))
                 .foregroundStyle(VS.Color.textPrimary)
             Text(insight.message)
-                .font(VS.Typography.body(13))
+                .font(VS.TextStyle.footnote())
                 .foregroundStyle(VS.Color.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -1399,10 +1399,10 @@ struct DriverBadgesView: View {
             VStack(alignment: .leading, spacing: VS.Spacing.floatStack) {
                 VStack(alignment: .leading, spacing: 6) {
                     Text("Collection")
-                        .font(VS.Typography.heading(28, weight: .bold))
+                        .font(VS.TextStyle.title())
                         .foregroundStyle(VS.Color.textPrimary)
                     Text("\(unlockedCount) of \(achievements.count) unlocked")
-                        .font(VS.Typography.body(14))
+                        .font(VS.TextStyle.callout())
                         .foregroundStyle(VS.Color.textSecondary)
                 }
 
@@ -1453,7 +1453,7 @@ struct DriverBadgesView: View {
                     withAnimation(.easeInOut(duration: 0.2)) { filter = option }
                 } label: {
                     Text(option.title)
-                        .font(VS.Typography.body(13, weight: filter == option ? .semibold : .medium))
+                        .font(VS.TextStyle.footnote(filter == option ? .semibold : .medium))
                         .foregroundStyle(filter == option ? VS.Color.textPrimary : VS.Color.textTertiary)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 10)
@@ -1480,13 +1480,13 @@ struct DriverBadgesView: View {
 
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Closest")
-                        .font(VS.Typography.body(11, weight: .medium))
+                        .font(VS.TextStyle.caption2(.medium))
                         .foregroundStyle(VS.Color.textTertiary)
                     Text(quest.title)
-                        .font(VS.Typography.heading(18, weight: .bold))
+                        .font(VS.TextStyle.title3())
                         .foregroundStyle(VS.Color.textPrimary)
                     Text(quest.detail)
-                        .font(VS.Typography.body(13))
+                        .font(VS.TextStyle.footnote())
                         .foregroundStyle(VS.Color.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
 
@@ -1501,7 +1501,7 @@ struct DriverBadgesView: View {
                     .frame(height: 2)
 
                     Text(quest.progressLabel)
-                        .font(VS.Typography.mono(12, weight: .medium))
+                        .font(VS.TextStyle.labelLarge(.medium))
                         .foregroundStyle(VS.Color.textTertiary)
                 }
                 Spacer(minLength: 0)
@@ -1519,11 +1519,11 @@ struct DriverBadgesView: View {
         return VStack(alignment: .leading, spacing: 14) {
             HStack(alignment: .firstTextBaseline) {
                 Text(category.label)
-                    .font(VS.Typography.heading(17))
+                    .font(VS.TextStyle.title3(.semibold))
                     .foregroundStyle(VS.Color.textPrimary)
                 Spacer()
                 Text("\(earned)/\(items.count)")
-                    .font(VS.Typography.mono(12, weight: .medium))
+                    .font(VS.TextStyle.labelLarge(.medium))
                     .foregroundStyle(VS.Color.textTertiary)
             }
 
@@ -1562,7 +1562,7 @@ struct DriverBadgesView: View {
                     BadgeHexMark(badge: badge, size: 86)
                     if !badge.unlocked, badge.progress > 0 {
                         Text("\(Int((badge.progress * 100).rounded()))%")
-                            .font(VS.Typography.mono(9, weight: .bold))
+                            .font(VS.TextStyle.label())
                             .foregroundStyle(VS.Color.navPill)
                             .padding(.horizontal, 6)
                             .padding(.vertical, 2)
@@ -1573,14 +1573,14 @@ struct DriverBadgesView: View {
                 .padding(.bottom, badge.unlocked || badge.progress == 0 ? 0 : 4)
 
                 Text(badge.title)
-                    .font(VS.Typography.body(12, weight: .semibold))
+                    .font(VS.TextStyle.caption(.semibold))
                     .foregroundStyle(badge.unlocked ? VS.Color.textPrimary : VS.Color.textTertiary)
                     .multilineTextAlignment(.center)
                     .lineLimit(2)
                     .minimumScaleFactor(0.85)
 
                 Text(badge.unlocked ? badge.detail : badge.progressLabel)
-                    .font(VS.Typography.body(10))
+                    .font(VS.TextStyle.caption2())
                     .foregroundStyle(VS.Color.textTertiary)
                     .multilineTextAlignment(.center)
                     .lineLimit(2)
@@ -1638,10 +1638,10 @@ struct ServiceListView: View {
                             VStack(spacing: 14) {
                                 VSIcon(icon: .wrench, size: 34, weight: .regular, tint: VS.Color.accent)
                                 Text(TrackyVoice.Soft.emptyServiceTitle)
-                                    .font(VS.Typography.heading(16))
+                                    .font(VS.TextStyle.headline(.semibold))
                                     .foregroundStyle(VS.Color.textPrimary)
                                 Text(TrackyVoice.Soft.emptyServiceBody)
-                                    .font(VS.Typography.body(13))
+                                    .font(VS.TextStyle.footnote())
                                     .foregroundStyle(VS.Color.textSecondary)
                                     .multilineTextAlignment(.center)
                             }
@@ -1656,7 +1656,7 @@ struct ServiceListView: View {
 
                             if visibleLogs.isEmpty {
                                 Text(TrackyVoice.Soft.emptyServiceFilter(typeFilter ?? TrackyVoice.Soft.serviceFilterAll))
-                                    .font(VS.Typography.body(13))
+                                    .font(VS.TextStyle.footnote())
                                     .foregroundStyle(VS.Color.textSecondary)
                                     .multilineTextAlignment(.center)
                                     .frame(maxWidth: .infinity)
@@ -1720,7 +1720,7 @@ struct ServiceListView: View {
     private var serviceTrendCard: some View {
         let latest = logs.first
         return VStack(alignment: .leading, spacing: 14) {
-            Label("Service trend", systemImage: "chart.line.uptrend.xyaxis").font(VS.Typography.heading(17)).foregroundStyle(VS.Color.textPrimary)
+            Label("Service trend", systemImage: "chart.line.uptrend.xyaxis").font(VS.TextStyle.title3(.semibold)).foregroundStyle(VS.Color.textPrimary)
             serviceFact("Current odometer", store.currentVehicle.map { DistanceFormat.formatOdometer($0.currentOdometer, unit: store.defaultDistanceUnit) } ?? "—")
             serviceFact("Last service", latest.map { "\($0.serviceType) · \($0.timestamp.formatted(date: .abbreviated, time: .omitted))" } ?? "No records yet")
             if let latest { serviceDueRow(latest) }
@@ -1728,7 +1728,7 @@ struct ServiceListView: View {
     }
 
     private func serviceFact(_ label: String, _ value: String) -> some View {
-        HStack { Text(label).font(VS.Typography.body(12)).foregroundStyle(VS.Color.textTertiary); Spacer(); Text(value).font(VS.Typography.body(13, weight: .semibold)).foregroundStyle(VS.Color.textPrimary) }
+        HStack { Text(label).font(VS.TextStyle.caption()).foregroundStyle(VS.Color.textTertiary); Spacer(); Text(value).font(VS.TextStyle.footnote(.semibold)).foregroundStyle(VS.Color.textPrimary) }
         .padding(13).metricInset()
     }
 
@@ -1744,7 +1744,7 @@ struct ServiceListView: View {
 
     private func serviceStatus(label: String, value: String, warning: Bool) -> some View {
         HStack { Text(label); Spacer(); Text(value).fontWeight(.semibold) }
-            .font(VS.Typography.body(12)).foregroundStyle(warning ? VS.Color.warning : VS.Color.accent)
+            .font(VS.TextStyle.caption()).foregroundStyle(warning ? VS.Color.warning : VS.Color.accent)
             .padding(13).background((warning ? VS.Color.warning : VS.Color.accent).opacity(0.09), in: RoundedRectangle(cornerRadius: VS.Radius.metric))
     }
 
@@ -1763,24 +1763,24 @@ struct ServiceListView: View {
                 .background(VS.Color.accent.opacity(0.1), in: Circle())
             VStack(alignment: .leading, spacing: 4) {
                 Text(log.serviceType)
-                    .font(VS.Typography.heading(15))
+                    .font(VS.TextStyle.headline(.semibold))
                     .foregroundStyle(VS.Color.textPrimary)
                 if let brand = log.brand, !brand.isEmpty {
                     Text(brand)
-                        .font(VS.Typography.body(12, weight: .semibold))
+                        .font(VS.TextStyle.caption(.semibold))
                         .foregroundStyle(VS.Color.accent)
                 }
                 Text("\(log.timestamp.formatted(date: .abbreviated, time: .omitted)) · \(DistanceFormat.formatOdometer(log.odometerReading, unit: unit))")
-                    .font(VS.Typography.body(11))
+                    .font(VS.TextStyle.caption2())
                     .foregroundStyle(VS.Color.textTertiary)
                 if let kmSince {
                     Text("\(DistanceFormat.formatDistance(Double(kmSince), unit: unit)) since this service")
-                        .font(VS.Typography.body(11, weight: .medium))
+                        .font(VS.TextStyle.caption2(.medium))
                         .foregroundStyle(VS.Color.textSecondary)
                 }
                 if let description = log.description {
                     Text(description)
-                        .font(VS.Typography.body(11))
+                        .font(VS.TextStyle.caption2())
                         .foregroundStyle(VS.Color.textSecondary)
                         .lineLimit(2)
                 }
@@ -1788,7 +1788,7 @@ struct ServiceListView: View {
             Spacer()
             if let cost = log.cost {
                 Text(CurrencyFormat.format(cost, currency: log.currency))
-                    .font(VS.Typography.body(13, weight: .semibold))
+                    .font(VS.TextStyle.footnote(.semibold))
                     .foregroundStyle(VS.Color.textPrimary)
             }
         }
@@ -1870,7 +1870,7 @@ struct ServiceEditorSheet: View {
                     }
 
                     Text("Saved on this service only — won’t change your car’s current odometer.")
-                        .font(VS.Typography.body(12))
+                        .font(VS.TextStyle.caption())
                         .foregroundStyle(VS.Color.textTertiary)
 
                     VStack(alignment: .leading, spacing: 8) {
@@ -1889,7 +1889,7 @@ struct ServiceEditorSheet: View {
                         .glassCard(elevated: true)
 
                         Text("Backdate anytime — past tire/service work is fine.")
-                            .font(VS.Typography.body(12))
+                            .font(VS.TextStyle.caption())
                             .foregroundStyle(VS.Color.textTertiary)
                     }
 
@@ -1897,7 +1897,7 @@ struct ServiceEditorSheet: View {
                         fieldLabel("Notes")
                         TextField("What was done?", text: $notes, axis: .vertical)
                             .lineLimit(3...5)
-                            .font(VS.Typography.body(15))
+                            .font(VS.TextStyle.body())
                             .foregroundStyle(VS.Color.textPrimary)
                             .padding(14)
                             .glassCard(elevated: true)
@@ -1907,7 +1907,7 @@ struct ServiceEditorSheet: View {
 
                     if let errorMessage {
                         Text(errorMessage)
-                            .font(VS.Typography.body(13))
+                            .font(VS.TextStyle.footnote())
                             .foregroundStyle(VS.Color.error)
                     }
 
@@ -1915,7 +1915,7 @@ struct ServiceEditorSheet: View {
                         Button("Delete service entry", role: .destructive) {
                             showDeleteConfirmation = true
                         }
-                        .font(VS.Typography.body(14, weight: .semibold))
+                        .font(VS.TextStyle.callout(.semibold))
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 14)
                         .glassCard(elevated: true)
@@ -1970,7 +1970,7 @@ struct ServiceEditorSheet: View {
                             serviceType = type
                         } label: {
                             Text(type)
-                                .font(VS.Typography.body(13, weight: .semibold))
+                                .font(VS.TextStyle.footnote(.semibold))
                                 .padding(.horizontal, 14)
                                 .padding(.vertical, 10)
                                 .background(Capsule().fill(selected ? VS.Color.accent : VS.Color.chip))
@@ -1983,7 +1983,7 @@ struct ServiceEditorSheet: View {
 
             if isOtherType {
                 TextField("Custom type", text: $customType)
-                    .font(VS.Typography.heading(18, weight: .semibold))
+                    .font(VS.TextStyle.title3(.semibold))
                     .foregroundStyle(VS.Color.textPrimary)
                     .padding(14)
                     .glassCard(elevated: true)
@@ -2005,7 +2005,7 @@ struct ServiceEditorSheet: View {
 
             if tireBrand == "Other" {
                 TextField("Custom tire brand", text: $customTireBrand)
-                    .font(VS.Typography.heading(18, weight: .semibold))
+                    .font(VS.TextStyle.title3(.semibold))
                     .foregroundStyle(VS.Color.textPrimary)
                     .padding(14)
                     .glassCard(elevated: true)
@@ -2024,7 +2024,7 @@ struct ServiceEditorSheet: View {
             )
 
             Toggle("Due date", isOn: $hasNextDate)
-                .font(VS.Typography.heading(15))
+                .font(VS.TextStyle.headline(.semibold))
                 .foregroundStyle(VS.Color.textPrimary)
                 .tint(VS.Color.accent)
                 .padding(14)
@@ -2057,10 +2057,10 @@ struct ServiceEditorSheet: View {
             HStack {
                 TextField(placeholder, text: text)
                     .keyboardType(.decimalPad)
-                    .font(VS.Typography.heading(20, weight: .semibold))
+                    .font(VS.TextStyle.title2(.semibold))
                     .foregroundStyle(VS.Color.textPrimary)
                 Text(suffix)
-                    .font(VS.Typography.body(13, weight: .medium))
+                    .font(VS.TextStyle.footnote(.medium))
                     .foregroundStyle(VS.Color.textTertiary)
             }
             .padding(14)
@@ -2070,7 +2070,7 @@ struct ServiceEditorSheet: View {
 
     private func fieldLabel(_ text: String) -> some View {
         Text(text)
-            .font(VS.Typography.body(12, weight: .medium))
+            .font(VS.TextStyle.caption(.medium))
             .foregroundStyle(VS.Color.textTertiary)
     }
 
@@ -2194,7 +2194,7 @@ private struct FlowChipWrap: View {
                             onSelect(item)
                         } label: {
                             Text(item)
-                                .font(VS.Typography.body(12, weight: .semibold))
+                                .font(VS.TextStyle.caption(.semibold))
                                 .padding(.horizontal, 12)
                                 .padding(.vertical, 8)
                                 .background(Capsule().fill(isOn ? VS.Color.accent : VS.Color.chip))
@@ -2287,20 +2287,20 @@ struct ProfileView: View {
 
                         VStack(spacing: 4) {
                             Text(store.userName.isEmpty ? "Your profile" : store.userName)
-                                .font(VS.Typography.heading(20, weight: .bold))
+                                .font(VS.TextStyle.title2())
                                 .foregroundStyle(VS.Color.textPrimary)
                             Text(headerAvatar == nil ? "Add a photo from your library" : "Saved on this iPhone")
-                                .font(VS.Typography.body(12))
+                                .font(VS.TextStyle.caption())
                                 .foregroundStyle(VS.Color.textTertiary)
                         }
 
                         if isSavingAvatar {
                             ProgressView("Saving photo…")
-                                .font(VS.Typography.body(12))
+                                .font(VS.TextStyle.caption())
                                 .tint(VS.Color.accent)
                         } else if isPreparingCrop {
                             ProgressView("Opening photo…")
-                                .font(VS.Typography.body(12))
+                                .font(VS.TextStyle.caption())
                                 .tint(VS.Color.accent)
                         } else if headerAvatar != nil {
                             HStack(spacing: 18) {
@@ -2317,12 +2317,12 @@ struct ProfileView: View {
                                     }
                                 }
                             }
-                            .font(VS.Typography.body(13, weight: .semibold))
+                            .font(VS.TextStyle.footnote(.semibold))
                         }
 
                         if let avatarError {
                             Text(avatarError)
-                                .font(VS.Typography.body(11))
+                                .font(VS.TextStyle.caption2())
                                 .foregroundStyle(VS.Color.error)
                                 .multilineTextAlignment(.center)
                         }
@@ -2338,13 +2338,13 @@ struct ProfileView: View {
                     LabeledContent("Distance", value: store.defaultDistanceUnit == "mi" ? "Miles" : "Kilometres")
                     VStack(alignment: .leading, spacing: 10) {
                         Text("Fuel efficiency")
-                            .font(VS.Typography.body(13))
+                            .font(VS.TextStyle.footnote())
                             .foregroundStyle(VS.Color.textSecondary)
                         EfficiencyUnitToggle()
                         Text(efficiencyUnit.unit.higherIsBetter
                             ? "Higher km/L is better"
                             : "Lower L/100km is better")
-                            .font(VS.Typography.body(11))
+                            .font(VS.TextStyle.caption2())
                             .foregroundStyle(VS.Color.textTertiary)
                     }
                     .padding(.vertical, 4)
@@ -2352,7 +2352,7 @@ struct ProfileView: View {
                     VStack(alignment: .leading, spacing: 4) {
                         LabeledContent("Email", value: auth.user?.email ?? "Hidden / not shared")
                         Text("Managed by your linked sign-in methods.")
-                            .font(VS.Typography.body(10))
+                            .font(VS.TextStyle.caption2())
                             .foregroundStyle(VS.Color.textTertiary)
                     }
 
@@ -2362,7 +2362,7 @@ struct ProfileView: View {
                         showEditAccount = true
                     } label: {
                         Label("Edit account", systemImage: "pencil")
-                            .font(VS.Typography.body(14, weight: .semibold))
+                            .font(VS.TextStyle.callout(.semibold))
                             .foregroundStyle(VS.Color.accent)
                     }
                 } header: {
@@ -2382,7 +2382,7 @@ struct ProfileView: View {
                                 Text(provider.title)
                                     .foregroundStyle(VS.Color.textPrimary)
                                 Text(auth.isLinked(provider) ? "Connected" : "Not linked")
-                                    .font(VS.Typography.body(11))
+                                    .font(VS.TextStyle.caption2())
                                     .foregroundStyle(VS.Color.textTertiary)
                             }
 
@@ -2396,18 +2396,18 @@ struct ProfileView: View {
                                             catch { linkError = auth.errorMessage ?? error.localizedDescription }
                                         }
                                     }
-                                    .font(VS.Typography.body(13, weight: .semibold))
+                                    .font(VS.TextStyle.footnote(.semibold))
                                     .foregroundStyle(VS.Color.error)
                                 } else {
                                     Text("Primary")
-                                        .font(VS.Typography.body(12, weight: .semibold))
+                                        .font(VS.TextStyle.caption(.semibold))
                                         .foregroundStyle(VS.Color.textTertiary)
                                 }
                             } else {
                                 Button("Link") {
                                     Task { await linkProvider(provider) }
                                 }
-                                .font(VS.Typography.body(13, weight: .semibold))
+                                .font(VS.TextStyle.footnote(.semibold))
                                 .foregroundStyle(VS.Color.accent)
                                 .disabled(isLinking)
                             }
@@ -2416,19 +2416,19 @@ struct ProfileView: View {
 
                     if let linkError {
                         Text(linkError)
-                            .font(VS.Typography.body(11))
+                            .font(VS.TextStyle.caption2())
                             .foregroundStyle(VS.Color.error)
                     }
                     if let info = auth.infoMessage {
                         Text(info)
-                            .font(VS.Typography.body(11))
+                            .font(VS.TextStyle.caption2())
                             .foregroundStyle(VS.Color.success)
                     }
                 } header: {
                     Text("Sign-in methods")
                 } footer: {
                     Text("Link Apple, Google, or email so you can open the same Veloseete account with any of them.")
-                        .font(VS.Typography.body(11))
+                        .font(VS.TextStyle.caption2())
                 }
                 .listRowBackground(VS.Color.bgSecondary)
 
@@ -2440,7 +2440,7 @@ struct ProfileView: View {
                             VStack(alignment: .leading, spacing: 3) {
                                 Text(TrackyVoice.Calm.managePermissions).foregroundStyle(VS.Color.textPrimary)
                                 Text(TrackyVoice.Calm.managePermissionsDetail)
-                                    .font(VS.Typography.body(11)).foregroundStyle(VS.Color.textTertiary)
+                                    .font(VS.TextStyle.caption2()).foregroundStyle(VS.Color.textTertiary)
                             }
                         } icon: {
                             VSIcon(icon: .target, size: 20, weight: .regular, tint: VS.Color.accent)
@@ -2454,7 +2454,7 @@ struct ProfileView: View {
                             VStack(alignment: .leading, spacing: 3) {
                                 Text(TrackyVoice.Calm.replayOnboarding).foregroundStyle(VS.Color.textPrimary)
                                 Text(TrackyVoice.Calm.replayOnboardingDetail)
-                                    .font(VS.Typography.body(11)).foregroundStyle(VS.Color.textTertiary)
+                                    .font(VS.TextStyle.caption2()).foregroundStyle(VS.Color.textTertiary)
                             }
                         } icon: {
                             VSIcon(icon: .roadHorizon, size: 20, weight: .regular, tint: VS.Color.accent)
@@ -2471,7 +2471,7 @@ struct ProfileView: View {
                             VStack(alignment: .leading, spacing: 3) {
                                 Text(TrackyVoice.Calm.leaveFeedback).foregroundStyle(VS.Color.textPrimary)
                                 Text(TrackyVoice.Calm.leaveFeedbackDetail)
-                                    .font(VS.Typography.body(11)).foregroundStyle(VS.Color.textTertiary)
+                                    .font(VS.TextStyle.caption2()).foregroundStyle(VS.Color.textTertiary)
                             }
                         } icon: {
                             VSIcon(icon: .fileText, size: 20, weight: .regular, tint: VS.Color.accent)
@@ -2485,7 +2485,7 @@ struct ProfileView: View {
                             VStack(alignment: .leading, spacing: 3) {
                                 Text(TrackyVoice.Calm.roadmap).foregroundStyle(VS.Color.textPrimary)
                                 Text(TrackyVoice.Calm.roadmapDetail)
-                                    .font(VS.Typography.body(11)).foregroundStyle(VS.Color.textTertiary)
+                                    .font(VS.TextStyle.caption2()).foregroundStyle(VS.Color.textTertiary)
                             }
                         } icon: {
                             VSIcon(icon: .chartLine, size: 20, weight: .regular, tint: VS.Color.accent)
@@ -2518,14 +2518,14 @@ struct ProfileView: View {
                     .disabled(isDeletingAccount)
                 } footer: {
                     Text("Deletes your Veloseete cloud data and sign-in on this account. This can’t be undone.")
-                        .font(VS.Typography.body(11))
+                        .font(VS.TextStyle.caption2())
                 }
                 .listRowBackground(VS.Color.bgSecondary)
 
                 if let deleteAccountError {
                     Section {
                         Text(deleteAccountError)
-                            .font(VS.Typography.body(12))
+                            .font(VS.TextStyle.caption())
                             .foregroundStyle(VS.Color.error)
                     }
                     .listRowBackground(VS.Color.bgSecondary)
@@ -2602,9 +2602,9 @@ struct ProfileView: View {
                 NavigationStack {
                     VStack(alignment: .leading, spacing: 16) {
                         Text("Link email & password")
-                            .font(VS.Typography.heading(22))
+                            .font(VS.TextStyle.title2(.semibold))
                         Text("Add email sign-in to this account so you can open Veloseete without Apple or Google.")
-                            .font(VS.Typography.body(14))
+                            .font(VS.TextStyle.callout())
                             .foregroundStyle(VS.Color.textSecondary)
 
                         TextField("Email", text: $linkEmail)
@@ -2618,7 +2618,7 @@ struct ProfileView: View {
 
                         if let linkError {
                             Text(linkError)
-                                .font(VS.Typography.body(12))
+                                .font(VS.TextStyle.caption())
                                 .foregroundStyle(VS.Color.error)
                         }
 
@@ -2642,7 +2642,7 @@ struct ProfileView: View {
                             HStack {
                                 if isLinking { ProgressView().tint(VS.Color.navPill) }
                                 Text("Link email")
-                                    .font(VS.Typography.heading(16))
+                                    .font(VS.TextStyle.headline(.semibold))
                             }
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 14)
@@ -2669,9 +2669,9 @@ struct ProfileView: View {
                 NavigationStack {
                     VStack(alignment: .leading, spacing: 18) {
                         Text("Link Apple")
-                            .font(VS.Typography.heading(22))
+                            .font(VS.TextStyle.title2(.semibold))
                         Text("Connect Sign in with Apple to this Veloseete account.")
-                            .font(VS.Typography.body(14))
+                            .font(VS.TextStyle.callout())
                             .foregroundStyle(VS.Color.textSecondary)
 
                         SignInWithAppleButton(.continue) { request in
@@ -2705,7 +2705,7 @@ struct ProfileView: View {
 
                         if let linkError {
                             Text(linkError)
-                                .font(VS.Typography.body(12))
+                                .font(VS.TextStyle.caption())
                                 .foregroundStyle(VS.Color.error)
                         }
 
@@ -2879,10 +2879,10 @@ private struct EditAccountDrawer: View {
                 VStack(alignment: .leading, spacing: 20) {
                     VStack(alignment: .leading, spacing: 8) {
                         Text("Display name")
-                            .font(VS.Typography.body(12, weight: .medium))
+                            .font(VS.TextStyle.caption(.medium))
                             .foregroundStyle(VS.Color.textTertiary)
                         TextField("Your name", text: $draftName)
-                            .font(VS.Typography.heading(18, weight: .semibold))
+                            .font(VS.TextStyle.title3(.semibold))
                             .foregroundStyle(VS.Color.textPrimary)
                             .padding(14)
                             .glassCard(elevated: true)
@@ -2890,7 +2890,7 @@ private struct EditAccountDrawer: View {
 
                     VStack(alignment: .leading, spacing: 10) {
                         Text("Currency")
-                            .font(VS.Typography.body(12, weight: .medium))
+                            .font(VS.TextStyle.caption(.medium))
                             .foregroundStyle(VS.Color.textTertiary)
                         ScrollView(.horizontal, showsIndicators: false) {
                             HStack(spacing: 8) {
@@ -2900,7 +2900,7 @@ private struct EditAccountDrawer: View {
                                         draftCurrency = code
                                     } label: {
                                         Text(code)
-                                            .font(VS.Typography.body(13, weight: .semibold))
+                                            .font(VS.TextStyle.footnote(.semibold))
                                             .padding(.horizontal, 14)
                                             .padding(.vertical, 10)
                                             .background(
@@ -2916,7 +2916,7 @@ private struct EditAccountDrawer: View {
 
                     VStack(alignment: .leading, spacing: 10) {
                         Text("Distance")
-                            .font(VS.Typography.body(12, weight: .medium))
+                            .font(VS.TextStyle.caption(.medium))
                             .foregroundStyle(VS.Color.textTertiary)
                         HStack(spacing: 8) {
                             distanceChip("km", title: "Kilometres")
@@ -2926,19 +2926,19 @@ private struct EditAccountDrawer: View {
 
                     VStack(alignment: .leading, spacing: 10) {
                         Text("Fuel efficiency")
-                            .font(VS.Typography.body(12, weight: .medium))
+                            .font(VS.TextStyle.caption(.medium))
                             .foregroundStyle(VS.Color.textTertiary)
                         EfficiencyUnitToggle()
                         Text(efficiencyUnit.unit.higherIsBetter
                             ? "Higher numbers mean better economy"
                             : "Lower numbers mean better economy")
-                            .font(VS.Typography.body(11))
+                            .font(VS.TextStyle.caption2())
                             .foregroundStyle(VS.Color.textTertiary)
                     }
 
                     if let errorMessage {
                         Text(errorMessage)
-                            .font(VS.Typography.body(13))
+                            .font(VS.TextStyle.footnote())
                             .foregroundStyle(VS.Color.error)
                     }
                 }
@@ -2958,7 +2958,7 @@ private struct EditAccountDrawer: View {
                     HStack(spacing: 10) {
                         if isSaving { ProgressView().tint(VS.Color.navPill) }
                         Text("Save")
-                            .font(VS.Typography.heading(16))
+                            .font(VS.TextStyle.headline(.semibold))
                     }
                     .foregroundStyle(VS.Color.navPill)
                     .frame(maxWidth: .infinity)
@@ -2985,7 +2985,7 @@ private struct EditAccountDrawer: View {
             draftDistance = tag
         } label: {
             Text(title)
-                .font(VS.Typography.body(13, weight: .semibold))
+                .font(VS.TextStyle.footnote(.semibold))
                 .padding(.horizontal, 14)
                 .padding(.vertical, 10)
                 .frame(maxWidth: .infinity)
@@ -3312,10 +3312,10 @@ struct ProfilePhotoCropView: View {
             VStack(spacing: 24) {
                 VStack(spacing: 7) {
                     Text(title)
-                        .font(VS.Typography.heading(26, weight: .bold))
+                        .font(VS.TextStyle.title())
                         .foregroundStyle(VS.Color.textPrimary)
                     Text(subtitle)
-                        .font(VS.Typography.body(14))
+                        .font(VS.TextStyle.callout())
                         .foregroundStyle(VS.Color.textSecondary)
                 }
 
@@ -3335,7 +3335,7 @@ struct ProfilePhotoCropView: View {
                 .padding(.horizontal, 26)
 
                 Text(footer)
-                    .font(VS.Typography.body(11))
+                    .font(VS.TextStyle.caption2())
                     .foregroundStyle(VS.Color.textTertiary)
 
                 Spacer()
@@ -3344,7 +3344,7 @@ struct ProfilePhotoCropView: View {
                     onUse(renderCrop())
                 } label: {
                     Text("Use this photo")
-                        .font(VS.Typography.heading(17))
+                        .font(VS.TextStyle.title3(.semibold))
                         .foregroundStyle(VS.Color.navPill)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 16)

@@ -125,7 +125,7 @@ struct BadgeDiscMark: View {
 
             if let caption = badge.hexCaption {
                 Text(caption)
-                    .font(VS.Typography.heading(size * 0.34, weight: .bold))
+                    .font(VS.TextStyle.artwork(size * 0.34))
                     .foregroundStyle(badge.unlocked ? VS.Color.accent : VS.Color.textTertiary)
                     .minimumScaleFactor(0.7)
                     .lineLimit(1)
@@ -166,7 +166,7 @@ struct BadgeHexMark: View {
 
             if let caption = badge.hexCaption {
                 Text(caption)
-                    .font(VS.Typography.heading(size * 0.28, weight: .bold))
+                    .font(VS.TextStyle.artwork(size * 0.28))
                     .foregroundStyle(badge.unlocked ? VS.Color.accent : VS.Color.textTertiary)
                     .minimumScaleFactor(0.7)
             } else {
@@ -214,11 +214,11 @@ struct DriverBadgesShelfSection: View {
         VStack(alignment: .leading, spacing: VS.Spacing.stack) {
             HStack(alignment: .firstTextBaseline) {
                 Text("Badges")
-                    .font(VS.Typography.heading(20, weight: .bold))
+                    .font(VS.TextStyle.title2())
                     .foregroundStyle(VS.Color.textPrimary)
                 Spacer()
                 Text("\(unlocked.count)/\(achievements.count)")
-                    .font(VS.Typography.mono(13, weight: .semibold))
+                    .font(VS.TextStyle.labelLarge(.semibold))
                     .foregroundStyle(VS.Color.textSecondary)
             }
 
@@ -231,7 +231,7 @@ struct DriverBadgesShelfSection: View {
             if !previewNext.isEmpty {
                 VStack(alignment: .leading, spacing: VS.Spacing.stack) {
                     Text("Up next")
-                        .font(VS.Typography.body(12, weight: .medium))
+                        .font(VS.TextStyle.caption(.medium))
                         .foregroundStyle(VS.Color.textTertiary)
 
                     VStack(spacing: 0) {
@@ -250,10 +250,10 @@ struct DriverBadgesShelfSection: View {
                 VStack(spacing: 0) {
                     VStack(alignment: .leading, spacing: 4) {
                         Text("Board cleared")
-                            .font(VS.Typography.body(15, weight: .semibold))
+                            .font(VS.TextStyle.body(.semibold))
                             .foregroundStyle(VS.Color.textPrimary)
                         Text("Every badge is unlocked — open the collection anytime.")
-                            .font(VS.Typography.body(12))
+                            .font(VS.TextStyle.caption())
                             .foregroundStyle(VS.Color.textSecondary)
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -269,10 +269,10 @@ struct DriverBadgesShelfSection: View {
     private var emptyShelf: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(TrackyVoice.Soft.emptyBadgesTitle)
-                .font(VS.Typography.body(15, weight: .semibold))
+                .font(VS.TextStyle.body(.semibold))
                 .foregroundStyle(VS.Color.textPrimary)
             Text(TrackyVoice.Soft.emptyBadgesBody)
-                .font(VS.Typography.body(13))
+                .font(VS.TextStyle.footnote())
                 .foregroundStyle(VS.Color.textSecondary)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -290,7 +290,7 @@ struct DriverBadgesShelfSection: View {
                         VStack(spacing: 8) {
                             BadgeDiscMark(badge: badge, size: 58)
                             Text(badge.title)
-                                .font(VS.Typography.body(11, weight: .medium))
+                                .font(VS.TextStyle.caption2(.medium))
                                 .foregroundStyle(VS.Color.textSecondary)
                                 .lineLimit(2)
                                 .multilineTextAlignment(.center)
@@ -316,11 +316,11 @@ struct DriverBadgesShelfSection: View {
                 VStack(alignment: .leading, spacing: 6) {
                     HStack(alignment: .firstTextBaseline) {
                         Text(badge.title)
-                            .font(VS.Typography.body(14, weight: .semibold))
+                            .font(VS.TextStyle.callout(.semibold))
                             .foregroundStyle(VS.Color.textPrimary)
                         Spacer(minLength: 8)
                         Text(badge.progressLabel)
-                            .font(VS.Typography.mono(11, weight: .medium))
+                            .font(VS.TextStyle.label(.medium))
                             .foregroundStyle(VS.Color.textTertiary)
                             .lineLimit(1)
                     }
@@ -347,7 +347,7 @@ struct DriverBadgesShelfSection: View {
         Button(action: onOpenBoard) {
             HStack {
                 Text("Open collection")
-                    .font(VS.Typography.body(14, weight: .medium))
+                    .font(VS.TextStyle.callout(.medium))
                     .foregroundStyle(VS.Color.textSecondary)
                 Spacer()
                 Image(systemName: "chevron.right")
@@ -381,7 +381,7 @@ struct BadgeShareMark: View {
 
             if let caption = badge.hexCaption {
                 Text(caption)
-                    .font(VS.Typography.heading(size * 0.28, weight: .bold))
+                    .font(VS.TextStyle.artwork(size * 0.28))
                     .foregroundStyle(VS.Color.navPill)
                     .minimumScaleFactor(0.7)
             } else {
@@ -405,7 +405,7 @@ struct BadgeShareCard: View {
     var body: some View {
         VStack(spacing: 0) {
             Text("VELOSEETE")
-                .font(VS.Typography.body(11, weight: .bold))
+                .font(VS.TextStyle.caption2(.bold))
                 .tracking(4)
                 .foregroundStyle(VS.Color.navPill.opacity(0.55))
 
@@ -417,18 +417,18 @@ struct BadgeShareCard: View {
 
             VStack(spacing: 10) {
                 Text(badge.title)
-                    .font(VS.Typography.heading(32, weight: .bold))
+                    .font(VS.TextStyle.largeTitle())
                     .multilineTextAlignment(.center)
                     .minimumScaleFactor(0.7)
                     .lineLimit(2)
                 Text(badge.detail)
-                    .font(VS.Typography.heading(18, weight: .bold))
+                    .font(VS.TextStyle.title3())
                     .multilineTextAlignment(.center)
                     .minimumScaleFactor(0.8)
                     .lineLimit(3)
                 if let achievedOnLabel = badge.achievedOnLabel {
                     Text(achievedOnLabel)
-                        .font(VS.Typography.heading(14, weight: .bold))
+                        .font(VS.TextStyle.subheadline())
                         .opacity(0.7)
                 }
             }
@@ -459,18 +459,18 @@ struct BadgeDetailDrawer: View {
 
             VStack(spacing: 10) {
                 Text(badge.title)
-                    .font(VS.Typography.heading(28, weight: .bold))
+                    .font(VS.TextStyle.title())
                     .foregroundStyle(VS.Color.textPrimary)
                     .multilineTextAlignment(.center)
                 Text(badge.detail)
-                    .font(VS.Typography.body(16, weight: .medium))
+                    .font(VS.TextStyle.bodyLarge(.medium))
                     .foregroundStyle(VS.Color.textSecondary)
                     .multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: true)
 
                 if badge.unlocked, let achievedOnLabel = badge.achievedOnLabel {
                     Text("Unlocked \(achievedOnLabel)")
-                        .font(VS.Typography.heading(15, weight: .bold))
+                        .font(VS.TextStyle.headline())
                         .foregroundStyle(VS.Color.accent)
                 } else if !badge.unlocked {
                     VStack(spacing: 8) {
@@ -484,7 +484,7 @@ struct BadgeDetailDrawer: View {
                         }
                         .frame(height: 3)
                         Text(badge.progressLabel)
-                            .font(VS.Typography.mono(13, weight: .medium))
+                            .font(VS.TextStyle.labelLarge(.medium))
                             .foregroundStyle(VS.Color.textTertiary)
                     }
                     .padding(.top, 6)

@@ -70,20 +70,20 @@ private struct CarPlayStatusWidgetView: View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 6) {
                 Image(systemName: "car.side.fill")
-                    .font(.caption.weight(.semibold))
+                    .font(VSTextStyle.caption(.semibold))
                     .foregroundStyle(accent)
                 Text("Veloseete")
-                    .font(.caption.weight(.semibold))
+                    .font(VSTextStyle.caption(.semibold))
                     .lineLimit(1)
                 Spacer(minLength: 0)
             }
             Spacer(minLength: 0)
             Text("Waiting for sync")
-                .font(.headline)
+                .font(VSTextStyle.headline(.semibold))
                 .lineLimit(2)
                 .minimumScaleFactor(0.85)
             Text("Open Veloseete once")
-                .font(.caption)
+                .font(VSTextStyle.caption())
                 .foregroundStyle(.white.opacity(0.58))
                 .lineLimit(1)
             Spacer(minLength: 0)
@@ -95,10 +95,10 @@ private struct CarPlayStatusWidgetView: View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 6) {
                 Image(systemName: "car.side.fill")
-                    .font(.caption.weight(.semibold))
+                    .font(VSTextStyle.caption(.semibold))
                     .foregroundStyle(accent)
                 Text(snapshot.vehicleName)
-                    .font(.caption.weight(.semibold))
+                    .font(VSTextStyle.caption(.semibold))
                     .lineLimit(1)
                     .minimumScaleFactor(0.85)
                 Spacer(minLength: 0)
@@ -107,17 +107,17 @@ private struct CarPlayStatusWidgetView: View {
             Spacer(minLength: 0)
 
             Text("DRIVING FOOTPRINT")
-                .font(.system(size: 9, weight: .bold))
+                .font(VSTextStyle.label())
                 .foregroundStyle(.white.opacity(0.55))
                 .lineLimit(1)
 
             HStack(alignment: .lastTextBaseline, spacing: 3) {
                 Text(snapshot.totalDistanceKm, format: .number.precision(.fractionLength(0)))
-                    .font(.system(size: 28, weight: .bold, design: .rounded).monospacedDigit())
+                    .font(VSTextStyle.title().monospacedDigit())
                     .minimumScaleFactor(0.7)
                     .lineLimit(1)
                 Text("km")
-                    .font(.caption2.weight(.semibold))
+                    .font(VSTextStyle.caption2(.semibold))
                     .foregroundStyle(.white.opacity(0.58))
             }
 
@@ -147,10 +147,10 @@ private struct CarPlayStatusWidgetView: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 6) {
                 Image(systemName: "car.side.fill")
-                    .font(.caption.weight(.semibold))
+                    .font(VSTextStyle.caption(.semibold))
                     .foregroundStyle(accent)
                 Text(snapshot.vehicleName)
-                    .font(.caption.weight(.semibold))
+                    .font(VSTextStyle.caption(.semibold))
                     .lineLimit(1)
                     .minimumScaleFactor(0.85)
                 Spacer(minLength: 0)
@@ -159,16 +159,16 @@ private struct CarPlayStatusWidgetView: View {
             HStack(alignment: .center, spacing: 10) {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("DRIVING FOOTPRINT")
-                        .font(.system(size: 9, weight: .bold))
+                        .font(VSTextStyle.label())
                         .foregroundStyle(.white.opacity(0.55))
                         .lineLimit(1)
                     HStack(alignment: .lastTextBaseline, spacing: 3) {
                         Text(snapshot.totalDistanceKm, format: .number.precision(.fractionLength(0)))
-                            .font(.system(size: 32, weight: .bold, design: .rounded).monospacedDigit())
+                            .font(VSTextStyle.largeTitle().monospacedDigit())
                             .minimumScaleFactor(0.7)
                             .lineLimit(1)
                         Text("km")
-                            .font(.caption2.weight(.semibold))
+                            .font(VSTextStyle.caption2(.semibold))
                             .foregroundStyle(.white.opacity(0.58))
                     }
                 }
@@ -262,11 +262,11 @@ private struct CarPlayStatusWidgetView: View {
                 .font(.system(size: compact ? 9 : 10, weight: .bold))
                 .foregroundStyle(accent)
             Text(value)
-                .font(.caption.weight(.bold).monospacedDigit())
+                .font(VSTextStyle.caption(.bold).monospacedDigit())
                 .lineLimit(1)
                 .minimumScaleFactor(0.65)
             Text(label)
-                .font(.system(size: 8, weight: .semibold))
+                .font(VSTextStyle.label(.semibold))
                 .foregroundStyle(.white.opacity(0.52))
                 .lineLimit(1)
                 .minimumScaleFactor(0.85)

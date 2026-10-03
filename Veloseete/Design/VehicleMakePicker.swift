@@ -142,7 +142,7 @@ private struct VehicleMakeSearchSheet: View {
                         .font(.system(size: 15, weight: .semibold))
                         .foregroundStyle(VS.Color.textTertiary)
                     TextField("Search makes", text: $query)
-                        .font(VS.Typography.body(16))
+                        .font(VS.TextStyle.bodyLarge())
                         .foregroundStyle(VS.Color.textPrimary)
                         .focused($searchFocused)
                         .textInputAutocapitalization(.words)
@@ -166,10 +166,10 @@ private struct VehicleMakeSearchSheet: View {
                 if results.isEmpty {
                     VStack(spacing: 10) {
                         Text("No matches")
-                            .font(VS.Typography.heading(17, weight: .bold))
+                            .font(VS.TextStyle.title3())
                             .foregroundStyle(VS.Color.textPrimary)
                         Text("Try another spelling")
-                            .font(VS.Typography.body(13))
+                            .font(VS.TextStyle.footnote())
                             .foregroundStyle(VS.Color.textSecondary)
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -183,7 +183,7 @@ private struct VehicleMakeSearchSheet: View {
                                 } label: {
                                     HStack {
                                         Text(name)
-                                            .font(VS.Typography.heading(16, weight: .semibold))
+                                            .font(VS.TextStyle.headline(.semibold))
                                             .foregroundStyle(VS.Color.textPrimary)
                                         Spacer()
                                         if name.caseInsensitiveCompare(selectedMake) == .orderedSame {

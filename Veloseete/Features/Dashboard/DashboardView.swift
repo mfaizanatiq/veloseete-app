@@ -24,7 +24,7 @@ struct DashboardView: View {
 
                 if !store.loadWarnings.isEmpty {
                     Text(store.loadWarnings.joined(separator: "\n"))
-                        .font(VS.Typography.body(12))
+                        .font(VS.TextStyle.caption())
                         .foregroundStyle(VS.Color.warning)
                         .padding(14)
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -90,11 +90,11 @@ struct DashboardView: View {
         return HStack(spacing: 8) {
             VSIcon(icon: .cloud, size: 12, weight: .bold, tint: VS.Color.textTertiary)
             Text(TrackyVoice.Soft.syncChip(cars: store.vehicles.count, fills: vehicleLogs.count))
-                .font(VS.Typography.body(11, weight: .medium))
+                .font(VS.TextStyle.caption2(.medium))
             Spacer()
             if let email = AuthService.shared.user?.email {
                 Text(email)
-                    .font(VS.Typography.body(10))
+                    .font(VS.TextStyle.caption2())
                     .lineLimit(1)
             }
         }
@@ -125,7 +125,7 @@ struct DashboardView: View {
                     } label: {
                         HStack(spacing: 4) {
                             Text(TrackyVoice.Soft.seeAllFills)
-                                .font(VS.Typography.body(13, weight: .semibold))
+                                .font(VS.TextStyle.footnote(.semibold))
                             Image(systemName: "chevron.right")
                                 .font(.system(size: 10, weight: .bold))
                         }
@@ -139,10 +139,10 @@ struct DashboardView: View {
                 VStack(spacing: 14) {
                     FluentEmojiView(emoji: "⛽", size: 48)
                     Text(TrackyVoice.Soft.emptyFuelsTitle)
-                        .font(VS.Typography.heading(16))
+                        .font(VS.TextStyle.headline(.semibold))
                         .foregroundStyle(VS.Color.textPrimary)
                     Text(TrackyVoice.Soft.emptyFuelsBody)
-                        .font(VS.Typography.body(13))
+                        .font(VS.TextStyle.footnote())
                         .foregroundStyle(VS.Color.textSecondary)
                         .multilineTextAlignment(.center)
                 }
@@ -203,15 +203,15 @@ struct HeroCard: View {
             HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(vehicle.nickname)
-                        .font(VS.Typography.heading(22, weight: .bold))
+                        .font(VS.TextStyle.title2())
                         .foregroundStyle(VS.Color.navPill)
                     Text("\(vehicle.make) \(vehicle.model)")
-                        .font(VS.Typography.body(13, weight: .medium))
+                        .font(VS.TextStyle.footnote(.medium))
                         .foregroundStyle(VS.Color.navPill.opacity(0.7))
                 }
                 Spacer(minLength: 12)
                 Text(vibe.label)
-                    .font(VS.Typography.body(12, weight: .semibold))
+                    .font(VS.TextStyle.caption(.semibold))
                     .foregroundStyle(VS.Color.navPill)
                     .padding(.horizontal, 12)
                     .padding(.vertical, 7)
@@ -221,12 +221,12 @@ struct HeroCard: View {
             VStack(alignment: .leading, spacing: 6) {
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
                     Text(EfficiencyFormat.displayNumber(efficiency, unit: efficiencyUnit))
-                        .font(VS.Typography.heading(64, weight: .bold))
+                        .font(VS.TextStyle.hero())
                         .foregroundStyle(VS.Color.navPill)
                         .contentTransition(.numericText())
                         .animation(.snappy(duration: 0.25), value: efficiencyUnit)
                     Text(efficiencyUnit.shortLabel)
-                        .font(VS.Typography.heading(18, weight: .bold))
+                        .font(VS.TextStyle.title3())
                         .foregroundStyle(VS.Color.navPill.opacity(0.65))
                 }
                 .accessibilityElement(children: .combine)
@@ -237,7 +237,7 @@ struct HeroCard: View {
                 )
 
                 Text(status.text)
-                    .font(VS.Typography.body(14, weight: .medium))
+                    .font(VS.TextStyle.callout(.medium))
                     .foregroundStyle(VS.Color.navPill.opacity(0.75))
             }
 
@@ -247,7 +247,7 @@ struct HeroCard: View {
                 brochureGauge(currentL100: efficiency, standardL100: manufacturerStandard)
             } else if efficiency == nil {
                 Text(TrackyVoice.Soft.fuelsHeroHint)
-                    .font(VS.Typography.body(13))
+                    .font(VS.TextStyle.footnote())
                     .foregroundStyle(VS.Color.navPill.opacity(0.6))
             }
 
@@ -321,11 +321,11 @@ struct HeroCard: View {
 
             HStack {
                 Text("You \(youLabel)")
-                    .font(VS.Typography.body(11, weight: .semibold))
+                    .font(VS.TextStyle.caption2(.semibold))
                     .foregroundStyle(VS.Color.navPill)
                 Spacer()
                 Text("Brochure \(brochureLabel)")
-                    .font(VS.Typography.body(11, weight: .medium))
+                    .font(VS.TextStyle.caption2(.medium))
                     .foregroundStyle(VS.Color.navPill.opacity(0.55))
             }
         }
@@ -335,7 +335,7 @@ struct HeroCard: View {
         HStack(spacing: 7) {
             VSIcon(icon: icon, size: 13, weight: .fill, tint: VS.Color.navPill.opacity(0.7))
             Text(text)
-                .font(VS.Typography.body(12, weight: .semibold))
+                .font(VS.TextStyle.caption(.semibold))
                 .foregroundStyle(VS.Color.navPill.opacity(0.8))
                 .lineLimit(1)
         }
@@ -389,12 +389,12 @@ struct MetricsRow: View {
             }
             Spacer(minLength: 8)
             Text(value)
-                .font(VS.Typography.heading(40, weight: .bold))
+                .font(VS.TextStyle.displaySmall())
                 .foregroundStyle(VS.Color.textPrimary)
                 .lineLimit(1)
                 .minimumScaleFactor(0.55)
             Text(label)
-                .font(VS.Typography.body(13, weight: .medium))
+                .font(VS.TextStyle.footnote(.medium))
                 .foregroundStyle(VS.Color.textTertiary)
                 .lineLimit(2)
         }
@@ -415,21 +415,21 @@ struct RefuelRowView: View {
         HStack {
             VStack(alignment: .leading, spacing: 4) {
                 Text(log.timestamp.formatted(date: .abbreviated, time: .omitted))
-                    .font(VS.Typography.heading(14))
+                    .font(VS.TextStyle.subheadline(.semibold))
                     .foregroundStyle(VS.Color.textPrimary)
                 Text(subtitle)
-                    .font(VS.Typography.body(12))
+                    .font(VS.TextStyle.caption())
                     .foregroundStyle(VS.Color.textTertiary)
                 if let station = log.stationName, !station.isEmpty {
                     Text(station)
-                        .font(VS.Typography.body(11, weight: .medium))
+                        .font(VS.TextStyle.caption2(.medium))
                         .foregroundStyle(VS.Color.accentSecondary)
                         .lineLimit(1)
                 }
             }
             Spacer()
             Text(CurrencyFormat.format(log.totalCost, currency: log.currency))
-                .font(VS.Typography.heading(15))
+                .font(VS.TextStyle.headline(.semibold))
                 .foregroundStyle(VS.Color.textPrimary)
         }
         .padding(.vertical, 10)

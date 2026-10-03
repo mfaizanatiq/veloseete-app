@@ -141,11 +141,11 @@ struct FeedbackComposerView: View {
         NavigationStack {
             VStack(alignment: .leading, spacing: VS.Spacing.module) {
                 Text("What’s working, what’s missing, what felt off. This goes to the Veloseete inbox — not a public thread.")
-                    .font(VS.Typography.body(14))
+                    .font(VS.TextStyle.callout())
                     .foregroundStyle(VS.Color.textSecondary)
 
                 TextEditor(text: $message)
-                    .font(VS.Typography.body(16))
+                    .font(VS.TextStyle.bodyLarge())
                     .foregroundStyle(VS.Color.textPrimary)
                     .scrollContentBackground(.hidden)
                     .frame(minHeight: 160)
@@ -153,7 +153,7 @@ struct FeedbackComposerView: View {
 
                 if let errorMessage {
                     Text(errorMessage)
-                        .font(VS.Typography.body(12))
+                        .font(VS.TextStyle.caption())
                         .foregroundStyle(VS.Color.error)
                 }
 
@@ -222,25 +222,25 @@ struct FeatureRequestComposerView: View {
                     Text(asModeratorItem
                          ? "This lands on the public roadmap immediately."
                          : "Describe the feature. If it fits the product, it can be added to the roadmap.")
-                        .font(VS.Typography.body(14))
+                        .font(VS.TextStyle.callout())
                         .foregroundStyle(VS.Color.textSecondary)
 
                     VStack(alignment: .leading, spacing: 10) {
                         Text("Title")
-                            .font(VS.Typography.body(13, weight: .medium))
+                            .font(VS.TextStyle.footnote(.medium))
                             .foregroundStyle(VS.Color.textTertiary)
                         TextField("CarPlay live trip", text: $title)
-                            .font(VS.Typography.heading(22, weight: .semibold))
+                            .font(VS.TextStyle.title2(.semibold))
                             .foregroundStyle(VS.Color.textPrimary)
                             .vsInputField()
                     }
 
                     VStack(alignment: .leading, spacing: 10) {
                         Text("Detail")
-                            .font(VS.Typography.body(13, weight: .medium))
+                            .font(VS.TextStyle.footnote(.medium))
                             .foregroundStyle(VS.Color.textTertiary)
                         TextEditor(text: $detail)
-                            .font(VS.Typography.body(16))
+                            .font(VS.TextStyle.bodyLarge())
                             .foregroundStyle(VS.Color.textPrimary)
                             .scrollContentBackground(.hidden)
                             .frame(minHeight: 120)
@@ -250,7 +250,7 @@ struct FeatureRequestComposerView: View {
                     if asModeratorItem {
                         VStack(alignment: .leading, spacing: 10) {
                             Text("Status")
-                                .font(VS.Typography.body(13, weight: .medium))
+                                .font(VS.TextStyle.footnote(.medium))
                                 .foregroundStyle(VS.Color.textTertiary)
                             HStack(spacing: 8) {
                                 ForEach(RoadmapStatus.allCases) { option in
@@ -264,7 +264,7 @@ struct FeatureRequestComposerView: View {
 
                     if let errorMessage {
                         Text(errorMessage)
-                            .font(VS.Typography.body(12))
+                            .font(VS.TextStyle.caption())
                             .foregroundStyle(VS.Color.error)
                     }
 
@@ -332,16 +332,16 @@ struct RoadmapView: View {
                 VStack(alignment: .leading, spacing: VS.Spacing.floatStack) {
                     VStack(alignment: .leading, spacing: 6) {
                         Text("Roadmap")
-                            .font(VS.Typography.heading(28, weight: .bold))
+                            .font(VS.TextStyle.title())
                             .foregroundStyle(VS.Color.textPrimary)
                         Text("Vote the work you want next. Requests land here after moderation.")
-                            .font(VS.Typography.body(14))
+                            .font(VS.TextStyle.callout())
                             .foregroundStyle(VS.Color.textSecondary)
                     }
 
                     if let errorMessage = voice.errorMessage {
                         Text(errorMessage)
-                            .font(VS.Typography.body(12))
+                            .font(VS.TextStyle.caption())
                             .foregroundStyle(VS.Color.error)
                     }
 
@@ -378,7 +378,7 @@ struct RoadmapView: View {
                                 showAddItem = true
                             } label: {
                                 Text("Add to roadmap")
-                                    .font(VS.Typography.heading(15))
+                                    .font(VS.TextStyle.headline(.semibold))
                                     .foregroundStyle(VS.Color.textPrimary)
                                     .frame(maxWidth: .infinity)
                                     .padding(.vertical, 14)
@@ -419,10 +419,10 @@ struct RoadmapView: View {
     private var emptyRoadmap: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text("Nothing on the board yet")
-                .font(VS.Typography.heading(16))
+                .font(VS.TextStyle.headline(.semibold))
                 .foregroundStyle(VS.Color.textPrimary)
             Text("Request a feature and it can be added here after review.")
-                .font(VS.Typography.body(13))
+                .font(VS.TextStyle.footnote())
                 .foregroundStyle(VS.Color.textSecondary)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -437,23 +437,23 @@ struct RoadmapView: View {
                 ForEach(Array(voice.openRequests.enumerated()), id: \.element.id) { index, request in
                     VStack(alignment: .leading, spacing: 10) {
                         Text(request.title)
-                            .font(VS.Typography.heading(16, weight: .bold))
+                            .font(VS.TextStyle.headline())
                             .foregroundStyle(VS.Color.textPrimary)
                         if !request.detail.isEmpty {
                             Text(request.detail)
-                                .font(VS.Typography.body(13))
+                                .font(VS.TextStyle.footnote())
                                 .foregroundStyle(VS.Color.textSecondary)
                                 .fixedSize(horizontal: false, vertical: true)
                         }
                         Text("\(request.authorName) · \(request.createdAt.formatted(date: .abbreviated, time: .omitted))")
-                            .font(VS.Typography.body(11))
+                            .font(VS.TextStyle.caption2())
                             .foregroundStyle(VS.Color.textTertiary)
 
                         HStack(spacing: 10) {
                             Button("Add to roadmap") {
                                 Task { await voice.promote(request) }
                             }
-                            .font(VS.Typography.body(13, weight: .semibold))
+                            .font(VS.TextStyle.footnote(.semibold))
                             .foregroundStyle(VS.Color.navPill)
                             .padding(.horizontal, 12)
                             .padding(.vertical, 8)
@@ -462,7 +462,7 @@ struct RoadmapView: View {
                             Button("Decline") {
                                 Task { await voice.decline(request) }
                             }
-                            .font(VS.Typography.body(13, weight: .semibold))
+                            .font(VS.TextStyle.footnote(.semibold))
                             .foregroundStyle(VS.Color.error)
                         }
                     }
@@ -483,10 +483,10 @@ struct RoadmapView: View {
                 ForEach(Array(voice.myRequests.enumerated()), id: \.element.id) { index, request in
                     VStack(alignment: .leading, spacing: 4) {
                         Text(request.title)
-                            .font(VS.Typography.body(15, weight: .semibold))
+                            .font(VS.TextStyle.body(.semibold))
                             .foregroundStyle(VS.Color.textPrimary)
                         Text("Waiting on review")
-                            .font(VS.Typography.body(12))
+                            .font(VS.TextStyle.caption())
                             .foregroundStyle(VS.Color.textTertiary)
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -503,7 +503,7 @@ struct RoadmapView: View {
     private func timelineSection(status: RoadmapStatus, items: [RoadmapItem]) -> some View {
         VStack(alignment: .leading, spacing: 14) {
             Text(status.label)
-                .font(VS.Typography.heading(17, weight: .bold))
+                .font(VS.TextStyle.title3())
                 .foregroundStyle(VS.Color.textPrimary)
 
             VStack(alignment: .leading, spacing: 0) {
@@ -536,17 +536,17 @@ struct RoadmapView: View {
                 HStack(alignment: .top, spacing: 10) {
                     VStack(alignment: .leading, spacing: 4) {
                         Text(item.title)
-                            .font(VS.Typography.heading(17, weight: .bold))
+                            .font(VS.TextStyle.title3())
                             .foregroundStyle(VS.Color.textPrimary)
                         if !item.detail.isEmpty {
                             Text(item.detail)
-                                .font(VS.Typography.body(13))
+                                .font(VS.TextStyle.footnote())
                                 .foregroundStyle(VS.Color.textSecondary)
                                 .fixedSize(horizontal: false, vertical: true)
                         }
                         if status == .released, let releasedAt = item.releasedAt {
                             Text("Shipped \(releasedAt.formatted(date: .abbreviated, time: .omitted))")
-                                .font(VS.Typography.body(11, weight: .medium))
+                                .font(VS.TextStyle.caption2(.medium))
                                 .foregroundStyle(VS.Color.accent)
                         }
                     }
@@ -555,7 +555,7 @@ struct RoadmapView: View {
                         voteControl(item)
                     } else {
                         Text("\(item.voteCount)")
-                            .font(VS.Typography.mono(12, weight: .semibold))
+                            .font(VS.TextStyle.labelLarge(.semibold))
                             .foregroundStyle(VS.Color.textTertiary)
                     }
                 }
@@ -587,7 +587,7 @@ struct RoadmapView: View {
                 Image(systemName: voted ? "arrow.up.circle.fill" : "arrow.up.circle")
                     .font(.system(size: 22, weight: .semibold))
                 Text("\(item.voteCount)")
-                    .font(VS.Typography.mono(12, weight: .bold))
+                    .font(VS.TextStyle.labelLarge())
             }
             .foregroundStyle(voted ? VS.Color.navPill : VS.Color.textSecondary)
             .frame(width: 52, height: 52)

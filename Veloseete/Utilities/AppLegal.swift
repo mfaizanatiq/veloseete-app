@@ -74,7 +74,7 @@ struct LegalDocumentView: View {
         NavigationStack {
             ScrollView {
                 Text(attributedBody)
-                    .font(VS.Typography.body(14))
+                    .font(VS.TextStyle.callout())
                     .foregroundStyle(VS.Color.textPrimary)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(20)
@@ -88,7 +88,7 @@ struct LegalDocumentView: View {
                     Button("Web") {
                         openURL(document.publicURL)
                     }
-                    .font(VS.Typography.body(14, weight: .semibold))
+                    .font(VS.TextStyle.callout(.semibold))
                     .foregroundStyle(VS.Color.accent)
                 }
                 ToolbarItem(placement: .topBarTrailing) {
@@ -110,7 +110,7 @@ struct LegalLinksRow: View {
             Text("·").foregroundStyle(VS.Color.textTertiary)
             Button("Terms") { onOpen(.terms) }
         }
-        .font(VS.Typography.body(12, weight: .medium))
+        .font(VS.TextStyle.caption(.medium))
         .foregroundStyle(VS.Color.accent)
     }
 }

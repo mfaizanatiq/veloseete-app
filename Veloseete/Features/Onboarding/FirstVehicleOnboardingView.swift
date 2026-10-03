@@ -132,18 +132,18 @@ struct FirstVehicleOnboardingView: View {
             Spacer(minLength: 16)
 
             Text(TrackyVoice.Soft.firstVehicleEyebrow)
-                .font(VS.Typography.body(11, weight: .bold))
+                .font(VS.TextStyle.caption2(.bold))
                 .tracking(1.5)
                 .foregroundStyle(VS.Color.accent)
 
             Text("Add the car\nyou’ll track.")
-                .font(VS.Typography.heading(39, weight: .bold))
+                .font(VS.TextStyle.displaySmall())
                 .tracking(-1.2)
                 .foregroundStyle(VS.Color.textPrimary)
                 .padding(.top, 10)
 
             Text(TrackyVoice.Soft.firstVehicleBody)
-                .font(VS.Typography.body(15))
+                .font(VS.TextStyle.body())
                 .foregroundStyle(VS.Color.textSecondary)
                 .lineSpacing(4)
                 .fixedSize(horizontal: false, vertical: true)
@@ -163,7 +163,7 @@ struct FirstVehicleOnboardingView: View {
                         }
                     } label: {
                         Text("Restore an archived car")
-                            .font(VS.Typography.body(14, weight: .semibold))
+                            .font(VS.TextStyle.callout(.semibold))
                             .foregroundStyle(VS.Color.textSecondary)
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 12)
@@ -206,7 +206,7 @@ struct FirstVehicleOnboardingView: View {
                 }
             } label: {
                 Label("Back", systemImage: "chevron.left")
-                    .font(VS.Typography.body(14, weight: .semibold))
+                    .font(VS.TextStyle.callout(.semibold))
                     .foregroundStyle(VS.Color.textSecondary)
             }
             .buttonStyle(.plain)
@@ -214,28 +214,28 @@ struct FirstVehicleOnboardingView: View {
             .padding(.top, 4)
 
             Text("RESTORE")
-                .font(VS.Typography.body(11, weight: .bold))
+                .font(VS.TextStyle.caption2(.bold))
                 .tracking(1.5)
                 .foregroundStyle(VS.Color.accent)
                 .padding(.horizontal, 24)
                 .padding(.top, 22)
 
             Text("Bring a car back.")
-                .font(VS.Typography.heading(32, weight: .bold))
+                .font(VS.TextStyle.largeTitle())
                 .tracking(-0.8)
                 .foregroundStyle(VS.Color.textPrimary)
                 .padding(.horizontal, 24)
                 .padding(.top, 10)
 
             Text("History stays intact — you only need to restore it to the garage.")
-                .font(VS.Typography.body(15))
+                .font(VS.TextStyle.body())
                 .foregroundStyle(VS.Color.textSecondary)
                 .padding(.horizontal, 24)
                 .padding(.top, 10)
 
             if let restoreError {
                 Text(restoreError)
-                    .font(VS.Typography.body(13))
+                    .font(VS.TextStyle.footnote())
                     .foregroundStyle(VS.Color.error)
                     .padding(.horizontal, 24)
                     .padding(.top, 12)
@@ -255,10 +255,10 @@ struct FirstVehicleOnboardingView: View {
                                 )
                                 VStack(alignment: .leading, spacing: 4) {
                                     Text(vehicle.nickname.isEmpty ? "\(vehicle.make) \(vehicle.model)" : vehicle.nickname)
-                                        .font(VS.Typography.heading(17, weight: .bold))
+                                        .font(VS.TextStyle.title3())
                                         .foregroundStyle(VS.Color.textPrimary)
                                     Text("\(vehicle.make) \(vehicle.model)")
-                                        .font(VS.Typography.body(13))
+                                        .font(VS.TextStyle.footnote())
                                         .foregroundStyle(VS.Color.textTertiary)
                                 }
                                 Spacer()
@@ -266,7 +266,7 @@ struct FirstVehicleOnboardingView: View {
                                     ProgressView().tint(VS.Color.accent)
                                 } else {
                                     Text("Restore")
-                                        .font(VS.Typography.body(13, weight: .semibold))
+                                        .font(VS.TextStyle.footnote(.semibold))
                                         .foregroundStyle(VS.Color.navPill)
                                         .padding(.horizontal, 12)
                                         .padding(.vertical, 7)
@@ -333,13 +333,13 @@ struct FirstVehicleSyncRecoveryView: View {
                     .frame(width: 72, height: 72)
 
                 Text("Couldn’t load your garage")
-                    .font(VS.Typography.heading(28, weight: .bold))
+                    .font(VS.TextStyle.title())
                     .foregroundStyle(VS.Color.textPrimary)
                     .multilineTextAlignment(.center)
                     .padding(.top, 20)
 
                 Text(store.loadError ?? "Check your connection and try again.")
-                    .font(VS.Typography.body(15))
+                    .font(VS.TextStyle.body())
                     .foregroundStyle(VS.Color.textSecondary)
                     .multilineTextAlignment(.center)
                     .padding(.horizontal, 28)
@@ -352,7 +352,7 @@ struct FirstVehicleSyncRecoveryView: View {
 
                     Button(action: onContinueEmpty) {
                         Text("Continue without a car")
-                            .font(VS.Typography.body(14, weight: .semibold))
+                            .font(VS.TextStyle.callout(.semibold))
                             .foregroundStyle(VS.Color.textSecondary)
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 12)
@@ -362,7 +362,7 @@ struct FirstVehicleSyncRecoveryView: View {
                     Button("Sign out", role: .destructive) {
                         try? auth.signOut()
                     }
-                    .font(VS.Typography.body(14, weight: .semibold))
+                    .font(VS.TextStyle.callout(.semibold))
                     .foregroundStyle(VS.Color.textTertiary)
                     .padding(.bottom, 8)
                 }

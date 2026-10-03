@@ -103,7 +103,7 @@ struct TripPermissionsOnboardingView: View {
 
             if page != .permissions {
                 Button("Skip") { goToPermissions() }
-                    .font(VS.Typography.body(13, weight: .semibold))
+                    .font(VS.TextStyle.footnote(.semibold))
                     .foregroundStyle(VS.Color.textSecondary)
                     .frame(width: 44, alignment: .trailing)
             } else {
@@ -130,18 +130,18 @@ struct TripPermissionsOnboardingView: View {
             Spacer(minLength: 16)
 
             Text(eyebrow)
-                .font(VS.Typography.body(11, weight: .bold))
+                .font(VS.TextStyle.caption2(.bold))
                 .tracking(1.5)
                 .foregroundStyle(VS.Color.accent)
 
             Text(title)
-                .font(VS.Typography.heading(39, weight: .bold))
+                .font(VS.TextStyle.displaySmall())
                 .tracking(-1.2)
                 .foregroundStyle(VS.Color.textPrimary)
                 .padding(.top, 10)
 
             Text(subtitle)
-                .font(VS.Typography.body(15))
+                .font(VS.TextStyle.body())
                 .foregroundStyle(VS.Color.textSecondary)
                 .lineSpacing(4)
                 .fixedSize(horizontal: false, vertical: true)
@@ -184,7 +184,7 @@ struct TripPermissionsOnboardingView: View {
                 .opacity(routeArrival ? 1 : 0)
 
             Text("DRIVE LOGGED")
-                .font(VS.Typography.body(10, weight: .bold))
+                .font(VS.TextStyle.caption2(.bold))
                 .tracking(1.2)
                 .foregroundStyle(VS.Color.navPill)
                 .padding(.horizontal, 13)
@@ -204,7 +204,7 @@ struct TripPermissionsOnboardingView: View {
                 .background(VS.Color.accent, in: Circle())
                 .shadow(color: VS.Color.accent.opacity(0.30), radius: 14)
             Text(label)
-                .font(VS.Typography.body(10, weight: .bold))
+                .font(VS.TextStyle.caption2(.bold))
                 .tracking(1)
                 .foregroundStyle(VS.Color.textSecondary)
         }
@@ -231,15 +231,15 @@ struct TripPermissionsOnboardingView: View {
                     VSIcon(icon: .wrench, size: 21, weight: .regular, tint: VS.Color.accent)
                     VStack(alignment: .leading, spacing: 3) {
                         Text("Next service in 1,840 km")
-                            .font(VS.Typography.heading(14))
+                            .font(VS.TextStyle.subheadline(.semibold))
                             .foregroundStyle(VS.Color.textPrimary)
                         Text("You’re comfortably on track")
-                            .font(VS.Typography.body(11))
+                            .font(VS.TextStyle.caption2())
                             .foregroundStyle(VS.Color.textTertiary)
                     }
                     Spacer()
                     Text("NICE")
-                        .font(VS.Typography.body(9, weight: .bold))
+                        .font(VS.TextStyle.caption2(.bold))
                         .tracking(1)
                         .foregroundStyle(VS.Color.navPill)
                         .padding(.horizontal, 9)
@@ -260,10 +260,10 @@ struct TripPermissionsOnboardingView: View {
             VSIcon(icon: icon, size: 22, weight: .regular, tint: tint)
             Spacer()
             Text(value)
-                .font(VS.Typography.heading(28, weight: .bold))
+                .font(VS.TextStyle.title())
                 .foregroundStyle(VS.Color.textPrimary)
             Text(label)
-                .font(VS.Typography.body(9, weight: .bold))
+                .font(VS.TextStyle.caption2(.bold))
                 .tracking(0.8)
                 .foregroundStyle(VS.Color.textTertiary)
         }
@@ -306,15 +306,15 @@ struct TripPermissionsOnboardingView: View {
             VStack(alignment: .leading, spacing: 22) {
                 VStack(alignment: .leading, spacing: 10) {
                     Text("ONE LAST PIT STOP")
-                        .font(VS.Typography.body(11, weight: .bold))
+                        .font(VS.TextStyle.caption2(.bold))
                         .tracking(1.5)
                         .foregroundStyle(VS.Color.accent)
                     Text("Make the magic\nwork.")
-                        .font(VS.Typography.heading(38, weight: .bold))
+                        .font(VS.TextStyle.displaySmall())
                         .tracking(-1.1)
                         .foregroundStyle(VS.Color.textPrimary)
                     Text("Switch on what you’re comfortable with. Each one has a clear job — and you stay in control.")
-                        .font(VS.Typography.body(15))
+                        .font(VS.TextStyle.body())
                         .foregroundStyle(VS.Color.textSecondary)
                         .lineSpacing(4)
                 }
@@ -349,7 +349,7 @@ struct TripPermissionsOnboardingView: View {
                 HStack(spacing: 8) {
                     VSIcon(icon: .eye, size: 16, weight: .regular, tint: VS.Color.textTertiary)
                     Text("No ads. No selling your movement. Change access anytime in Settings.")
-                        .font(VS.Typography.body(11))
+                        .font(VS.TextStyle.caption2())
                         .foregroundStyle(VS.Color.textTertiary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -390,10 +390,10 @@ struct TripPermissionsOnboardingView: View {
 
                 VStack(alignment: .leading, spacing: 4) {
                     Text(title)
-                        .font(VS.Typography.heading(15))
+                        .font(VS.TextStyle.headline(.semibold))
                         .foregroundStyle(VS.Color.textPrimary)
                     Text(detail)
-                        .font(VS.Typography.body(11))
+                        .font(VS.TextStyle.caption2())
                         .foregroundStyle(state == .settings ? VS.Color.warning : VS.Color.textTertiary)
                         .lineLimit(2)
                 }
@@ -422,7 +422,7 @@ struct TripPermissionsOnboardingView: View {
         .overlay {
             if state == .partial {
                 Text("1×")
-                    .font(.system(size: 8, weight: .bold))
+                    .font(VS.TextStyle.artwork(8))
                     .foregroundStyle(VS.Color.navPill)
                     .offset(x: -9)
             }
@@ -443,7 +443,7 @@ struct TripPermissionsOnboardingView: View {
 
             if page == .permissions {
                 Button(TrackyVoice.Soft.permissionsLater) { complete() }
-                    .font(VS.Typography.body(13, weight: .semibold))
+                    .font(VS.TextStyle.footnote(.semibold))
                     .foregroundStyle(VS.Color.textSecondary)
             }
         }

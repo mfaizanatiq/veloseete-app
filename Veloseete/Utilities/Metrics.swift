@@ -10,16 +10,20 @@ enum CurrencyFormat {
 
     static func format(_ amount: Double, currency: String = "QAR") -> String {
         let symbol = symbols[currency] ?? currency
-        return String(format: "%@%.2f", symbol, amount)
+        // Arabic symbols are right-to-left; isolate them so "~", digits and the symbol
+        // keep their order inside any surrounding text (e.g. "~4.12 د.إ", not "4.12د.إ~").
+        let amountText = amount.formatted(.number.precision(.fractionLength(2)))
+        let isRTL = symbol.unicodeScalars.contains { (0x0590...0x08FF).contains($0.value) || (0xFB1D...0xFEFF).contains($0.value) }
+        let raw = isRTL ? "\(amountText) \(symbol)" : "\(symbol)\(amountText)"
+        return "\u{2066}\(raw)\u{2069}"
     }
 }
 
 enum DistanceFormat {
+    /// Grouped for reading at a glance: "61,780 km". (Edit fields keep raw digits.)
     static func formatOdometer(_ km: Double, unit: String) -> String {
-        if unit == "mi" {
-            return String(format: "%.0f mi", km * 0.621371)
-        }
-        return String(format: "%.0f km", km)
+        let value = unit == "mi" ? km * 0.621371 : km
+        return "\(value.formatted(.number.precision(.fractionLength(0)))) \(unit == "mi" ? "mi" : "km")"
     }
 
     static func formatDistance(_ km: Double, unit: String) -> String {

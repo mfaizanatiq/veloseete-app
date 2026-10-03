@@ -89,7 +89,7 @@ struct GarageView: View {
 
             if let errorMessage {
                 Text(errorMessage)
-                    .font(VS.Typography.body(13))
+                    .font(VS.TextStyle.footnote())
                     .foregroundStyle(VS.Color.error)
                     .padding(.horizontal, 20)
                     .padding(.bottom, 8)
@@ -168,14 +168,14 @@ struct GarageView: View {
                     }
                 } label: {
                     Label("Back", systemImage: "chevron.left")
-                        .font(VS.Typography.body(14, weight: .semibold))
+                        .font(VS.TextStyle.callout(.semibold))
                         .foregroundStyle(VS.Color.textSecondary)
                 }
                 .buttonStyle(.plain)
             }
             Spacer()
             Text("Step \(step) of 3")
-                .font(VS.Typography.body(13, weight: .medium))
+                .font(VS.TextStyle.footnote(.medium))
                 .foregroundStyle(VS.Color.textTertiary)
         }
         .padding(.horizontal, 20)
@@ -186,12 +186,12 @@ struct GarageView: View {
     private var accountBanner: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text(auth.user?.email ?? "Signed in")
-                .font(VS.Typography.body(13, weight: .semibold))
+                .font(VS.TextStyle.footnote(.semibold))
                 .foregroundStyle(VS.Color.textPrimary)
 
             if !store.loadWarnings.isEmpty {
                 Text(store.loadWarnings.joined(separator: "\n"))
-                    .font(VS.Typography.body(11))
+                    .font(VS.TextStyle.caption2())
                     .foregroundStyle(VS.Color.warning)
             }
 
@@ -208,7 +208,7 @@ struct GarageView: View {
                     HStack(spacing: 6) {
                         if isRetrying { ProgressView().tint(VS.Color.accent) }
                         Text("Retry sync")
-                            .font(VS.Typography.body(13, weight: .semibold))
+                            .font(VS.TextStyle.footnote(.semibold))
                     }
                     .foregroundStyle(VS.Color.accent)
                 }
@@ -217,7 +217,7 @@ struct GarageView: View {
                 Button("Sign out") {
                     try? auth.signOut()
                 }
-                .font(VS.Typography.body(13, weight: .semibold))
+                .font(VS.TextStyle.footnote(.semibold))
                 .foregroundStyle(VS.Color.textSecondary)
                 .buttonStyle(.plain)
             }
@@ -260,7 +260,7 @@ struct GarageView: View {
                 withAnimation(.snappy(duration: 0.25)) { showMakeModel.toggle() }
             } label: {
                 Text(showMakeModel ? "Hide make & model" : "Make & model (optional)")
-                    .font(VS.Typography.body(13, weight: .semibold))
+                    .font(VS.TextStyle.footnote(.semibold))
                     .foregroundStyle(VS.Color.accent)
             }
             .buttonStyle(.plain)
@@ -338,7 +338,7 @@ struct GarageView: View {
                 withAnimation(.snappy(duration: 0.25)) { showTank.toggle() }
             } label: {
                 Text(showTank ? "Hide tank capacity" : "Tank capacity (optional)")
-                    .font(VS.Typography.body(13, weight: .semibold))
+                    .font(VS.TextStyle.footnote(.semibold))
                     .foregroundStyle(VS.Color.accent)
             }
             .buttonStyle(.plain)
@@ -358,17 +358,17 @@ struct GarageView: View {
     private func titleBlock(_ title: String, _ subtitle: String) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(title)
-                .font(VS.Typography.heading(26, weight: .bold))
+                .font(VS.TextStyle.title())
                 .foregroundStyle(VS.Color.textPrimary)
             Text(subtitle)
-                .font(VS.Typography.body(14))
+                .font(VS.TextStyle.callout())
                 .foregroundStyle(VS.Color.textSecondary)
         }
     }
 
     private func fieldLabel(_ text: String) -> some View {
         Text(text)
-            .font(VS.Typography.body(13, weight: .medium))
+            .font(VS.TextStyle.footnote(.medium))
             .foregroundStyle(VS.Color.textTertiary)
     }
 
@@ -381,7 +381,7 @@ struct GarageView: View {
         VStack(alignment: .leading, spacing: 10) {
             fieldLabel(label)
             TextField(placeholder, text: text)
-                .font(large ? VS.Typography.heading(24, weight: .semibold) : VS.Typography.heading(20, weight: .semibold))
+                .font(large ? VS.TextStyle.title2(.semibold) : VS.TextStyle.title2(.semibold))
                 .foregroundStyle(VS.Color.textPrimary)
                 .vsInputField()
         }
@@ -399,10 +399,10 @@ struct GarageView: View {
             HStack {
                 TextField(placeholder, text: text)
                     .keyboardType(suffix == "km" ? .numberPad : .decimalPad)
-                    .font(large ? VS.Typography.heading(32, weight: .bold) : VS.Typography.heading(22, weight: .semibold))
+                    .font(large ? VS.TextStyle.largeTitle() : VS.TextStyle.title2(.semibold))
                     .foregroundStyle(VS.Color.textPrimary)
                 Text(suffix)
-                    .font(VS.Typography.body(15, weight: .medium))
+                    .font(VS.TextStyle.body(.medium))
                     .foregroundStyle(VS.Color.textTertiary)
             }
             .vsInputField()

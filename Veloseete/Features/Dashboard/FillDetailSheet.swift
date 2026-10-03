@@ -78,7 +78,7 @@ struct FillDetailSheet: View {
 
                     if let errorMessage {
                         Text(errorMessage)
-                            .font(VS.Typography.body(13))
+                            .font(VS.TextStyle.footnote())
                             .foregroundStyle(VS.Color.error)
                     }
 
@@ -119,11 +119,11 @@ struct FillDetailSheet: View {
     private var heroCard: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text(currentLog.timestamp.formatted(date: .complete, time: .omitted))
-                .font(VS.Typography.body(12, weight: .medium))
+                .font(VS.TextStyle.caption(.medium))
                 .foregroundStyle(VS.Color.textTertiary)
 
             Text(CurrencyFormat.format(currentLog.totalCost, currency: currentLog.currency))
-                .font(VS.Typography.heading(34, weight: .bold))
+                .font(VS.TextStyle.largeTitle())
                 .foregroundStyle(VS.Color.textPrimary)
 
             HStack(spacing: 8) {
@@ -134,7 +134,7 @@ struct FillDetailSheet: View {
                     currentLog.pricePerUnit,
                     VolumeFormat.suffix(volumeUnit)
                 ))
-                .font(VS.Typography.body(12, weight: .medium))
+                .font(VS.TextStyle.caption(.medium))
                 .foregroundStyle(VS.Color.textSecondary)
             }
         }
@@ -145,7 +145,7 @@ struct FillDetailSheet: View {
 
     private var tankPill: some View {
         Text(currentLog.isFullTank ? "Full tank" : "Partial fill")
-            .font(VS.Typography.body(11, weight: .semibold))
+            .font(VS.TextStyle.caption2(.semibold))
             .foregroundStyle(currentLog.isFullTank ? VS.Color.accentSecondary : VS.Color.textSecondary)
             .padding(.horizontal, 10)
             .padding(.vertical, 5)
@@ -187,12 +187,12 @@ struct FillDetailSheet: View {
             HStack(spacing: 6) {
                 VSIcon(icon: icon, size: 12, weight: .regular, tint: VS.Color.textTertiary)
                 Text(label.uppercased())
-                    .font(VS.Typography.body(11, weight: .medium))
+                    .font(VS.TextStyle.caption2(.medium))
                     .foregroundStyle(VS.Color.textTertiary)
                     .lineLimit(1)
             }
             Text(value)
-                .font(VS.Typography.heading(20, weight: .bold))
+                .font(VS.TextStyle.title2())
                 .foregroundStyle(VS.Color.textPrimary)
                 .lineLimit(1)
                 .minimumScaleFactor(0.8)
@@ -207,10 +207,10 @@ struct FillDetailSheet: View {
             VSIcon(icon: .chartLine, size: 20, weight: .bold, tint: VS.Color.accent)
             VStack(alignment: .leading, spacing: 4) {
                 Text("THIS TANK")
-                    .font(VS.Typography.body(11, weight: .medium))
+                    .font(VS.TextStyle.caption2(.medium))
                     .foregroundStyle(VS.Color.textTertiary)
                 Text(EfficiencyFormat.format(efficiency, unit: efficiencyUnit.unit))
-                    .font(VS.Typography.heading(20, weight: .bold))
+                    .font(VS.TextStyle.title2())
                     .foregroundStyle(VS.Color.textPrimary)
             }
             Spacer()
@@ -220,7 +220,7 @@ struct FillDetailSheet: View {
                     standardL100: standard
                 ).rounded())
                 Text(deviation <= 0 ? "\(abs(deviation))% better than spec" : "\(deviation)% thirstier than spec")
-                    .font(VS.Typography.body(12, weight: .medium))
+                    .font(VS.TextStyle.caption(.medium))
                     .foregroundStyle(deviation <= 0 ? VS.Color.accentSecondary : VS.Color.warning)
             }
         }
@@ -233,7 +233,7 @@ struct FillDetailSheet: View {
             HStack(spacing: 8) {
                 VSIcon(icon: .mapPin, size: 14, weight: .fill, tint: VS.Color.accent)
                 Text(currentLog.stationName ?? "")
-                    .font(VS.Typography.heading(15))
+                    .font(VS.TextStyle.headline(.semibold))
                     .foregroundStyle(VS.Color.textPrimary)
                     .lineLimit(1)
                 Spacer(minLength: 0)
@@ -286,7 +286,7 @@ struct FillDetailSheet: View {
                             .font(.system(size: 14, weight: .semibold))
                     }
                     Text("Delete fill")
-                        .font(VS.Typography.body(14, weight: .semibold))
+                        .font(VS.TextStyle.callout(.semibold))
                 }
                 .foregroundStyle(VS.Color.error)
                 .frame(maxWidth: .infinity)

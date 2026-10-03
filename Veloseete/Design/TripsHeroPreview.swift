@@ -115,7 +115,7 @@ struct TripsHeroPreview: View {
                         .fill(showDrives ? VS.Color.textTertiary : VS.Color.success)
                         .frame(width: 7, height: 7)
                     Text(showDrives ? "3 drives on map" : "Recording · Coolray")
-                        .font(VS.Typography.body(10, weight: .bold))
+                        .font(VS.TextStyle.caption2(.bold))
                 }
                 .foregroundStyle(VS.Color.textPrimary)
                 .padding(.horizontal, 10)
@@ -133,7 +133,7 @@ struct TripsHeroPreview: View {
 
     private func chip(_ title: String, active: Bool) -> some View {
         Text(title)
-            .font(VS.Typography.body(12, weight: .semibold))
+            .font(VS.TextStyle.caption(.semibold))
             .foregroundStyle(active ? VS.Color.navPill : VS.Color.textSecondary)
             .padding(.horizontal, 14)
             .padding(.vertical, 8)
@@ -159,14 +159,14 @@ struct TripsHeroPreview: View {
 
             HStack(spacing: 10) {
                 Text("Pause")
-                    .font(VS.Typography.heading(16, weight: .bold))
+                    .font(VS.TextStyle.headline())
                     .foregroundStyle(VS.Color.textPrimary)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 16)
                     .background(VS.Color.divider, in: Capsule())
 
                 Text("End drive")
-                    .font(VS.Typography.heading(16, weight: .bold))
+                    .font(VS.TextStyle.headline())
                     .foregroundStyle(VS.Color.navPill)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 16)
@@ -198,7 +198,7 @@ struct TripsHeroPreview: View {
                 .padding(.top, 10)
 
             Text("My Drives")
-                .font(VS.Typography.heading(20, weight: .bold))
+                .font(VS.TextStyle.title2())
                 .foregroundStyle(VS.Color.textPrimary)
 
             ForEach(Array(demoTrips.prefix(3).enumerated()), id: \.element.id) { index, trip in
@@ -214,15 +214,15 @@ struct TripsHeroPreview: View {
 
                     VStack(alignment: .leading, spacing: 2) {
                         Text(index == 0 ? "Clifton → Sea View" : index == 1 ? "DHA Phase 5 loop" : "Korangi morning")
-                            .font(VS.Typography.body(14, weight: .semibold))
+                            .font(VS.TextStyle.callout(.semibold))
                             .foregroundStyle(VS.Color.textPrimary)
                         Text(String(format: "%.1f km · %@", trip.distanceKm, trip.durationFormatted))
-                            .font(VS.Typography.body(12, weight: .medium))
+                            .font(VS.TextStyle.caption(.medium))
                             .foregroundStyle(VS.Color.textSecondary)
                     }
                     Spacer(minLength: 0)
                     Text("\(Int(trip.maxSpeedKmh)) max")
-                        .font(VS.Typography.mono(12, weight: .bold))
+                        .font(VS.TextStyle.labelLarge())
                         .foregroundStyle(VS.Color.textSecondary)
                 }
                 .padding(12)

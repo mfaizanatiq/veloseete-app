@@ -106,25 +106,25 @@ struct DriverStatChip: View {
                     tint: emphasized ? VS.Color.accent : VS.Color.textTertiary
                 )
                 Text(label.uppercased())
-                    .font(VS.Typography.body(10, weight: .bold))
+                    .font(VS.TextStyle.caption2(.bold))
                     .foregroundStyle(VS.Color.textTertiary)
                     .lineLimit(1)
             }
 
             Text(value)
-                .font(VS.Typography.heading(22, weight: .bold))
+                .font(VS.TextStyle.title2())
                 .foregroundStyle(VS.Color.textPrimary)
                 .lineLimit(1)
                 .minimumScaleFactor(0.55)
 
             if let trend {
                 Text(trend)
-                    .font(VS.Typography.body(11, weight: .semibold))
+                    .font(VS.TextStyle.caption2(.semibold))
                     .foregroundStyle(trendUp ? VS.Color.warning : VS.Color.accent)
                     .lineLimit(1)
             } else if let detail {
                 Text(detail)
-                    .font(VS.Typography.body(11))
+                    .font(VS.TextStyle.caption2())
                     .foregroundStyle(VS.Color.textTertiary)
                     .lineLimit(2)
                     .fixedSize(horizontal: false, vertical: true)

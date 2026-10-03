@@ -57,12 +57,12 @@ struct ActiveDriveHUDContent: View {
             HStack(alignment: .center, spacing: 16) {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(model.intelligence.rangeCardTitle)
-                        .font(VS.Typography.heading(16, weight: .bold))
+                        .font(VS.TextStyle.headline())
                         .foregroundStyle(VS.Color.textPrimary)
                         .lineLimit(2)
                         .minimumScaleFactor(0.85)
                     Text(model.intelligence.filledAgo)
-                        .font(VS.Typography.body(12, weight: .medium))
+                        .font(VS.TextStyle.caption(.medium))
                         .foregroundStyle(VS.Color.textTertiary)
                         .lineLimit(1)
                 }
@@ -83,13 +83,13 @@ struct ActiveDriveHUDContent: View {
     private func hudStat(_ value: String, _ label: String) -> some View {
         VStack(spacing: 3) {
             Text(value)
-                .font(VS.Typography.heading(18, weight: .bold))
+                .font(VS.TextStyle.title3())
                 .foregroundStyle(VS.Color.textPrimary)
                 .contentTransition(.numericText())
                 .lineLimit(1)
                 .minimumScaleFactor(0.8)
             Text(label.uppercased())
-                .font(VS.Typography.mono(9, weight: .bold))
+                .font(VS.TextStyle.label())
                 .foregroundStyle(VS.Color.textTertiary)
         }
         .frame(maxWidth: .infinity)
@@ -203,7 +203,7 @@ private struct DriveEfficiencyArcMeter: View {
                 VStack(spacing: 6) {
                     if let vehicleName, !vehicleName.isEmpty {
                         Text(vehicleName)
-                            .font(VS.Typography.heading(13, weight: .bold))
+                            .font(VS.TextStyle.subheadline())
                             .foregroundStyle(VS.Color.textSecondary)
                             .lineLimit(1)
                     }
@@ -211,15 +211,15 @@ private struct DriveEfficiencyArcMeter: View {
                     // Hidden matching unit keeps the number optically centered.
                     HStack(alignment: .firstTextBaseline, spacing: 4) {
                         Text("km/h")
-                            .font(VS.Typography.heading(14, weight: .bold))
+                            .font(VS.TextStyle.subheadline())
                             .hidden()
                         Text(String(format: "%.0f", speedKmh))
-                            .font(VS.Typography.heading(speedSize, weight: .bold))
+                            .font(VS.TextStyle.display())
                             .foregroundStyle(VS.Color.textPrimary)
                             .contentTransition(.numericText())
                             .animation(.snappy(duration: 0.2), value: Int(speedKmh))
                         Text("km/h")
-                            .font(VS.Typography.heading(14, weight: .bold))
+                            .font(VS.TextStyle.subheadline())
                             .foregroundStyle(VS.Color.textTertiary)
                     }
 
@@ -242,7 +242,7 @@ private struct DriveEfficiencyArcMeter: View {
                 .frame(width: 5, height: 5)
                 .opacity(isPaused ? 1 : pulseOpacity)
             Text(isPaused ? "PAUSED" : "LIVE")
-                .font(VS.Typography.mono(9, weight: .bold))
+                .font(VS.TextStyle.label())
                 .foregroundStyle(isPaused ? VS.Color.warning : VS.Color.navPill)
         }
         .padding(.horizontal, 8)

@@ -15,7 +15,7 @@ struct EfficiencyUnitToggle: View {
                     store.set(option)
                 } label: {
                     Text(compact ? option.shortLabel : option.fullLabel)
-                        .font(VS.Typography.body(compact ? 11 : 12, weight: .semibold))
+                        .font((compact ? VS.TextStyle.caption2(.semibold) : VS.TextStyle.caption(.semibold)))
                         .foregroundStyle(labelColor(selected: store.unit == option))
                         .padding(.horizontal, compact ? 10 : 12)
                         .padding(.vertical, compact ? 6 : 8)

@@ -34,14 +34,14 @@ struct AuthView: View {
             VStack(alignment: .leading, spacing: 24) {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Veloseete")
-                        .font(VS.Typography.heading(32, weight: .bold))
+                        .font(VS.TextStyle.largeTitle())
                         .foregroundStyle(VS.Color.textPrimary)
 
                     Text(showingSignUp ? TrackyVoice.Soft.createAccount : TrackyVoice.Soft.welcomeBack)
-                        .font(VS.Typography.body(15))
+                        .font(VS.TextStyle.body())
                         .foregroundStyle(VS.Color.textSecondary)
                     Text(TrackyVoice.Soft.authTagline)
-                        .font(VS.Typography.body(13))
+                        .font(VS.TextStyle.footnote())
                         .foregroundStyle(VS.Color.textTertiary)
                 }
                 .padding(.top, 48)
@@ -51,7 +51,7 @@ struct AuthView: View {
                 HStack(spacing: 12) {
                     Rectangle().fill(VS.Color.divider).frame(height: 1)
                     Text(TrackyVoice.Soft.orEmail)
-                        .font(VS.Typography.body(12, weight: .medium))
+                        .font(VS.TextStyle.caption(.medium))
                         .foregroundStyle(VS.Color.textTertiary)
                     Rectangle().fill(VS.Color.divider).frame(height: 1)
                 }
@@ -83,7 +83,7 @@ struct AuthView: View {
 
                     VStack(alignment: .leading, spacing: 8) {
                         Text("Password")
-                            .font(VS.Typography.body(12, weight: .medium))
+                            .font(VS.TextStyle.caption(.medium))
                             .foregroundStyle(VS.Color.textTertiary)
 
                         HStack {
@@ -96,7 +96,7 @@ struct AuthView: View {
                             }
                             .focused($focusedField, equals: .password)
                             .textContentType(showingSignUp ? .newPassword : .password)
-                            .font(VS.Typography.body(16))
+                            .font(VS.TextStyle.bodyLarge())
                             .foregroundStyle(VS.Color.textPrimary)
 
                             Button {
@@ -116,14 +116,14 @@ struct AuthView: View {
 
                 if !localError.isEmpty || auth.errorMessage != nil {
                     Text(localError.isEmpty ? (auth.errorMessage ?? "") : localError)
-                        .font(VS.Typography.body(13))
+                        .font(VS.TextStyle.footnote())
                         .foregroundStyle(VS.Color.error)
                         .fixedSize(horizontal: false, vertical: true)
                 }
 
                 if let info = auth.infoMessage {
                     Text(info)
-                        .font(VS.Typography.body(13))
+                        .font(VS.TextStyle.footnote())
                         .foregroundStyle(VS.Color.success)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -136,7 +136,7 @@ struct AuthView: View {
                             ProgressView().tint(VS.Color.navPill)
                         }
                         Text(emailPrimaryTitle)
-                            .font(VS.Typography.heading(17, weight: .semibold))
+                            .font(VS.TextStyle.title3(.semibold))
                     }
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 16)
@@ -154,7 +154,7 @@ struct AuthView: View {
                         resetSuccess = false
                         showForgot = true
                     }
-                    .font(VS.Typography.body(14, weight: .medium))
+                    .font(VS.TextStyle.callout(.medium))
                     .foregroundStyle(VS.Color.textSecondary)
                     .frame(maxWidth: .infinity)
                 }
@@ -174,7 +174,7 @@ struct AuthView: View {
                                 .foregroundStyle(VS.Color.accent)
                                 .fontWeight(.semibold)
                         }
-                        .font(VS.Typography.body(14))
+                        .font(VS.TextStyle.callout())
                     }
                     .frame(maxWidth: .infinity)
                     .padding(.bottom, 16)
@@ -183,7 +183,7 @@ struct AuthView: View {
                         auth.clearPendingLink()
                         localError = ""
                     }
-                    .font(VS.Typography.body(14, weight: .medium))
+                    .font(VS.TextStyle.callout(.medium))
                     .foregroundStyle(VS.Color.textSecondary)
                     .frame(maxWidth: .infinity)
                     .padding(.bottom, 16)
@@ -242,7 +242,7 @@ struct AuthView: View {
                     Image(systemName: "g.circle.fill")
                         .font(.system(size: 22, weight: .semibold))
                     Text("Continue with Google")
-                        .font(VS.Typography.heading(16, weight: .semibold))
+                        .font(VS.TextStyle.headline(.semibold))
                 }
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 15)
@@ -264,14 +264,14 @@ struct AuthView: View {
     private var pendingLinkBanner: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text("Link your existing account")
-                .font(VS.Typography.heading(14))
+                .font(VS.TextStyle.subheadline(.semibold))
                 .foregroundStyle(VS.Color.textPrimary)
             Text(
                 auth.pendingLinkEmail.map {
                     "Sign in with the email password for \($0). Apple or Google will attach after you sign in."
                 } ?? "Sign in with your email and password below. Apple or Google will attach after you sign in."
             )
-            .font(VS.Typography.body(12))
+            .font(VS.TextStyle.caption())
             .foregroundStyle(VS.Color.textSecondary)
         }
         .padding(14)
@@ -283,9 +283,9 @@ struct AuthView: View {
         NavigationStack {
             VStack(alignment: .leading, spacing: 16) {
                 Text("Reset password")
-                    .font(VS.Typography.heading(22))
+                    .font(VS.TextStyle.title2(.semibold))
                 Text("We'll send a reset link to your email.")
-                    .font(VS.Typography.body(14))
+                    .font(VS.TextStyle.callout())
                     .foregroundStyle(VS.Color.textSecondary)
 
                 authField(
@@ -299,13 +299,13 @@ struct AuthView: View {
 
                 if !resetError.isEmpty {
                     Text(resetError)
-                        .font(VS.Typography.body(13))
+                        .font(VS.TextStyle.footnote())
                         .foregroundStyle(VS.Color.error)
                 }
 
                 if resetSuccess {
                     Text("Check your inbox for the reset link.")
-                        .font(VS.Typography.body(13))
+                        .font(VS.TextStyle.footnote())
                         .foregroundStyle(VS.Color.success)
                 }
 
@@ -313,7 +313,7 @@ struct AuthView: View {
                     Task { await sendPasswordReset() }
                 } label: {
                     Text(auth.isLoading ? "Sending…" : "Send reset link")
-                        .font(VS.Typography.heading(16))
+                        .font(VS.TextStyle.headline(.semibold))
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 14)
                         .background(VS.Color.accent)
@@ -347,7 +347,7 @@ struct AuthView: View {
     ) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(title)
-                .font(VS.Typography.body(12, weight: .medium))
+                .font(VS.TextStyle.caption(.medium))
                 .foregroundStyle(VS.Color.textTertiary)
 
             TextField(placeholder, text: text)
@@ -356,7 +356,7 @@ struct AuthView: View {
                 .textInputAutocapitalization(autocapitalization)
                 .textContentType(textContentType)
                 .autocorrectionDisabled()
-                .font(VS.Typography.body(16))
+                .font(VS.TextStyle.bodyLarge())
                 .foregroundStyle(VS.Color.textPrimary)
                 .vsInputField()
         }

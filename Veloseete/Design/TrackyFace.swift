@@ -52,15 +52,15 @@ struct TrackyInlineMoodRow: View {
                 TrackyFace(mood: trackyMood, size: 32)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(TrackyVoice.Soft.trackysMoodTitle)
-                        .font(VS.Typography.body(11, weight: .bold))
+                        .font(VS.TextStyle.caption2(.bold))
                         .foregroundStyle(VS.Color.textTertiary)
                     Text(trackyMood.label)
-                        .font(VS.Typography.body(14, weight: .semibold))
+                        .font(VS.TextStyle.callout(.semibold))
                         .foregroundStyle(VS.Color.textPrimary)
                 }
                 Spacer(minLength: 0)
                 Text(TrackyVoice.Soft.trackyInlineHint)
-                    .font(VS.Typography.body(10))
+                    .font(VS.TextStyle.caption2())
                     .foregroundStyle(VS.Color.textTertiary)
                     .multilineTextAlignment(.trailing)
             }
@@ -98,7 +98,7 @@ struct TrackyInlineMoodRow: View {
                     }
                     .frame(width: 42, height: 42)
                 Text(mood.label)
-                    .font(VS.Typography.body(10, weight: isSelected ? .bold : .medium))
+                    .font(VS.TextStyle.caption2(isSelected ? .bold : .medium))
                     .foregroundStyle(isSelected ? VS.Color.accent : VS.Color.textTertiary)
             }
             .padding(.vertical, 4)
@@ -126,7 +126,7 @@ struct TrackyPickerCard: View {
         } label: {
             VStack(spacing: 14) {
                 Text(TrackyVoice.Soft.trackysMoodTitle)
-                    .font(VS.Typography.heading(15, weight: .bold))
+                    .font(VS.TextStyle.headline())
                     .foregroundStyle(VS.Color.textTertiary)
                     .frame(maxWidth: .infinity, alignment: .leading)
 
@@ -141,12 +141,12 @@ struct TrackyPickerCard: View {
 
                 VStack(spacing: 6) {
                     Text(trackyMood.label)
-                        .font(VS.Typography.heading(22, weight: .bold))
+                        .font(VS.TextStyle.title2())
                         .foregroundStyle(VS.Color.textPrimary)
                         .contentTransition(.opacity)
 
                     Text(TrackyVoice.Soft.trackyCardHint)
-                        .font(VS.Typography.body(13))
+                        .font(VS.TextStyle.footnote())
                         .foregroundStyle(VS.Color.textTertiary)
                         .multilineTextAlignment(.center)
                 }
@@ -200,10 +200,10 @@ private struct TrackyMoodDrawer: View {
 
                 VStack(alignment: .leading, spacing: 4) {
                     Text(TrackyVoice.Soft.trackysMoodTitle)
-                        .font(VS.Typography.heading(20, weight: .bold))
+                        .font(VS.TextStyle.title2())
                         .foregroundStyle(VS.Color.textPrimary)
                     Text(TrackyVoice.Soft.trackyDrawerSubtitle)
-                        .font(VS.Typography.body(13))
+                        .font(VS.TextStyle.footnote())
                         .foregroundStyle(VS.Color.textTertiary)
                 }
                 Spacer(minLength: 8)
@@ -219,18 +219,18 @@ private struct TrackyMoodDrawer: View {
             }
 
             Text("SELECTED")
-                .font(VS.Typography.body(11, weight: .bold))
+                .font(VS.TextStyle.caption2(.bold))
                 .foregroundStyle(VS.Color.textTertiary)
                 .padding(.top, 4)
 
             HStack(spacing: 12) {
                 TrackyFace(mood: selected, size: 44)
                 Text(selected.label)
-                    .font(VS.Typography.heading(18, weight: .bold))
+                    .font(VS.TextStyle.title3())
                     .foregroundStyle(VS.Color.textPrimary)
                 Spacer()
                 Text("Active")
-                    .font(VS.Typography.body(11, weight: .bold))
+                    .font(VS.TextStyle.caption2(.bold))
                     .foregroundStyle(VS.Color.navPill)
                     .padding(.horizontal, 10)
                     .padding(.vertical, 5)
@@ -247,7 +247,7 @@ private struct TrackyMoodDrawer: View {
             )
 
             Text("OTHERS")
-                .font(VS.Typography.body(11, weight: .bold))
+                .font(VS.TextStyle.caption2(.bold))
                 .foregroundStyle(VS.Color.textTertiary)
                 .padding(.top, 6)
 
@@ -290,7 +290,7 @@ private struct TrackyMoodDrawer: View {
                     .frame(width: 54, height: 54)
 
                 Text(mood.label)
-                    .font(VS.Typography.body(11, weight: isSelected ? .bold : .medium))
+                    .font(VS.TextStyle.caption2(isSelected ? .bold : .medium))
                     .foregroundStyle(isSelected ? VS.Color.accent : VS.Color.textTertiary)
                     .lineLimit(1)
             }

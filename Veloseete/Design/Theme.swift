@@ -71,33 +71,8 @@ enum VS {
         static let gutter: CGFloat = 12
     }
 
-    enum Typography {
-        static func heading(_ size: CGFloat, weight: SwiftUI.Font.Weight = .semibold) -> Font {
-            let name: String
-            switch weight {
-            case .bold, .heavy, .black: name = "SpaceGrotesk-Bold"
-            case .semibold: name = "SpaceGrotesk-SemiBold"
-            case .medium: name = "SpaceGrotesk-Medium"
-            default: name = "SpaceGrotesk-Regular"
-            }
-            return .custom(name, size: size)
-        }
-
-        static func body(_ size: CGFloat, weight: SwiftUI.Font.Weight = .regular) -> Font {
-            let name: String
-            switch weight {
-            case .bold, .heavy, .black: name = "Inter-Bold"
-            case .semibold: name = "Inter-SemiBold"
-            case .medium: name = "Inter-Medium"
-            default: name = "Inter-Regular"
-            }
-            return .custom(name, size: size)
-        }
-
-        static func mono(_ size: CGFloat, weight: SwiftUI.Font.Weight = .bold) -> Font {
-            .system(size: size, weight: weight, design: .monospaced)
-        }
-    }
+    /// The type scale lives in `Shared/TextStyle.swift` so widgets use it too.
+    typealias TextStyle = VSTextStyle
 }
 
 extension Color {
@@ -183,7 +158,7 @@ struct VSSelectableChip: View {
             action()
         } label: {
             Text(title)
-                .font(VS.Typography.body(compact ? 13 : 15, weight: .semibold))
+                .font((compact ? VS.TextStyle.footnote(.semibold) : VS.TextStyle.body(.semibold)))
                 .lineLimit(1)
                 .padding(.horizontal, compact ? 14 : 18)
                 .padding(.vertical, compact ? 10 : 14)
@@ -282,7 +257,7 @@ struct PrimaryCTAButton: View {
                     VSIcon(icon: icon, size: 22, weight: .fill, tint: VS.Color.navPill)
                 }
                 Text(title)
-                    .font(VS.Typography.heading(18))
+                    .font(VS.TextStyle.title3(.semibold))
             }
             .foregroundStyle(VS.Color.navPill)
             .frame(maxWidth: .infinity)
@@ -353,11 +328,11 @@ struct VSSectionHeader: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(title)
-                .font(VS.Typography.heading(20, weight: .bold))
+                .font(VS.TextStyle.title2())
                 .foregroundStyle(VS.Color.textPrimary)
             if let subtitle {
                 Text(subtitle)
-                    .font(VS.Typography.body(13))
+                    .font(VS.TextStyle.footnote())
                     .foregroundStyle(VS.Color.textTertiary)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -412,7 +387,7 @@ struct ModalBackButton: View {
                 Image(systemName: "chevron.left")
                     .font(.system(size: 14, weight: .semibold))
                 Text(title)
-                    .font(VS.Typography.body(15, weight: .semibold))
+                    .font(VS.TextStyle.body(.semibold))
                     .lineLimit(1)
                     .fixedSize(horizontal: true, vertical: false)
             }

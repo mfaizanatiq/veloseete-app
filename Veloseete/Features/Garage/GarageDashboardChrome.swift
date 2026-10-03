@@ -62,10 +62,10 @@ struct GarageFleetSegmentPicker: View {
                 } label: {
                     HStack(spacing: 5) {
                         Text(item.rawValue)
-                            .font(VS.Typography.heading(12, weight: .semibold))
+                            .font(VS.TextStyle.tag(.semibold))
                         if item == .archived, archivedCount > 0 {
                             Text("\(archivedCount)")
-                                .font(VS.Typography.mono(9, weight: .bold))
+                                .font(VS.TextStyle.label())
                                 .foregroundStyle(segment == item ? VS.Color.navPill : VS.Color.textSecondary)
                                 .padding(.horizontal, 5)
                                 .padding(.vertical, 1)
@@ -350,11 +350,11 @@ private struct GarageActiveCarSnackBar: View {
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(snack.nickname)
-                    .font(VS.Typography.heading(15, weight: .bold))
+                    .font(VS.TextStyle.headline())
                     .foregroundStyle(VS.Color.textPrimary)
                     .lineLimit(1)
                 Text("Now your active car")
-                    .font(VS.Typography.body(12))
+                    .font(VS.TextStyle.caption())
                     .foregroundStyle(VS.Color.textSecondary)
                     .lineLimit(1)
             }
@@ -362,7 +362,7 @@ private struct GarageActiveCarSnackBar: View {
             Spacer(minLength: 0)
 
             Text("Active")
-                .font(VS.Typography.heading(12, weight: .bold))
+                .font(VS.TextStyle.tag())
                 .foregroundStyle(VS.Color.navPill)
                 .padding(.horizontal, 10)
                 .padding(.vertical, 6)
@@ -404,14 +404,14 @@ private struct GarageShowroomEmptyCard: View {
         VStack(spacing: 16) {
             Spacer(minLength: 0)
             Text(segment == .active ? "No cars yet" : "No archived cars")
-                .font(VS.Typography.heading(22, weight: .bold))
+                .font(VS.TextStyle.title2())
                 .foregroundStyle(VS.Color.textPrimary)
             Text(
                 segment == .active
                     ? "Add your first car to start tracking drives and fuel."
                     : "Cars you archive will show up here."
             )
-            .font(VS.Typography.body(14))
+            .font(VS.TextStyle.callout())
             .foregroundStyle(VS.Color.textSecondary)
             .multilineTextAlignment(.center)
             .padding(.horizontal, 28)
@@ -502,18 +502,18 @@ private struct GarageShowroomCard: View {
     private var garageInfoBlock: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(makeModel.isEmpty ? "—" : makeModel)
-                .font(VS.Typography.heading(13, weight: .bold))
+                .font(VS.TextStyle.subheadline())
                 .foregroundStyle(VS.Color.textPrimary)
                 .lineLimit(1)
 
             Text(vehicle.nickname)
-                .font(VS.Typography.heading(layout.cardHeight < 520 ? 24 : 28, weight: .bold))
+                .font((layout.cardHeight < 520 ? VS.TextStyle.title2() : VS.TextStyle.title()))
                 .foregroundStyle(VS.Color.textPrimary)
                 .lineLimit(1)
                 .minimumScaleFactor(0.85)
 
             Text(snapshot.metaLine)
-                .font(VS.Typography.body(13))
+                .font(VS.TextStyle.footnote())
                 .foregroundStyle(VS.Color.textSecondary)
                 .lineLimit(1)
                 .minimumScaleFactor(0.85)
@@ -549,7 +549,7 @@ private struct GarageShowroomCard: View {
         case .active:
             // Status badge — compact, not a CTA.
             Text("Active Car")
-                .font(VS.Typography.heading(16, weight: .bold))
+                .font(VS.TextStyle.headline())
                 .foregroundStyle(VS.Color.navPill)
                 .padding(.horizontal, 12)
                 .padding(.vertical, 8)
@@ -559,7 +559,7 @@ private struct GarageShowroomCard: View {
             // CTA — same 56pt height as the settings control.
             Button(action: action) {
                 Text("Set active")
-                    .font(VS.Typography.heading(16, weight: .bold))
+                    .font(VS.TextStyle.headline())
                     .foregroundStyle(VS.Color.navPill)
                     .padding(.horizontal, 20)
                     .frame(height: 56)
@@ -570,7 +570,7 @@ private struct GarageShowroomCard: View {
         case .restore(let action):
             Button(action: action) {
                 Text("Restore")
-                    .font(VS.Typography.heading(16, weight: .bold))
+                    .font(VS.TextStyle.headline())
                     .foregroundStyle(VS.Color.navPill)
                     .padding(.horizontal, 20)
                     .frame(height: 56)
@@ -763,15 +763,15 @@ private struct GarageShowroomAddCard: View {
             VStack(alignment: .leading, spacing: 12) {
                 VStack(alignment: .leading, spacing: 6) {
                     Text("Add to garage")
-                        .font(VS.Typography.heading(13, weight: .bold))
+                        .font(VS.TextStyle.subheadline())
                         .foregroundStyle(VS.Color.textPrimary)
 
                     Text("Another car")
-                        .font(VS.Typography.heading(layout.cardHeight < 520 ? 24 : 28, weight: .bold))
+                        .font((layout.cardHeight < 520 ? VS.TextStyle.title2() : VS.TextStyle.title()))
                         .foregroundStyle(VS.Color.textPrimary)
 
                     Text("Keep every car in one place")
-                        .font(VS.Typography.body(13))
+                        .font(VS.TextStyle.footnote())
                         .foregroundStyle(VS.Color.textSecondary)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)

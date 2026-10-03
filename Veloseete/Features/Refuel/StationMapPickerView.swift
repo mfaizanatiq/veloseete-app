@@ -94,7 +94,7 @@ struct StationMapPickerView: View {
 
                     if let errorMessage {
                         Text(errorMessage)
-                            .font(VS.Typography.body(12))
+                            .font(VS.TextStyle.caption())
                             .foregroundStyle(VS.Color.warning)
                             .padding(.top, 8)
                     }
@@ -116,7 +116,7 @@ struct StationMapPickerView: View {
                     Button("Nearby") {
                         Task { await loadNearby(recenter: true) }
                     }
-                    .font(VS.Typography.body(14, weight: .semibold))
+                    .font(VS.TextStyle.callout(.semibold))
                     .foregroundStyle(VS.Color.accent)
                     .disabled(isSearching)
                 }
@@ -136,7 +136,7 @@ struct StationMapPickerView: View {
             Image(systemName: "magnifyingglass")
                 .foregroundStyle(VS.Color.textTertiary)
             TextField("Search WOQOD, Shell, area…", text: $searchText)
-                .font(VS.Typography.body(15))
+                .font(VS.TextStyle.body())
                 .foregroundStyle(VS.Color.textPrimary)
                 .textInputAutocapitalization(.words)
                 .submitLabel(.search)
@@ -156,7 +156,7 @@ struct StationMapPickerView: View {
                 Task { await runSearch() }
             } label: {
                 Text("Go")
-                    .font(VS.Typography.body(13, weight: .bold))
+                    .font(VS.TextStyle.footnote(.bold))
                     .foregroundStyle(VS.Color.navPill)
                     .padding(.horizontal, 12)
                     .padding(.vertical, 7)
@@ -176,7 +176,7 @@ struct StationMapPickerView: View {
         VStack(alignment: .leading, spacing: 12) {
             if stations.isEmpty && !isSearching {
                 Text("No stations on the map yet — search a brand or tap Nearby.")
-                    .font(VS.Typography.body(13))
+                    .font(VS.TextStyle.footnote())
                     .foregroundStyle(VS.Color.textSecondary)
             } else {
                 ScrollView(.horizontal, showsIndicators: false) {
@@ -190,10 +190,10 @@ struct StationMapPickerView: View {
                             } label: {
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text(station.name)
-                                        .font(VS.Typography.body(13, weight: .semibold))
+                                        .font(VS.TextStyle.footnote(.semibold))
                                         .lineLimit(1)
                                     Text(Self.distanceText(station.distanceMeters))
-                                        .font(VS.Typography.body(11))
+                                        .font(VS.TextStyle.caption2())
                                         .opacity(0.8)
                                 }
                                 .padding(.horizontal, 12)
@@ -211,11 +211,11 @@ struct StationMapPickerView: View {
                 HStack(alignment: .center, spacing: 12) {
                     VStack(alignment: .leading, spacing: 2) {
                         Text(selected.name)
-                            .font(VS.Typography.heading(16))
+                            .font(VS.TextStyle.headline(.semibold))
                             .foregroundStyle(VS.Color.textPrimary)
                             .lineLimit(2)
                         Text(Self.distanceText(selected.distanceMeters) + " · tap Use station")
-                            .font(VS.Typography.body(12))
+                            .font(VS.TextStyle.caption())
                             .foregroundStyle(VS.Color.textTertiary)
                     }
                     Spacer(minLength: 0)
@@ -225,7 +225,7 @@ struct StationMapPickerView: View {
                         dismiss()
                     } label: {
                         Text("Use station")
-                            .font(VS.Typography.body(14, weight: .bold))
+                            .font(VS.TextStyle.callout(.bold))
                             .foregroundStyle(VS.Color.navPill)
                             .padding(.horizontal, 16)
                             .padding(.vertical, 12)

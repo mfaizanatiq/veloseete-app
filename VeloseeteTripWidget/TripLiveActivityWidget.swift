@@ -48,18 +48,18 @@ struct TripLiveActivityWidget: Widget {
                 DynamicIslandExpandedRegion(.leading) {
                     Label {
                         Text(context.state.mood.title)
-                            .font(.caption.weight(.bold))
+                            .font(VSTextStyle.caption(.bold))
                     } icon: {
                         Image(systemName: context.state.mood.symbolName)
                     }
-                    .font(.caption.weight(.bold))
+                    .font(VSTextStyle.caption(.bold))
                     .foregroundStyle(TripActivityStyle.mood(context.state.mood))
                     .labelStyle(.titleAndIcon)
                 }
 
                 DynamicIslandExpandedRegion(.trailing) {
                     Text(formatDuration(context.state.durationSec))
-                        .font(.headline.monospacedDigit().weight(.semibold))
+                        .font(VSTextStyle.headline(.semibold).monospacedDigit())
                         .foregroundStyle(.white)
                         .contentTransition(.numericText())
                 }
@@ -93,7 +93,7 @@ struct TripLiveActivityWidget: Widget {
                         )
 
                         Text(footerLine(for: context.state))
-                            .font(.caption2.weight(.semibold))
+                            .font(VSTextStyle.caption2(.semibold))
                             .foregroundStyle(footerColor(for: context.state))
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .lineLimit(1)
@@ -101,17 +101,17 @@ struct TripLiveActivityWidget: Widget {
                 }
             } compactLeading: {
                 Image(systemName: context.state.mood.symbolName)
-                    .font(.body.weight(.bold))
+                    .font(VSTextStyle.body(.bold))
                     .foregroundStyle(TripActivityStyle.mood(context.state.mood))
             } compactTrailing: {
                 Text("\(context.state.driveScore)")
-                    .font(.caption.monospacedDigit().weight(.bold))
+                    .font(VSTextStyle.caption(.bold).monospacedDigit())
                     .foregroundStyle(TripActivityStyle.mood(context.state.mood))
                     .contentTransition(.numericText())
                     .frame(minWidth: 22, alignment: .trailing)
             } minimal: {
                 Image(systemName: context.state.mood.symbolName)
-                    .font(.caption2.weight(.bold))
+                    .font(VSTextStyle.caption2(.bold))
                     .foregroundStyle(TripActivityStyle.mood(context.state.mood))
             }
             .keylineTint(TripActivityStyle.mood(context.state.mood))
@@ -157,11 +157,11 @@ private struct CarPlayTripActivityView: View {
                 Image(systemName: context.state.mood.symbolName)
                     .foregroundStyle(tint)
                 Text(context.state.mood.title)
-                    .font(.caption.weight(.bold))
+                    .font(VSTextStyle.caption(.bold))
                     .foregroundStyle(tint)
                 Spacer(minLength: 0)
                 Text("\(context.state.driveScore)")
-                    .font(.caption.monospacedDigit().weight(.bold))
+                    .font(VSTextStyle.caption(.bold).monospacedDigit())
                     .foregroundStyle(tint)
                     .contentTransition(.numericText())
             }
@@ -169,14 +169,14 @@ private struct CarPlayTripActivityView: View {
             Spacer(minLength: 0)
 
             Text(EfficiencyFormat.format(context.state.estL100, style: .short))
-                .font(.title2.weight(.bold).monospacedDigit())
+                .font(VSTextStyle.title2().monospacedDigit())
                 .foregroundStyle(.white)
                 .contentTransition(.numericText())
                 .minimumScaleFactor(0.8)
                 .lineLimit(1)
 
             Text(String(format: "%.1f km · %@", context.state.distanceKm, formatDuration(context.state.durationSec)))
-                .font(.caption2.weight(.semibold))
+                .font(VSTextStyle.caption2(.semibold))
                 .foregroundStyle(TripActivityStyle.secondary)
                 .lineLimit(1)
         }
@@ -196,18 +196,18 @@ private struct TripLockScreenView: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 8) {
                 Image(systemName: mood.symbolName)
-                    .font(.body.weight(.bold))
+                    .font(VSTextStyle.body(.bold))
                     .foregroundStyle(tint)
                     .frame(width: 28, height: 28)
                     .background(tint.opacity(0.14), in: Circle())
 
                 VStack(alignment: .leading, spacing: 1) {
                     Text(mood.lockHeadline)
-                        .font(.subheadline.weight(.semibold))
+                        .font(VSTextStyle.callout(.semibold))
                         .foregroundStyle(.white)
                         .lineLimit(1)
                     Text(context.attributes.vehicleName)
-                        .font(.caption)
+                        .font(VSTextStyle.caption())
                         .foregroundStyle(TripActivityStyle.secondary)
                         .lineLimit(1)
                 }
@@ -215,7 +215,7 @@ private struct TripLockScreenView: View {
                 Spacer(minLength: 4)
 
                 Text(mood.title)
-                    .font(.caption2.weight(.bold))
+                    .font(VSTextStyle.caption2(.bold))
                     .foregroundStyle(tint)
                     .padding(.horizontal, 8)
                     .padding(.vertical, 4)
@@ -247,7 +247,7 @@ private struct TripLockScreenView: View {
             EfficiencySpectrumBar(thirst: context.state.thirst, mood: mood)
 
             Text(footerLine(for: context.state))
-                .font(.caption2.weight(.semibold))
+                .font(VSTextStyle.caption2(.semibold))
                 .foregroundStyle(footerColor(for: context.state))
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .lineLimit(1)
@@ -276,13 +276,13 @@ private struct MetricCell: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
             Text(value)
-                .font(.system(size: emphasis ? 26 : 15, weight: .bold, design: .rounded).monospacedDigit())
+                .font((emphasis ? VSTextStyle.title() : VSTextStyle.headline()).monospacedDigit())
                 .foregroundStyle(tint)
                 .contentTransition(.numericText())
                 .lineLimit(1)
                 .minimumScaleFactor(0.75)
             Text(label)
-                .font(.system(size: 9, weight: .bold))
+                .font(VSTextStyle.label())
                 .foregroundStyle(TripActivityStyle.secondary)
                 .lineLimit(1)
         }
@@ -356,7 +356,7 @@ private struct EfficiencySpectrumBar: View {
                 Label("Thirsty", systemImage: "flame.fill")
                     .foregroundStyle(TripActivityStyle.coral.opacity(0.9))
             }
-            .font(.system(size: 8, weight: .bold))
+            .font(VSTextStyle.label())
         }
     }
 

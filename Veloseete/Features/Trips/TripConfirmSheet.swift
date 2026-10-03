@@ -49,7 +49,7 @@ struct TripConfirmSheet: View {
 
                     if let queueIndex, queuePeers.count > 1 {
                         Text("\(queueIndex) of \(queuePeers.count)")
-                            .font(VS.Typography.body(13, weight: .semibold))
+                            .font(VS.TextStyle.footnote(.semibold))
                             .foregroundStyle(VS.Color.warning)
                     }
 
@@ -68,7 +68,7 @@ struct TripConfirmSheet: View {
 
                     if role == .passenger {
                         Text("Logged as a passenger. This distance stays off your odometer.")
-                            .font(VS.Typography.body(13, weight: .medium))
+                            .font(VS.TextStyle.footnote(.medium))
                             .foregroundStyle(VS.Color.textTertiary)
                             .fixedSize(horizontal: false, vertical: true)
                     } else if let estimateKm {
@@ -76,10 +76,10 @@ struct TripConfirmSheet: View {
                             VSIcon(icon: .gauge, size: 22, weight: .duotone, tint: VS.Color.accent)
                             VStack(alignment: .leading, spacing: 4) {
                                 Text(TrackyVoice.confirmEstimateTitle(km: estimateKm))
-                                    .font(VS.Typography.heading(15, weight: .bold))
+                                    .font(VS.TextStyle.headline())
                                     .foregroundStyle(VS.Color.textPrimary)
                                 Text(TrackyVoice.confirmEstimateBody())
-                                    .font(VS.Typography.body(13, weight: .medium))
+                                    .font(VS.TextStyle.footnote(.medium))
                                     .foregroundStyle(VS.Color.textTertiary)
                                     .fixedSize(horizontal: false, vertical: true)
                             }
@@ -96,10 +96,10 @@ struct TripConfirmSheet: View {
                             VSIcon(icon: .gauge, size: 22, weight: .duotone, tint: VS.Color.accent)
                             VStack(alignment: .leading, spacing: 4) {
                                 Text(TrackyVoice.confirmFallbackTitle())
-                                    .font(VS.Typography.heading(15, weight: .bold))
+                                    .font(VS.TextStyle.headline())
                                     .foregroundStyle(VS.Color.textPrimary)
                                 Text(TrackyVoice.confirmFallbackBody())
-                                    .font(VS.Typography.body(13, weight: .medium))
+                                    .font(VS.TextStyle.footnote(.medium))
                                     .foregroundStyle(VS.Color.textTertiary)
                                     .fixedSize(horizontal: false, vertical: true)
                             }
@@ -115,7 +115,7 @@ struct TripConfirmSheet: View {
 
                     if let errorMessage {
                         Text(errorMessage)
-                            .font(VS.Typography.body(13, weight: .medium))
+                            .font(VS.TextStyle.footnote(.medium))
                             .foregroundStyle(VS.Color.error)
                     }
 
@@ -131,7 +131,7 @@ struct TripConfirmSheet: View {
                         recorder.discardPending(id: pending.id)
                         dismiss()
                     }
-                    .font(VS.Typography.heading(15, weight: .bold))
+                    .font(VS.TextStyle.headline())
                     .foregroundStyle(VS.Color.textTertiary)
                     .frame(maxWidth: .infinity)
                     .padding(.top, 4)
@@ -285,33 +285,14 @@ struct TripReviewSummary: View {
         return "\(day), \(time)"
     }
 
-    private var fractions: [Double] {
-        SpeedBands.fractions(counts: speedBuckets, avgKmh: avgSpeedKmh, maxKmh: maxSpeedKmh)
-    }
-
-    /// Same km/h buckets, labeled in the user's unit.
-    private var bandLabels: [String] {
-        unit == "mi" ? ["<31", "31–50", "50–68", "68–99", "99+"] : SpeedBands.labels
-    }
-
-    private var bandColors: [Color] {
-        [
-            VS.Color.accentSecondary,
-            VS.Color.accent,
-            VS.Color.warning,
-            Color(hex: 0xF97316),
-            VS.Color.routeEnd
-        ]
-    }
-
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             VStack(alignment: .leading, spacing: 4) {
                 Text(headline)
-                    .font(VS.Typography.heading(22, weight: .bold))
+                    .font(VS.TextStyle.title2())
                     .foregroundStyle(VS.Color.textPrimary)
                 Text("\(distanceLabel)  ·  \(durationLabel)")
-                    .font(VS.Typography.body(14, weight: .medium))
+                    .font(VS.TextStyle.callout(.medium))
                     .foregroundStyle(VS.Color.textTertiary)
             }
 
@@ -332,7 +313,7 @@ struct TripReviewSummary: View {
                             roleSelection.wrappedValue = item
                         } label: {
                             Text(item == .driver ? "I'm driving" : "I'm a passenger")
-                                .font(VS.Typography.heading(13, weight: .semibold))
+                                .font(VS.TextStyle.subheadline(.semibold))
                                 .foregroundStyle(role == item ? VS.Color.navPill : VS.Color.textSecondary)
                                 .frame(maxWidth: .infinity)
                                 .padding(.vertical, 12)
@@ -354,16 +335,100 @@ struct TripReviewSummary: View {
     }
 
     private var speedDistribution: some View {
+        SpeedMixView(speedBuckets: speedBuckets, avgSpeedKmh: avgSpeedKmh, maxSpeedKmh: maxSpeedKmh, unit: unit)
+            .padding(14)
+            .background(VS.Color.chip, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .stroke(VS.Color.hairline, lineWidth: 1)
+            )
+    }
+
+    private func reviewFact(icon: VSIconName, title: String, value: String) -> some View {
+        HStack(spacing: 10) {
+            VSIcon(icon: icon, size: 16, weight: .fill, tint: VS.Color.textSecondary)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title.uppercased())
+                    .font(VS.TextStyle.label())
+                    .foregroundStyle(VS.Color.textTertiary)
+                Text(value)
+                    .font(VS.TextStyle.subheadline())
+                    .foregroundStyle(VS.Color.textPrimary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(VS.Color.chip, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .stroke(VS.Color.hairline, lineWidth: 1)
+        )
+    }
+
+    private func reviewStat(_ value: String, _ label: String) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(label.uppercased())
+                .font(VS.TextStyle.label())
+                .foregroundStyle(VS.Color.textTertiary)
+            Text(value)
+                .font(VS.TextStyle.headline())
+                .foregroundStyle(VS.Color.textPrimary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.6)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(12)
+        .background(VS.Color.chip, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .stroke(VS.Color.hairline, lineWidth: 1)
+        )
+    }
+}
+
+/// Share of the drive spent in each speed band — bar plus labelled legend.
+struct SpeedMixView: View {
+    var speedBuckets: [Int]
+    var avgSpeedKmh: Double
+    var maxSpeedKmh: Double
+    var unit: String
+    var showsHeader = true
+
+    private var fractions: [Double] {
+        SpeedBands.fractions(counts: speedBuckets, avgKmh: avgSpeedKmh, maxKmh: maxSpeedKmh)
+    }
+
+    /// Same km/h buckets, labeled in the user's unit.
+    private var bandLabels: [String] {
+        unit == "mi" ? ["<31", "31–50", "50–68", "68–99", "99+"] : SpeedBands.labels
+    }
+
+    private var bandColors: [Color] {
+        [
+            VS.Color.accentSecondary,
+            VS.Color.accent,
+            VS.Color.warning,
+            Color(hex: 0xF97316),
+            VS.Color.routeEnd
+        ]
+    }
+
+    var body: some View {
         let shares = fractions
-        return VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                Text("Speed")
-                    .font(VS.Typography.mono(10, weight: .bold))
-                    .foregroundStyle(VS.Color.textTertiary)
-                Spacer()
-                Text(unit == "mi" ? "MPH" : "KM/H")
-                    .font(VS.Typography.mono(10, weight: .bold))
-                    .foregroundStyle(VS.Color.textTertiary)
+        VStack(alignment: .leading, spacing: 10) {
+            if showsHeader {
+                HStack {
+                    Text("Speed")
+                        .font(VS.TextStyle.label())
+                        .foregroundStyle(VS.Color.textTertiary)
+                    Spacer()
+                    Text(unit == "mi" ? "MPH" : "KM/H")
+                        .font(VS.TextStyle.label())
+                        .foregroundStyle(VS.Color.textTertiary)
+                }
             }
 
             GeometryReader { geo in
@@ -385,67 +450,23 @@ struct TripReviewSummary: View {
                             .fill(bandColors[index])
                             .frame(width: 6, height: 6)
                         Text(bandLabels[index])
-                            .font(VS.Typography.mono(9, weight: .medium))
+                            .font(VS.TextStyle.label(.medium))
                             .foregroundStyle(VS.Color.textTertiary)
                             .lineLimit(1)
                             .minimumScaleFactor(0.7)
                         Text("\(Int((shares[index] * 100).rounded()))%")
-                            .font(VS.Typography.heading(12, weight: .bold))
+                            .font(VS.TextStyle.tag())
                             .foregroundStyle(VS.Color.textPrimary)
                     }
                     .frame(maxWidth: .infinity)
                 }
             }
         }
-        .padding(14)
-        .background(VS.Color.chip, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .stroke(VS.Color.hairline, lineWidth: 1)
-        )
-    }
-
-    private func reviewFact(icon: VSIconName, title: String, value: String) -> some View {
-        HStack(spacing: 10) {
-            VSIcon(icon: icon, size: 16, weight: .fill, tint: VS.Color.textSecondary)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title.uppercased())
-                    .font(VS.Typography.mono(9, weight: .bold))
-                    .foregroundStyle(VS.Color.textTertiary)
-                Text(value)
-                    .font(VS.Typography.heading(14, weight: .bold))
-                    .foregroundStyle(VS.Color.textPrimary)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.7)
-            }
-            Spacer(minLength: 0)
-        }
-        .padding(12)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(VS.Color.chip, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .stroke(VS.Color.hairline, lineWidth: 1)
-        )
-    }
-
-    private func reviewStat(_ value: String, _ label: String) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(label.uppercased())
-                .font(VS.Typography.mono(9, weight: .bold))
-                .foregroundStyle(VS.Color.textTertiary)
-            Text(value)
-                .font(VS.Typography.heading(16, weight: .bold))
-                .foregroundStyle(VS.Color.textPrimary)
-                .lineLimit(1)
-                .minimumScaleFactor(0.6)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(12)
-        .background(VS.Color.chip, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .stroke(VS.Color.hairline, lineWidth: 1)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(
+            "Speed mix: " + bandLabels.indices
+                .map { "\(bandLabels[$0]) \(unit == "mi" ? "mph" : "km/h") \(Int((shares[$0] * 100).rounded())) percent" }
+                .joined(separator: ", ")
         )
     }
 }

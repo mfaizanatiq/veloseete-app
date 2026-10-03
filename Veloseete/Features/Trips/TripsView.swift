@@ -26,12 +26,6 @@ private enum TripsMode: String, CaseIterable, Identifiable {
     var id: String { rawValue }
 }
 
-private enum DriveDrawerGestureOwner {
-    case handle
-    case content
-    case scrolling
-}
-
 private enum TrackingStatusPriority {
     case pending(count: Int, km: Double, samples: [PendingTripSave])
     case fuel(title: String, detail: String, tint: Color)
@@ -53,45 +47,55 @@ struct TripsView: View {
     @State private var detailTrip: Trip?
     @State private var mode: TripsMode = .tracking
     @State private var driveDrawerExpanded = false
-    @State private var driveDrawerDragOffset: CGFloat = 0
-    @State private var driveDrawerGestureOwner: DriveDrawerGestureOwner?
+    /// My Drives list + map routes, rebuilt only when their inputs change —
+    /// never per body pass (GPS ticks, sheet updates, drawer settles).
+    @State private var drives = DrivesListModel()
+    /// Odometer / fuel maths for the tracking panel, cached per data change.
+    @State private var tracking = TrackingInsights()
     let onProfile: () -> Void
 
     private func autoTrackNudgePromptedKey(for userId: String) -> String {
         "tripRecording.autoTrackPrompted.v1.\(userId)"
     }
 
-    private var filteredTrips: [Trip] {
-        // Active garage only — archived cars keep their history, but it
-        // doesn't clutter My Drives (their cars aren't in the filter either).
-        var list = store.tripsForActiveVehicles
-        if let selectedVehicleId {
-            list = list.filter { $0.vehicleId == selectedVehicleId }
-        }
-        switch sort {
-        case .recent: return list.sorted { $0.startedAt > $1.startedAt }
-        case .oldest: return list.sorted { $0.startedAt < $1.startedAt }
-        case .fastest: return list.sorted { $0.maxSpeedKmh > $1.maxSpeedKmh }
-        case .longest: return list.sorted { $0.distanceKm > $1.distanceKm }
-        }
+    private var drivesInputs: DrivesInputs {
+        DrivesInputs(
+            trips: store.trips,
+            vehicles: store.vehicles,
+            archivedVehicles: store.archivedVehicles,
+            pending: recorder.pendingSaves,
+            fuelLogs: store.fuelLogs,
+            manufacturerStandard: store.manufacturerStandard,
+            selectedVehicleId: selectedVehicleId,
+            sort: sort,
+            unit: store.defaultDistanceUnit
+        )
+    }
+
+    private var trackingInputs: TrackingInputs {
+        TrackingInputs(
+            vehicleId: trackingVehicle?.id,
+            vehicles: store.vehicles,
+            trips: store.trips,
+            fuelLogs: store.fuelLogs,
+            serviceLogs: store.serviceLogs,
+            pending: recorder.pendingSaves,
+            manufacturerStandard: store.manufacturerStandard,
+            unit: store.defaultDistanceUnit
+        )
+    }
+
+    private func rebuildDrives() {
+        drives = DrivesListModel.build(from: drivesInputs, revision: drives.revision &+ 1)
+    }
+
+    private func rebuildTracking() {
+        tracking = TrackingInsights.build(vehicle: trackingVehicle, store: store, pending: recorder.pendingSaves)
     }
 
     private var selectedTrip: Trip? {
-        if let id = selectedTripId, let match = filteredTrips.first(where: { $0.id == id }) {
-            return match
-        }
-        return nil
-    }
-
-    private var filteredPendingTrips: [PendingTripSave] {
-        let activeIds = store.activeVehicleIds
-        return recorder.pendingSaves
-            .filter { pending in
-                if pending.vehicleId.isEmpty { return true }
-                return activeIds.contains(pending.vehicleId)
-            }
-            .filter { selectedVehicleId == nil || $0.vehicleId == selectedVehicleId || $0.vehicleId.isEmpty }
-            .sorted { $0.endedAt > $1.endedAt }
+        guard let id = selectedTripId else { return nil }
+        return drives.trips.first(where: { $0.id == id })
     }
 
     /// Whole review queue for active cars, ignoring the car filter — drives the tab badge.
@@ -119,7 +123,7 @@ struct TripsView: View {
         guard !isConfirmingAll else { return }
         isConfirmingAll = true
         UIImpactFeedbackGenerator(style: .light).impactOccurred()
-        for pending in filteredPendingTrips {
+        for pending in drives.pending {
             do {
                 try await store.saveTrip(pending, odometer: pending.suggestedOdometer, applyOdometer: false)
                 recorder.markPendingSaved(id: pending.id)
@@ -132,103 +136,26 @@ struct TripsView: View {
         isConfirmingAll = false
     }
 
-    private struct DriveDayGroup: Identifiable {
-        let id: Date
-        let title: String
-        let totalKm: Double
-        let trips: [Trip]
-    }
-
-    private var groupedTrips: [DriveDayGroup] {
-        let calendar = Calendar.current
-        let byDay = Dictionary(grouping: filteredTrips) { calendar.startOfDay(for: $0.startedAt) }
-        let orderedDays = sort == .oldest ? byDay.keys.sorted() : byDay.keys.sorted(by: >)
-        return orderedDays.map { day in
-            let trips = byDay[day] ?? []
-            return DriveDayGroup(
-                id: day,
-                title: dayGroupTitle(day),
-                totalKm: trips.reduce(0) { $0 + $1.distanceKm },
-                trips: trips
-            )
-        }
-    }
-
-    private func dayGroupTitle(_ day: Date) -> String {
-        if Calendar.current.isDateInToday(day) { return "Today" }
-        if Calendar.current.isDateInYesterday(day) { return "Yesterday" }
-        let formatter = DateFormatter()
-        formatter.dateFormat = "EEE, MMM d"
-        return formatter.string(from: day)
-    }
-
-    private var driveRollupLine: String {
-        guard !filteredTrips.isEmpty else { return "Tap a drive to explore its route" }
-        let totalKm = filteredTrips.reduce(0) { $0 + $1.distanceKm }
-        let topKmh = filteredTrips.map(\.maxSpeedKmh).max() ?? 0
-        let distance = DistanceFormat.formatDistance(totalKm, unit: store.defaultDistanceUnit)
-        let speed = store.defaultDistanceUnit == "mi"
-            ? String(format: "%.0f mph top", topKmh * 0.621371)
-            : String(format: "%.0f km/h top", topKmh)
-        let drives = filteredTrips.count == 1 ? "1 drive" : "\(filteredTrips.count) drives"
-        return "\(distance) · \(drives) · \(speed)"
-    }
-
-    @ViewBuilder
-    /// Rough fuel for this leg, from the car's recent consumption. Passenger legs are skipped.
-    private func estimatedFuelLabel(distanceKm: Double, vehicleId: String, counts: Bool) -> String? {
-        guard counts, distanceKm >= 0.2 else { return nil }
-        let vehicle = store.vehicles.first { $0.id == vehicleId }
-            ?? store.archivedVehicles.first { $0.id == vehicleId }
-        guard let vehicle else { return nil }
-        let logs = store.fuelLogs.filter { $0.vehicleId == vehicle.id }
-        let litersPer100 = DriveMoodBaseline.resolve(
-            vehicle: vehicle,
-            logs: logs,
-            manufacturerStandard: store.manufacturerStandard
-        )
-        guard litersPer100 > 0 else { return nil }
-        let liters = distanceKm * litersPer100 / 100
-        guard liters >= 0.05 else { return nil }
-        return "~\(VolumeFormat.format(liters, unit: vehicle.fuelVolumeUnit))"
-    }
-
-    private func driveRow(_ trip: Trip, showsDay: Bool) -> some View {
-        Button {
-            UIImpactFeedbackGenerator(style: .light).impactOccurred()
-            withAnimation(.snappy(duration: 0.3)) {
-                selectedTripId = trip.id
-                if let region = drawerAwareRegion(for: trip, shiftForPitch: true) {
-                    mapPosition = .camera(Self.pitchedCamera(for: region, overview: false))
-                }
+    private func openTrip(id: String) {
+        guard let trip = drives.trips.first(where: { $0.id == id }) else { return }
+        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        withAnimation(.snappy(duration: 0.3)) {
+            selectedTripId = trip.id
+            if let region = drawerAwareRegion(for: trip, shiftForPitch: true) {
+                mapPosition = .camera(Self.pitchedCamera(for: region, overview: false))
             }
-            detailTrip = trip
-        } label: {
-            DriveRowView(
-                trip: trip,
-                unit: store.defaultDistanceUnit,
-                showsDay: showsDay,
-                fuel: estimatedFuelLabel(distanceKm: trip.distanceKm, vehicleId: trip.vehicleId, counts: trip.countsAsDriven)
-            )
         }
-        .buttonStyle(.plain)
+        detailTrip = trip
     }
 
-    private var driveMapCoordinates: [TripCoordinate] {
-        // Bounding samples only — start/end of every drive so overview frames
-        // the full historic footprint (e.g. Doha + Dammam), not a subset.
-        filteredTrips.flatMap { trip -> [TripCoordinate] in
-            var points: [TripCoordinate] = []
-            if let start = trip.startCoordinate { points.append(start) }
-            if let end = trip.endCoordinate { points.append(end) }
-            if let first = trip.route.first { points.append(first) }
-            if let last = trip.route.last { points.append(last) }
-            return points
-        }
+    private func openPending(id: String) {
+        guard let pending = drives.pending.first(where: { $0.id.uuidString == id }) else { return }
+        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        reviewPendingTrip = pending
     }
 
     private var usesLocationFocalMap: Bool {
-        mode == .tracking || driveMapCoordinates.isEmpty
+        mode == .tracking || drives.overviewCoordinates.isEmpty
     }
 
     /// Prefer our recorder pose so the avatar stays locked to the live route tip
@@ -247,7 +174,7 @@ struct TripsView: View {
         ZStack {
             GeometryReader { proxy in
                 TripsMapCanvas(
-                    trips: mode == .drives ? filteredTrips : [],
+                    routes: mode == .drives ? drives.mapRoutes : [],
                     selected: mode == .drives ? selectedTrip : nil,
                     activeRoute: recorder.phase == .recording ? [] : recorder.liveRoute,
                     isActivelyRecording: false,
@@ -259,6 +186,8 @@ struct TripsView: View {
                     locksMinimumPitch: mode == .tracking || selectedTrip != nil,
                     position: $mapPosition
                 )
+                // Skip MapKit content rebuilds when nothing the map draws changed.
+                .equatable()
                 .frame(
                     width: proxy.size.width,
                     height: proxy.size.height + mapTopObstruction + mapBottomObstruction
@@ -309,7 +238,7 @@ struct TripsView: View {
                                 recording: recorder.phase == .recording,
                                 trackingMode: mode == .tracking
                             ))
-                                .font(VS.Typography.body(10, weight: .bold))
+                                .font(VS.TextStyle.caption2(.bold))
                         }
                         .foregroundStyle(VS.Color.textPrimary)
                         .padding(.horizontal, 10)
@@ -359,13 +288,21 @@ struct TripsView: View {
                let forced = TripsMode(rawValue: raw) {
                 mode = forced
             }
+            #if DEBUG
+            if let raw = UserDefaults.standard.string(forKey: "portfolio.forceDriveSort"),
+               let forced = DriveSort(rawValue: raw) {
+                sort = forced
+            }
+            #endif
             if selectedVehicleId == nil {
                 selectedVehicleId = store.currentVehicle?.id
             }
             syncRecorderVehicle()
             tripPermissions.refreshStatuses()
             driveDrawerExpanded = false
-            driveDrawerDragOffset = 0
+            // Build caches before framing the camera — focusMap reads them.
+            rebuildDrives()
+            rebuildTracking()
             if mode == .tracking {
                 recorder.ensureMapFollowUpdates()
                 focusTrackingLocation()
@@ -385,7 +322,6 @@ struct TripsView: View {
         .onDisappear {
             recorder.stopMapFollowUpdates()
             driveDrawerExpanded = false
-            driveDrawerDragOffset = 0
         }
         .sheet(item: $reviewPendingTrip) { pending in
             TripConfirmSheet(pending: pending) { next in
@@ -406,14 +342,22 @@ struct TripsView: View {
             TripDetailView(trip: trip, unit: store.defaultDistanceUnit)
                 .veloseeteSheet()
         }
-        .onChange(of: selectedVehicleId) { _, _ in
-            selectedTripId = nil
-            syncRecorderVehicle()
-            focusMap()
+        .onChange(of: drivesInputs) { old, new in
+            rebuildDrives()
+            let filterChanged = old.sort != new.sort || old.selectedVehicleId != new.selectedVehicleId
+            if old.selectedVehicleId != new.selectedVehicleId {
+                syncRecorderVehicle()
+            }
+            if filterChanged {
+                selectedTripId = nil
+                // Tracking keeps its live camera; only My Drives re-frames history.
+                if mode == .drives { focusMap() }
+            } else if old.trips.count != new.trips.count, mode == .drives, selectedTripId == nil {
+                focusMap()
+            }
         }
-        .onChange(of: sort) { _, _ in
-            selectedTripId = nil
-            focusMap()
+        .onChange(of: trackingInputs) { _, _ in
+            rebuildTracking()
         }
         .onChange(of: recorder.followTick) { _, _ in
             guard mode == .tracking else { return }
@@ -433,18 +377,14 @@ struct TripsView: View {
             }
             // Entering recording: leave the map where it is — drawer owns the session.
         }
-        .onChange(of: store.trips.count) { _, _ in
-            guard mode == .drives, selectedTripId == nil else { return }
-            focusMap()
-        }
         .onChange(of: mode) { _, newMode in
-            driveDrawerExpanded = false
-            driveDrawerDragOffset = 0
             if newMode == .drives {
                 selectedTripId = nil
                 recorder.stopMapFollowUpdates()
                 focusMap()
             } else {
+                // Collapse on the way out only — the pending rail opens My Drives expanded.
+                driveDrawerExpanded = false
                 recorder.ensureMapFollowUpdates()
                 focusTrackingLocation()
             }
@@ -464,9 +404,9 @@ struct TripsView: View {
     private var mapBottomObstruction: CGFloat {
         let floatChrome = VS.Spacing.frameGutter * 2 + 78
         guard mode == .drives else { return trackingPanelHeight + floatChrome }
-        // Resting height only — live drag must NOT resize MapKit every frame (watchdog kill).
-        let resting = driveDrawerExpanded ? driveDrawerExpandedHeight : driveDrawerCollapsedHeight
-        return resting + floatChrome
+        // Always the collapsed height: expanding the drawer must never resize MapKit.
+        // A map frame change inside the drawer spring was what made the sheet stutter.
+        return (drives.isEmpty ? driveDrawerEmptyHeight : driveDrawerCollapsedHeight) + floatChrome
     }
 
     private var trackingPanelHeight: CGFloat {
@@ -516,10 +456,10 @@ struct TripsView: View {
                             tint: mode == item ? VS.Color.navPill : VS.Color.textTertiary
                         )
                         Text(item.rawValue)
-                            .font(VS.Typography.heading(13))
+                            .font(VS.TextStyle.subheadline(.semibold))
                         if item == .drives, reviewBadgeCount > 0 {
                             Text("\(reviewBadgeCount)")
-                                .font(VS.Typography.body(10, weight: .bold))
+                                .font(VS.TextStyle.caption2(.bold))
                                 .foregroundStyle(VS.Color.navPill)
                                 .frame(minWidth: 19, minHeight: 19)
                                 .background(VS.Color.warning, in: Circle())
@@ -591,59 +531,21 @@ struct TripsView: View {
         return store.currentVehicle
     }
 
-    private var trackingFuelWarning: (title: String, detail: String, tint: Color)? {
-        guard let vehicle = trackingVehicle else { return nil }
-        let estimate = store.odometerEstimate(vehicleId: vehicle.id)
-        let prediction = FuelInsightLogic.predictNextFill(
-            logs: store.fuelLogs.filter { $0.vehicleId == vehicle.id },
-            estimatedOdometer: estimate?.estimatedKm ?? vehicle.currentOdometer,
-            tankCapacityLiters: vehicle.fuelTankCapacity,
-            brochureL100km: store.manufacturerStandard,
-            learning: VehicleLearningStore.shared.state(for: vehicle.id)
-        )
-        guard let prediction, prediction.urgency >= .watch, prediction.confidence >= 0.4 else {
-            return nil
-        }
-        let range: String = {
-            if let km = prediction.kmRemaining {
-                return DistanceFormat.formatDistance(km, unit: store.defaultDistanceUnit) + " left"
-            }
-            return "\(prediction.daysRemaining)d left"
-        }()
-        switch prediction.urgency {
-        case .empty:
-            return ("Running on fumes", range, VS.Color.warning)
-        case .low:
-            return ("Low fuel", range, VS.Color.warning)
-        case .watch:
-            return ("Fuel watch", range, VS.Color.accentSecondary)
-        case .none:
-            return nil
-        }
-    }
-
-    private func monthDrivenKm(for vehicleId: String) -> Double {
-        let cal = Calendar.current
-        let start = cal.date(from: cal.dateComponents([.year, .month], from: Date())) ?? Date()
-        let tripsKm = store.trips
-            .filter { $0.vehicleId == vehicleId && $0.startedAt >= start }
-            .reduce(0.0) { $0 + $1.distanceKm }
-        let pendingKm = recorder.pendingSaves
-            .filter { $0.vehicleId == vehicleId && $0.startedAt >= start }
-            .reduce(0.0) { $0 + $1.distanceKm }
-        return tripsKm + pendingKm
+    private var trackingFuelWarning: TrackingInsights.FuelWarning? {
+        tracking.vehicleId == trackingVehicle?.id ? tracking.fuelWarning : nil
     }
 
     private var trackingPanelBody: some View {
         let vehicle = trackingVehicle
-        let vehicleId = vehicle?.id
-        let estimate = vehicleId.flatMap { store.odometerEstimate(vehicleId: $0) }
+        // Cached per data change — this body re-runs on every GPS follow tick.
+        let insights = tracking.vehicleId == vehicle?.id ? tracking : TrackingInsights()
+        let estimate = insights.estimate
         let odoKm = estimate?.estimatedKm ?? vehicle?.currentOdometer ?? 0
         let usesMiles = store.defaultDistanceUnit == "mi"
-        let odoValue = String(format: "%.0f", usesMiles ? odoKm * 0.621371 : odoKm)
+        // Grouped digits: 61,780 reads at a glance; 61780 doesn't.
+        let odoValue = (usesMiles ? odoKm * 0.621371 : odoKm).formatted(.number.precision(.fractionLength(0)))
         let odoUnit = usesMiles ? "mi" : "km"
-        let monthKm = vehicleId.map(monthDrivenKm(for:)) ?? 0
-        let monthLabel = DistanceFormat.formatDistance(monthKm, unit: store.defaultDistanceUnit)
+        let monthLabel = DistanceFormat.formatDistance(insights.monthKm, unit: store.defaultDistanceUnit)
 
         return VStack(alignment: .leading, spacing: recorder.phase == .recording ? 14 : 14) {
             // Always visible — car + Auto OFF (never drop while recording)
@@ -658,24 +560,25 @@ struct TripsView: View {
                 VStack(alignment: .leading, spacing: 8) {
                     HStack(alignment: .firstTextBaseline, spacing: 8) {
                         Text(odoValue)
-                            .font(VS.Typography.heading(60, weight: .bold))
+                            .font(VS.TextStyle.hero())
                             .foregroundStyle(VS.Color.textPrimary)
                             .minimumScaleFactor(0.48)
                             .lineLimit(1)
                             .contentTransition(.numericText())
                             .animation(.snappy(duration: 0.22), value: odoValue)
                         Text(odoUnit)
-                            .font(VS.Typography.heading(20, weight: .bold))
+                            .font(VS.TextStyle.heroUnit())
                             .foregroundStyle(VS.Color.textTertiary)
                     }
 
-                    Text(odometerCaption(estimate: estimate, liveKm: 0))
-                        .font(VS.Typography.body(13, weight: .medium))
-                        .foregroundStyle(VS.Color.textTertiary)
-
-                    Text(TrackyVoice.monthLine(monthLabel))
-                        .font(VS.Typography.body(14, weight: .semibold))
-                        .foregroundStyle(VS.Color.textSecondary)
+                    // One caption style; hierarchy comes from colour, not a size bump.
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(TrackyVoice.monthLine(monthLabel))
+                            .foregroundStyle(VS.Color.textSecondary)
+                        Text(odometerCaption(estimate: estimate, liveKm: 0))
+                            .foregroundStyle(VS.Color.textTertiary)
+                    }
+                    .font(VS.TextStyle.footnote(.medium))
                 }
             }
 
@@ -690,7 +593,7 @@ struct TripsView: View {
 
             if let error = recorder.lastError {
                 Text(error)
-                    .font(VS.Typography.body(13, weight: .medium))
+                    .font(VS.TextStyle.footnote(.medium))
                     .foregroundStyle(VS.Color.warning)
                     .onTapGesture { recorder.clearError() }
             }
@@ -709,15 +612,13 @@ struct TripsView: View {
         let mood = recorder.driveMood
         let vehicle = trackingVehicle
         let vehicleId = vehicle?.id ?? snap.vehicleId
-        let vehicleLogs = store.fuelLogs.filter { $0.vehicleId == vehicleId }
-        let baseline = vehicle.map {
-            DriveMoodBaseline.resolve(
-                vehicle: $0,
-                logs: vehicleLogs,
-                manufacturerStandard: store.manufacturerStandard
-            )
-        } ?? store.manufacturerStandard ?? 8.0
-        let odoEstimate = store.odometerEstimate(vehicleId: vehicleId)
+        // Snapshot publishes every second — reuse the cached logs / baseline / odometer.
+        let insights = tracking.vehicleId == vehicleId
+            ? tracking
+            : TrackingInsights.build(vehicle: vehicle, store: store, pending: recorder.pendingSaves)
+        let vehicleLogs = insights.vehicleLogs
+        let baseline = insights.baselineL100 ?? store.manufacturerStandard ?? 8.0
+        let odoEstimate = insights.estimate
         let liveOdometer = (odoEstimate?.estimatedKm ?? vehicle?.currentOdometer ?? 0) + snap.distanceKm
         let intelligence = LiveDriveIntelligenceLogic.compute(
             logs: vehicleLogs,
@@ -773,18 +674,18 @@ struct TripsView: View {
                     VSIcon(icon: .roadHorizon, size: 16, weight: .fill, tint: VS.Color.warning)
                     VStack(alignment: .leading, spacing: 2) {
                         Text(TrackyVoice.pendingTitle(count: count))
-                            .font(VS.Typography.heading(14, weight: .bold))
+                            .font(VS.TextStyle.subheadline())
                             .foregroundStyle(VS.Color.textPrimary)
                         Text(TrackyVoice.pendingSubtitle(
                             distanceLabel: DistanceFormat.formatDistance(km, unit: store.defaultDistanceUnit)
                         ))
-                            .font(VS.Typography.body(12, weight: .medium))
+                            .font(VS.TextStyle.caption(.medium))
                             .foregroundStyle(VS.Color.textTertiary)
                             .lineLimit(1)
                     }
                     Spacer(minLength: 4)
                     Text(TrackyVoice.pendingCTA(count: count))
-                        .font(VS.Typography.heading(12, weight: .bold))
+                        .font(VS.TextStyle.tag())
                         .foregroundStyle(VS.Color.navPill)
                         .padding(.horizontal, 10)
                         .padding(.vertical, 7)
@@ -805,11 +706,11 @@ struct TripsView: View {
             HStack(spacing: 10) {
                 VSIcon(icon: .gasPump, size: 15, weight: .fill, tint: tint)
                 Text(TrackyVoice.fuelTitle(title))
-                    .font(VS.Typography.heading(13, weight: .bold))
+                    .font(VS.TextStyle.subheadline())
                     .foregroundStyle(VS.Color.textPrimary)
                 Spacer(minLength: 4)
                 Text(detail)
-                    .font(VS.Typography.body(12, weight: .semibold))
+                    .font(VS.TextStyle.caption(.semibold))
                     .foregroundStyle(tint)
                     .lineLimit(1)
             }
@@ -844,7 +745,7 @@ struct TripsView: View {
                 .frame(width: 6, height: 6)
                 .opacity(paused ? 1 : pulseOpacity)
             Text(paused ? "PAUSED" : "LIVE")
-                .font(VS.Typography.mono(10, weight: .bold))
+                .font(VS.TextStyle.label())
                 .foregroundStyle(paused ? VS.Color.warning : VS.Color.navPill)
         }
         .padding(.horizontal, 9)
@@ -883,7 +784,7 @@ struct TripsView: View {
                     .fill(recorder.autoTrackingEnabled ? VS.Color.accent : VS.Color.textTertiary.opacity(0.55))
                     .frame(width: 7, height: 7)
                 Text(TrackyVoice.autoCapsule(isOn: recorder.autoTrackingEnabled))
-                    .font(VS.Typography.body(12, weight: .bold))
+                    .font(VS.TextStyle.caption(.bold))
             }
             .foregroundStyle(VS.Color.textPrimary)
             .padding(.horizontal, 12)
@@ -942,11 +843,11 @@ struct TripsView: View {
                     VehicleMark(style: .defaultMapStyle, size: 44, paint: .defaultMapPaint)
                     VStack(alignment: .leading, spacing: 3) {
                         Text("Your drive")
-                            .font(VS.Typography.heading(20, weight: .bold))
+                            .font(VS.TextStyle.title2())
                             .foregroundStyle(VS.Color.textPrimary)
                             .lineLimit(1)
                         Text(trackingIdentitySubtitle(nil))
-                            .font(VS.Typography.body(13, weight: .medium))
+                            .font(VS.TextStyle.footnote(.medium))
                             .foregroundStyle(VS.Color.textTertiary)
                             .lineLimit(1)
                     }
@@ -982,7 +883,7 @@ struct TripsView: View {
                         VStack(alignment: .leading, spacing: 3) {
                             HStack(spacing: 5) {
                                 Text(vehicle?.nickname ?? "Select car")
-                                    .font(VS.Typography.heading(20, weight: .bold))
+                                    .font(VS.TextStyle.title2())
                                     .foregroundStyle(VS.Color.textPrimary)
                                     .lineLimit(1)
                                 if store.vehicles.count > 1 {
@@ -990,7 +891,7 @@ struct TripsView: View {
                                 }
                             }
                             Text(trackingIdentitySubtitle(vehicle))
-                                .font(VS.Typography.body(13, weight: .medium))
+                                .font(VS.TextStyle.footnote(.medium))
                                 .foregroundStyle(VS.Color.textTertiary)
                                 .lineLimit(1)
                         }
@@ -1046,7 +947,7 @@ struct TripsView: View {
                         Text(recorder.snapshot?.isPaused == true
                              ? TrackyVoice.resumeCTA()
                              : TrackyVoice.pauseCTA())
-                            .font(VS.Typography.heading(16, weight: .bold))
+                            .font(VS.TextStyle.headline())
                     }
                     .foregroundStyle(VS.Color.textPrimary)
                     .frame(maxWidth: .infinity)
@@ -1074,147 +975,31 @@ struct TripsView: View {
     }
 
     private var drivesMode: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            VStack(spacing: 12) {
-                Capsule()
-                    .fill(Color.white.opacity(0.26))
-                    .frame(width: 42, height: 5)
-                    .padding(.top, 8)
-
-                HStack(alignment: .firstTextBaseline, spacing: 12) {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("My Drives")
-                            .font(VS.Typography.heading(28, weight: .bold))
-                            .foregroundStyle(VS.Color.textPrimary)
-                        Text(filteredPendingTrips.isEmpty
-                             ? driveRollupLine
-                             : TrackyVoice.drivesAwaiting(filteredPendingTrips.count))
-                            .font(VS.Typography.body(13, weight: .medium))
-                            .foregroundStyle(VS.Color.textTertiary)
-                            .lineLimit(2)
+        DrivesDrawer(
+            model: drives,
+            sort: sort,
+            vehicleFilterLabel: vehicleFilterLabel,
+            vehicles: store.vehicles,
+            isConfirmingAll: isConfirmingAll,
+            showsSetUpTracking: tripPermissions.locationStatus != .always,
+            collapsedHeight: drives.isEmpty ? driveDrawerEmptyHeight : driveDrawerCollapsedHeight,
+            expandedHeight: drives.isEmpty ? driveDrawerEmptyHeight : driveDrawerExpandedHeight,
+            expanded: $driveDrawerExpanded,
+            actions: DrivesDrawer.Actions(
+                selectVehicle: { selectedVehicleId = $0 },
+                selectSort: { option in
+                    withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                        sort = option
                     }
-                    Spacer(minLength: 8)
-                    Text("\(filteredTrips.count + filteredPendingTrips.count)")
-                        .font(VS.Typography.heading(16, weight: .bold))
-                        .foregroundStyle(VS.Color.navPill)
-                        .frame(minWidth: 36, minHeight: 36)
-                        .background(VS.Color.accent, in: Circle())
-                }
-                .padding(.horizontal, 18)
-            }
-            .contentShape(Rectangle())
-            .highPriorityGesture(driveDrawerGesture(from: .handle))
-
-            filterBar.padding(.horizontal, 18)
-
-            if filteredTrips.isEmpty && filteredPendingTrips.isEmpty {
-                emptyState
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .contentShape(Rectangle())
-                    .highPriorityGesture(driveDrawerGesture(from: .content))
-            } else {
-                ScrollView {
-                    LazyVStack(spacing: 8) {
-                        if !filteredPendingTrips.isEmpty {
-                            HStack(spacing: 8) {
-                                Text(TrackyVoice.reviewRequired())
-                                    .font(VS.Typography.heading(13, weight: .bold))
-                                    .foregroundStyle(VS.Color.warning)
-                                Text("\(filteredPendingTrips.count)")
-                                    .font(VS.Typography.heading(12, weight: .bold))
-                                    .foregroundStyle(VS.Color.navPill)
-                                    .padding(.horizontal, 8)
-                                    .padding(.vertical, 3)
-                                    .background(VS.Color.warning, in: Capsule())
-                                Spacer()
-                                Button {
-                                    Task { await confirmAllPending() }
-                                } label: {
-                                    HStack(spacing: 6) {
-                                        if isConfirmingAll {
-                                            ProgressView()
-                                                .controlSize(.mini)
-                                                .tint(VS.Color.navPill)
-                                        } else {
-                                            VSIcon(icon: .checkCircle, size: 13, weight: .bold, tint: VS.Color.navPill)
-                                        }
-                                        Text(isConfirmingAll ? "Locking in…" : TrackyVoice.confirmAll())
-                                            .font(VS.Typography.heading(12, weight: .bold))
-                                            .foregroundStyle(VS.Color.navPill)
-                                    }
-                                    .padding(.horizontal, 12)
-                                    .padding(.vertical, 8)
-                                    .background(VS.Color.accent, in: Capsule())
-                                }
-                                .buttonStyle(.plain)
-                                .disabled(isConfirmingAll)
-                                .accessibilityLabel("Confirm all pending drives")
-                            }
-                            .padding(.top, 2)
-
-                            ForEach(filteredPendingTrips) { pending in
-                                Button {
-                                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                                    reviewPendingTrip = pending
-                                } label: {
-                                    PendingDriveRowView(
-                                        pending: pending,
-                                        unit: store.defaultDistanceUnit,
-                                        fuel: estimatedFuelLabel(
-                                            distanceKm: pending.distanceKm,
-                                            vehicleId: pending.vehicleId,
-                                            counts: pending.tripRole == .driver
-                                        )
-                                    )
-                                }
-                                .buttonStyle(.plain)
-                            }
-
-                            if !filteredTrips.isEmpty {
-                                Text("Confirmed")
-                                    .font(VS.Typography.heading(13, weight: .bold))
-                                    .foregroundStyle(VS.Color.textTertiary)
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                                    .padding(.top, 10)
-                            }
-                        }
-
-                        if sort.isChronological {
-                            ForEach(groupedTrips) { group in
-                                HStack(alignment: .firstTextBaseline) {
-                                    Text(group.title)
-                                        .font(VS.Typography.heading(14, weight: .bold))
-                                        .foregroundStyle(VS.Color.textSecondary)
-                                    Spacer()
-                                    Text(DistanceFormat.formatDistance(group.totalKm, unit: store.defaultDistanceUnit))
-                                        .font(VS.Typography.heading(14, weight: .bold))
-                                        .foregroundStyle(VS.Color.textPrimary)
-                                }
-                                .padding(.top, 6)
-                                .padding(.horizontal, 2)
-
-                                ForEach(group.trips) { trip in
-                                    driveRow(trip, showsDay: false)
-                                }
-                            }
-                        } else {
-                            ForEach(filteredTrips) { trip in
-                                driveRow(trip, showsDay: true)
-                            }
-                        }
-                    }
-                    .padding(.horizontal, 14)
-                    .padding(.bottom, 28)
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .scrollDisabled(!driveDrawerExpanded)
-                .simultaneousGesture(driveDrawerGesture(from: .content))
-            }
-        }
-        .frame(height: driveDrawerVisibleHeight, alignment: .top)
-        .background(panelBackground)
-        .clipShape(RoundedRectangle(cornerRadius: VS.Radius.panel, style: .continuous))
-        .animation(.spring(response: 0.42, dampingFraction: 0.9), value: driveDrawerExpanded)
+                },
+                openTrip: { openTrip(id: $0) },
+                openPending: { openPending(id: $0) },
+                confirmAll: { Task { await confirmAllPending() } },
+                setUpTracking: { requestLocationAccess(for: .autoTrack) }
+            )
+        )
+        // Recorder / GPS publishes re-run TripsView; the drawer only redraws when its data does.
+        .equatable()
     }
 
     /// Collapsed sheet — keeps mode picker + bottom nav fully on screen.
@@ -1222,80 +1007,21 @@ struct TripsView: View {
         min(300, UIScreen.main.bounds.height * 0.36)
     }
 
-    /// Expanded sheet — never covers top chrome or the floating bottom nav.
-    private var driveDrawerExpandedHeight: CGFloat {
+    /// Largest sheet that never covers top chrome or the floating bottom nav.
+    private var driveDrawerMaxHeight: CGFloat {
         let screen = UIScreen.main.bounds.height
         let reservedTop: CGFloat = 132
         let reservedBottom = VS.Spacing.frameGutter + 78 + 12
-        let maxAllowed = max(driveDrawerCollapsedHeight, screen - reservedTop - reservedBottom)
-        let target = screen * (filteredTrips.isEmpty && filteredPendingTrips.isEmpty ? 0.48 : 0.56)
-        return max(driveDrawerCollapsedHeight, min(maxAllowed, target))
+        return max(driveDrawerCollapsedHeight, screen - reservedTop - reservedBottom)
     }
 
-    private var driveDrawerTravel: CGFloat {
-        max(0, driveDrawerExpandedHeight - driveDrawerCollapsedHeight)
+    private var driveDrawerExpandedHeight: CGFloat {
+        max(driveDrawerCollapsedHeight, min(driveDrawerMaxHeight, UIScreen.main.bounds.height * 0.56))
     }
 
-    /// Live height while dragging — no off-screen offset layout.
-    private var driveDrawerVisibleHeight: CGFloat {
-        let resting = driveDrawerExpanded ? driveDrawerExpandedHeight : driveDrawerCollapsedHeight
-        let proposed = resting - driveDrawerDragOffset
-        return min(driveDrawerExpandedHeight, max(driveDrawerCollapsedHeight, proposed))
-    }
-
-    private func driveDrawerGesture(from source: DriveDrawerGestureOwner) -> some Gesture {
-        DragGesture(minimumDistance: 10, coordinateSpace: .global)
-            .onChanged { value in
-                if driveDrawerGestureOwner == nil {
-                    driveDrawerGestureOwner = drawerGestureOwner(
-                        requestedBy: source,
-                        initialTranslation: value.translation.height
-                    )
-                }
-
-                guard driveDrawerGestureOwner != .scrolling else { return }
-                driveDrawerDragOffset = value.translation.height
-            }
-            .onEnded { value in
-                defer {
-                    driveDrawerGestureOwner = nil
-                }
-
-                guard driveDrawerGestureOwner != .scrolling else {
-                    driveDrawerDragOffset = 0
-                    return
-                }
-                guard driveDrawerTravel > 0 else {
-                    driveDrawerDragOffset = 0
-                    return
-                }
-
-                let resting = driveDrawerExpanded ? driveDrawerExpandedHeight : driveDrawerCollapsedHeight
-                let projected = min(
-                    driveDrawerExpandedHeight,
-                    max(driveDrawerCollapsedHeight, resting - value.predictedEndTranslation.height)
-                )
-                let midpoint = (driveDrawerCollapsedHeight + driveDrawerExpandedHeight) / 2
-                let shouldExpand = projected > midpoint
-
-                if shouldExpand != driveDrawerExpanded {
-                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                }
-                withAnimation(.spring(response: 0.42, dampingFraction: 0.9, blendDuration: 0.08)) {
-                    driveDrawerExpanded = shouldExpand
-                    driveDrawerDragOffset = 0
-                }
-            }
-    }
-
-    private func drawerGestureOwner(
-        requestedBy source: DriveDrawerGestureOwner,
-        initialTranslation: CGFloat
-    ) -> DriveDrawerGestureOwner {
-        if source == .handle { return .handle }
-        // Collapsed: content drag expands. Expanded: list scrolls; only handle collapses.
-        if !driveDrawerExpanded { return .content }
-        return .scrolling
+    /// Empty state is fixed-height (nothing to scroll) but needs room for its CTA.
+    private var driveDrawerEmptyHeight: CGFloat {
+        max(driveDrawerCollapsedHeight, min(driveDrawerMaxHeight, UIScreen.main.bounds.height * 0.48))
     }
 
     private var panelBackground: some View {
@@ -1305,44 +1031,6 @@ struct TripsView: View {
                 RoundedRectangle(cornerRadius: VS.Radius.panel, style: .continuous)
                     .stroke(VS.Color.hairline, lineWidth: 1)
             )
-    }
-
-    private func mapCanvas(height: CGFloat) -> some View {
-        ZStack(alignment: .topLeading) {
-            TripsMapCanvas(
-                trips: mode == .drives ? filteredTrips : [],
-                selected: mode == .drives ? selectedTrip : nil,
-                activeRoute: recorder.phase == .recording ? [] : recorder.liveRoute,
-                isActivelyRecording: false,
-                showsUserCharacter: mode == .tracking && recorder.phase != .recording,
-                courseDegrees: recorder.followCourseDegrees,
-                characterCoordinate: mapCharacterCoordinate,
-                vehicleStyle: mapVehicleStyle,
-                vehiclePaint: mapVehiclePaint,
-                locksMinimumPitch: mode == .tracking || selectedTrip != nil,
-                position: $mapPosition
-            )
-            .frame(height: height)
-
-            HStack(spacing: 7) {
-                Circle()
-                    .fill(recorder.phase == .recording ? VS.Color.success : VS.Color.textTertiary)
-                    .frame(width: 7, height: 7)
-                Text(TrackyVoice.mapChip(
-                    recording: recorder.phase == .recording,
-                    trackingMode: mode == .tracking
-                ))
-                    .font(VS.Typography.body(10, weight: .bold))
-            }
-            .foregroundStyle(VS.Color.textPrimary)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 7)
-            .background(.ultraThinMaterial, in: Capsule())
-            .overlay(Capsule().stroke(Color.white.opacity(0.12), lineWidth: 1))
-            .padding(14)
-        }
-        .clipShape(RoundedRectangle(cornerRadius: VS.Radius.card, style: .continuous))
-        .padding(.horizontal, 16)
     }
 
     private func syncRecorderVehicle() {
@@ -1384,11 +1072,11 @@ struct TripsView: View {
     private func liveMetric(_ value: String, _ label: String) -> some View {
         VStack(alignment: .leading, spacing: 3) {
             Text(value)
-                .font(VS.Typography.heading(22, weight: .bold))
+                .font(VS.TextStyle.title2())
                 .foregroundStyle(VS.Color.textPrimary)
                 .contentTransition(.numericText())
             Text(label.uppercased())
-                .font(VS.Typography.mono(10, weight: .bold))
+                .font(VS.TextStyle.label())
                 .foregroundStyle(VS.Color.accent.opacity(0.85))
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -1417,10 +1105,10 @@ struct TripsView: View {
             return
         }
 
-        if !driveMapCoordinates.isEmpty {
+        if !drives.overviewCoordinates.isEmpty {
             // Wide historic overview — flat camera, no 9.5 km distance cap, no south shift
             // into empty water between cities (Dammam ↔ Doha).
-            let region = drawerAwareRegion(for: driveMapCoordinates, shiftForPitch: false)
+            let region = drawerAwareRegion(for: drives.overviewCoordinates, shiftForPitch: false)
             mapPosition = .camera(Self.pitchedCamera(for: region, overview: true))
         } else if let lat = recorder.followLatitude, let lng = recorder.followLongitude {
             mapPosition = .camera(
@@ -1497,110 +1185,12 @@ struct TripsView: View {
         )
     }
 
-    private var filterBar: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
-                Menu {
-                    Button("All Cars") { selectedVehicleId = nil }
-                    ForEach(store.vehicles) { vehicle in
-                        Button {
-                            selectedVehicleId = vehicle.id
-                        } label: {
-                            Label {
-                                Text(vehicle.nickname)
-                            } icon: {
-                                VehicleMark(
-                                    style: VehicleMarkStyle.resolve(vehicle.icon),
-                                    size: 18,
-                                    paint: VehiclePaintColor.resolve(vehicle.paintColor)
-                                )
-                            }
-                        }
-                    }
-                } label: {
-                    HStack(spacing: 8) {
-                        VSIcon(icon: .car, size: 14, weight: .fill, tint: VS.Color.textSecondary)
-                        Text(vehicleFilterLabel)
-                            .font(VS.Typography.heading(14, weight: .bold))
-                        VSIcon(icon: .caretDown, size: 11, weight: .bold, tint: VS.Color.textSecondary)
-                    }
-                    .foregroundStyle(VS.Color.textSecondary)
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 11)
-                    .background(VS.Color.chip, in: Capsule())
-                    .overlay(Capsule().stroke(VS.Color.hairline, lineWidth: 1))
-                }
-
-                Menu {
-                    ForEach(DriveSort.allCases) { option in
-                        Button {
-                            withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
-                                sort = option
-                            }
-                        } label: {
-                            if sort == option {
-                                Label(option.label, systemImage: "checkmark")
-                            } else {
-                                Text(option.label)
-                            }
-                        }
-                    }
-                } label: {
-                    HStack(spacing: 8) {
-                        VSIcon(icon: .chartLine, size: 14, weight: .bold, tint: VS.Color.navPill)
-                        Text(sort.label)
-                            .font(VS.Typography.heading(14, weight: .bold))
-                        VSIcon(icon: .caretDown, size: 11, weight: .bold, tint: VS.Color.navPill)
-                    }
-                    .foregroundStyle(VS.Color.navPill)
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 11)
-                    .background(VS.Color.accent, in: Capsule())
-                }
-            }
-        }
-    }
-
     private var vehicleFilterLabel: String {
         guard let id = selectedVehicleId,
               let v = store.vehicles.first(where: { $0.id == id }) else {
             return "All Cars"
         }
         return v.nickname
-    }
-
-    private var emptyState: some View {
-        VStack(spacing: 14) {
-            VSIcon(icon: .mapTrifold, size: 40, weight: .regular, tint: VS.Color.accent)
-            Text(TrackyVoice.emptyDrivesTitle())
-                .font(VS.Typography.heading(18))
-                .foregroundStyle(VS.Color.textPrimary)
-            Text(TrackyVoice.emptyDrivesBody())
-                .font(VS.Typography.body(13))
-                .foregroundStyle(VS.Color.textSecondary)
-                .multilineTextAlignment(.center)
-                .padding(.horizontal, 28)
-            if tripPermissions.locationStatus != .always {
-                Button {
-                    requestLocationAccess(for: .autoTrack)
-                } label: {
-                    HStack(spacing: 8) {
-                        VSIcon(icon: .mapPin, size: 18, weight: .fill, tint: VS.Color.navPill)
-                        Text(TrackyVoice.Soft.setUpTracking)
-                            .font(VS.Typography.heading(15))
-                    }
-                    .foregroundStyle(VS.Color.navPill)
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 12)
-                    .background(VS.Color.accent, in: Capsule())
-                }
-                .buttonStyle(ScaleButtonStyle())
-                .padding(.top, 6)
-            }
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
-        .padding(.horizontal, 16)
-        .padding(.bottom, 82)
     }
 
     private func region(for trip: Trip) -> MKCoordinateRegion? {
@@ -1675,8 +1265,8 @@ struct TripsView: View {
     }
 }
 
-struct TripsMapCanvas: View {
-    let trips: [Trip]
+struct TripsMapCanvas: View, Equatable {
+    let routes: [DriveMapRoute]
     let selected: Trip?
     let activeRoute: [TripCoordinate]
     let isActivelyRecording: Bool
@@ -1692,7 +1282,79 @@ struct TripsMapCanvas: View {
     /// When false (historic overview), allow flat camera so multi-city history can fit.
     var locksMinimumPitch: Bool = true
     @Binding var position: MapCameraPosition
-    @State private var mapHeading: Double = 0
+    /// Camera heading lives in its own object so continuous pan / rotate only
+    /// redraws the car puck — not every polyline in the map content.
+    @StateObject private var headingTracker = MapHeadingTracker()
+
+    init(
+        routes: [DriveMapRoute],
+        selected: Trip?,
+        activeRoute: [TripCoordinate],
+        isActivelyRecording: Bool,
+        showsUserCharacter: Bool,
+        courseDegrees: Double,
+        characterCoordinate: CLLocationCoordinate2D?,
+        vehicleStyle: VehicleMarkStyle = .sedan,
+        vehiclePaint: VehiclePaintColor = .brand,
+        locksMinimumPitch: Bool = true,
+        position: Binding<MapCameraPosition>
+    ) {
+        self.routes = routes
+        self.selected = selected
+        self.activeRoute = activeRoute
+        self.isActivelyRecording = isActivelyRecording
+        self.showsUserCharacter = showsUserCharacter
+        self.courseDegrees = courseDegrees
+        self.characterCoordinate = characterCoordinate
+        self.vehicleStyle = vehicleStyle
+        self.vehiclePaint = vehiclePaint
+        self.locksMinimumPitch = locksMinimumPitch
+        self._position = position
+    }
+
+    /// Convenience for previews that hold raw trips.
+    init(
+        trips: [Trip],
+        selected: Trip?,
+        activeRoute: [TripCoordinate],
+        isActivelyRecording: Bool,
+        showsUserCharacter: Bool,
+        courseDegrees: Double,
+        characterCoordinate: CLLocationCoordinate2D?,
+        vehicleStyle: VehicleMarkStyle = .sedan,
+        vehiclePaint: VehiclePaintColor = .brand,
+        locksMinimumPitch: Bool = true,
+        position: Binding<MapCameraPosition>
+    ) {
+        self.init(
+            routes: trips.compactMap(DriveMapRoute.init(trip:)),
+            selected: selected,
+            activeRoute: activeRoute,
+            isActivelyRecording: isActivelyRecording,
+            showsUserCharacter: showsUserCharacter,
+            courseDegrees: courseDegrees,
+            characterCoordinate: characterCoordinate,
+            vehicleStyle: vehicleStyle,
+            vehiclePaint: vehiclePaint,
+            locksMinimumPitch: locksMinimumPitch,
+            position: position
+        )
+    }
+
+    static func == (lhs: TripsMapCanvas, rhs: TripsMapCanvas) -> Bool {
+        lhs.position == rhs.position
+            && lhs.selected?.id == rhs.selected?.id
+            && lhs.showsUserCharacter == rhs.showsUserCharacter
+            && lhs.isActivelyRecording == rhs.isActivelyRecording
+            && lhs.courseDegrees == rhs.courseDegrees
+            && lhs.characterCoordinate?.latitude == rhs.characterCoordinate?.latitude
+            && lhs.characterCoordinate?.longitude == rhs.characterCoordinate?.longitude
+            && lhs.vehicleStyle == rhs.vehicleStyle
+            && lhs.vehiclePaint == rhs.vehiclePaint
+            && lhs.locksMinimumPitch == rhs.locksMinimumPitch
+            && lhs.activeRoute == rhs.activeRoute
+            && lhs.routes == rhs.routes
+    }
 
     var body: some View {
         Map(position: $position, interactionModes: [.pan, .zoom, .pitch, .rotate]) {
@@ -1702,7 +1364,7 @@ struct TripsMapCanvas: View {
                         VeloseeteMapCharacter(
                             isLive: isActivelyRecording,
                             courseDegrees: courseDegrees,
-                            mapHeading: mapHeading,
+                            headingTracker: headingTracker,
                             vehicleStyle: vehicleStyle,
                             vehiclePaint: vehiclePaint
                         )
@@ -1712,7 +1374,7 @@ struct TripsMapCanvas: View {
                         VeloseeteMapCharacter(
                             isLive: isActivelyRecording,
                             courseDegrees: courseDegrees,
-                            mapHeading: mapHeading,
+                            headingTracker: headingTracker,
                             vehicleStyle: vehicleStyle,
                             vehiclePaint: vehiclePaint
                         )
@@ -1720,35 +1382,19 @@ struct TripsMapCanvas: View {
                 }
             }
 
-            ForEach(trips) { trip in
-                let displayRoute: [TripCoordinate] = {
-                    if trip.route.count >= 2 {
-                        return TripTrackingLogic.mapDisplayRoute(
-                            id: trip.id,
-                            points: trip.route,
-                            maximumPoints: 160
-                        )
-                    }
-                    return [trip.startCoordinate, trip.endCoordinate].compactMap { $0 }
-                }()
-                if displayRoute.count >= 2 {
-                    let coords = displayRoute.map {
-                        CLLocationCoordinate2D(latitude: $0.latitude, longitude: $0.longitude)
-                    }
-                    let isSelected = selected?.id == trip.id
-                    let dim = isSelected ? 0.35 : 1.0
+            ForEach(routes) { route in
+                let dim = selected?.id == route.id ? 0.35 : 1.0
 
-                    MapPolyline(coordinates: coords)
-                        .stroke(
-                            VS.Color.accent.opacity(0.22 * dim),
-                            style: StrokeStyle(lineWidth: 10, lineCap: .round, lineJoin: .round)
-                        )
-                    MapPolyline(coordinates: coords)
-                        .stroke(
-                            Color.white.opacity(0.75 * dim),
-                            style: StrokeStyle(lineWidth: 2.5, lineCap: .round, lineJoin: .round)
-                        )
-                }
+                MapPolyline(coordinates: route.coordinates)
+                    .stroke(
+                        VS.Color.accent.opacity(0.22 * dim),
+                        style: StrokeStyle(lineWidth: 10, lineCap: .round, lineJoin: .round)
+                    )
+                MapPolyline(coordinates: route.coordinates)
+                    .stroke(
+                        Color.white.opacity(0.75 * dim),
+                        style: StrokeStyle(lineWidth: 2.5, lineCap: .round, lineJoin: .round)
+                    )
             }
 
             if let selected {
@@ -1785,9 +1431,8 @@ struct TripsMapCanvas: View {
                 }
                 if let end = selected.endCoordinate ?? selected.route.last {
                     Annotation("End", coordinate: CLLocationCoordinate2D(latitude: end.latitude, longitude: end.longitude)) {
-                        Circle()
-                            .fill(VS.Color.routeEnd)
-                            .frame(width: 10, height: 10)
+                        RouteStopMarker(isFinish: true, size: 11)
+                            .background(Circle().fill(Color(hex: 0x161916)))
                     }
                 }
             }
@@ -1821,7 +1466,9 @@ struct TripsMapCanvas: View {
         .mapControlVisibility(.hidden)
         .preferredColorScheme(.dark)
         .onMapCameraChange(frequency: .continuous) { context in
-            mapHeading = context.camera.heading
+            // Only the puck counter-rotates; history overview has no puck to update.
+            guard showsUserCharacter else { return }
+            headingTracker.update(context.camera.heading)
         }
         .onMapCameraChange(frequency: .onEnd) { context in
             // Keep enough pitch for extruded buildings when tracking / single-drive focus.
@@ -1851,10 +1498,24 @@ struct TripsMapCanvas: View {
     private static let enforcedPitch: Double = 58
 }
 
+/// Map camera heading, observed only by the car puck.
+@MainActor
+final class MapHeadingTracker: ObservableObject {
+    @Published private(set) var heading: Double = 0
+
+    func update(_ value: Double) {
+        // Sub-degree jitter is invisible on the puck; skip the redraw.
+        var delta = (value - heading).truncatingRemainder(dividingBy: 360)
+        if delta > 180 { delta -= 360 } else if delta < -180 { delta += 360 }
+        guard abs(delta) >= 0.75 else { return }
+        heading = value
+    }
+}
+
 private struct VeloseeteMapCharacter: View {
     let isLive: Bool
     var courseDegrees: Double = -1
-    var mapHeading: Double = 0
+    @ObservedObject var headingTracker: MapHeadingTracker
     var vehicleStyle: VehicleMarkStyle = .sedan
     var vehiclePaint: VehiclePaintColor = .brand
     @State private var pulse = false
@@ -1862,7 +1523,7 @@ private struct VeloseeteMapCharacter: View {
     private var showsHeading: Bool { courseDegrees >= 0 }
 
     /// Rotate absolute course into screen space (annotations stay upright).
-    private var bodyRotation: Double { courseDegrees - mapHeading }
+    private var bodyRotation: Double { courseDegrees - headingTracker.heading }
 
     private var glow: Color {
         vehiclePaint == .brand ? VS.Color.accent : vehiclePaint.swatch
@@ -1898,153 +1559,215 @@ private struct VeloseeteMapCharacter: View {
     }
 }
 
-struct PendingDriveRowView: View {
-    let pending: PendingTripSave
-    let unit: String
-    var fuel: String? = nil
+private struct DriveListRow: View, Equatable {
+    let row: DriveRowModel
+    var isFirst = true
+    var isLast = true
+    var highlight: Color? = nil
 
-    private var dayTitle: String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "MMM d"
-        return formatter.string(from: pending.startedAt)
+    @State private var startPlace: TripPlaceNames.Place?
+    @State private var endPlace: TripPlaceNames.Place?
+
+    static func == (lhs: DriveListRow, rhs: DriveListRow) -> Bool {
+        lhs.row == rhs.row && lhs.isFirst == rhs.isFirst
+            && lhs.isLast == rhs.isLast && lhs.highlight == rhs.highlight
     }
 
-    private var durationFormatted: String {
-        DriveListCopy.duration(pending.durationSec)
+    /// "Dubai Marina → Al Mustaqbal Street", "Around Dubai Marina", or "Morning drive".
+    private var title: String {
+        switch (startPlace.map { Self.compact($0.title) }, endPlace.map { Self.compact($0.title) }) {
+        case let (start?, end?) where start == end: return "Around \(start)"
+        case let (start?, end?): return "\(start) → \(end)"
+        default: return row.fallbackTitle
+        }
     }
 
-    private var distanceLabel: String {
-        DistanceFormat.formatDistance(pending.distanceKm, unit: unit)
+    /// List titles are tight — "Al Mustaqbal Street" → "Al Mustaqbal St".
+    private static func compact(_ name: String) -> String {
+        let suffixes = [" Street": " St", " Road": " Rd", " Avenue": " Ave", " Drive": " Dr",
+                        " Boulevard": " Blvd", " Highway": " Hwy", " Lane": " Ln"]
+        for (long, short) in suffixes where name.hasSuffix(long) {
+            return String(name.dropLast(long.count)) + short
+        }
+        return name
     }
 
-    var body: some View {
-        DriveListRow(
-            routeId: pending.id.uuidString,
-            route: pending.route,
-            start: "\(dayTitle) · \(pending.startedAt.formatted(date: .omitted, time: .shortened))",
-            duration: durationFormatted,
-            distance: distanceLabel,
-            fuel: fuel,
-            note: "Needs review"
+    private var shape: UnevenRoundedRectangle {
+        let radius: CGFloat = 20
+        return UnevenRoundedRectangle(
+            topLeadingRadius: isFirst ? radius : 0,
+            bottomLeadingRadius: isLast ? radius : 0,
+            bottomTrailingRadius: isLast ? radius : 0,
+            topTrailingRadius: isFirst ? radius : 0,
+            style: .continuous
         )
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(TrackyVoice.Soft.pendingSection). \(dayTitle), \(distanceLabel), \(durationFormatted)")
-        .accessibilityHint("Opens this drive for confirmation")
-    }
-}
-
-struct DriveRowView: View {
-    let trip: Trip
-    let unit: String
-    var showsDay: Bool = true
-    var fuel: String? = nil
-
-    private var dayTitle: String {
-        let f = DateFormatter()
-        f.dateFormat = "MMM d"
-        return f.string(from: trip.startedAt)
     }
 
-    private var startLabel: String {
-        let time = trip.startedAt.formatted(date: .omitted, time: .shortened)
-        return showsDay ? "\(dayTitle) · \(time)" : time
+    /// Destination leads (ride-app convention); loops and unknowns fall back.
+    private var headline: String {
+        let start = startPlace.map { Self.compact($0.title) }
+        let end = endPlace.map { Self.compact($0.title) }
+        if let start, let end, start == end { return "Around \(start)" }
+        return end ?? row.fallbackTitle
     }
 
-    private var durationLabel: String {
-        var line = DriveListCopy.duration(trip.durationSec)
-        if trip.tripRole == .passenger { line += " · Passenger" }
-        return line
+    private var origin: String? {
+        guard let start = startPlace.map({ Self.compact($0.title) }),
+              let end = endPlace.map({ Self.compact($0.title) }),
+              start != end else { return nil }
+        return start
     }
-
-    var body: some View {
-        DriveListRow(
-            routeId: trip.id,
-            route: trip.route,
-            start: startLabel,
-            duration: durationLabel,
-            distance: DistanceFormat.formatDistance(trip.distanceKm, unit: unit),
-            fuel: fuel
-        )
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(startLabel), \(durationLabel), \(DistanceFormat.formatDistance(trip.distanceKm, unit: unit)) driven\(fuel.map { ", about \($0) fuel" } ?? "")")
-    }
-}
-
-private enum DriveListCopy {
-    static func duration(_ seconds: Double) -> String {
-        let total = Int(seconds)
-        let hours = total / 3600
-        let minutes = (total % 3600) / 60
-        if hours > 0 && minutes > 0 { return "\(hours) hr \(minutes) min" }
-        if hours == 1 { return "1 hour" }
-        if hours > 1 { return "\(hours) hours" }
-        return "\(max(minutes, 1)) min"
-    }
-}
-
-private struct DriveListRow: View {
-    var routeId: String
-    var route: [TripCoordinate]
-    var start: String
-    var duration: String
-    var distance: String
-    var fuel: String? = nil
-    var note: String? = nil
 
     var body: some View {
         HStack(alignment: .center, spacing: 12) {
-            MiniRoutePreview(routeId: routeId, route: route)
-                .frame(width: 56, height: 44)
-            VStack(alignment: .leading, spacing: 3) {
-                Text(start)
-                    .font(VS.Typography.heading(16, weight: .bold))
+            MiniRoutePreview(route: row.route)
+                .frame(width: 48, height: 48)
+                .padding(.trailing, 2)
+
+            // Two lines: where you went, then where from + when.
+            VStack(alignment: .leading, spacing: 5) {
+                Text(headline)
+                    .font(VS.TextStyle.headline())
                     .foregroundStyle(VS.Color.textPrimary)
-                HStack(spacing: 6) {
-                    Text(duration)
-                        .font(VS.Typography.body(13, weight: .medium))
-                        .foregroundStyle(VS.Color.textTertiary)
-                    if let note {
+                    .lineLimit(1)
+                    .contentTransition(.opacity)
+                HStack(spacing: 0) {
+                    if let note = row.note {
                         Text(note)
-                            .font(VS.Typography.body(11, weight: .bold))
+                            .font(VS.TextStyle.caption2(.bold))
                             .foregroundStyle(VS.Color.warning)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(VS.Color.warning.opacity(0.14), in: Capsule())
+                            .fixedSize()
+                            .padding(.trailing, 6)
                     }
+                    if let origin {
+                        // Lime start dot = "from", same marker as the thumbnail and maps.
+                        RouteStopMarker(isFinish: false, size: 5)
+                            .padding(.trailing, 5)
+                            .accessibilityHidden(true)
+                        // Origin gives way first; the time never truncates.
+                        Text(origin)
+                            .lineLimit(1)
+                            .layoutPriority(0)
+                            .accessibilityLabel("from \(origin)")
+                        Text(" · ")
+                            .fixedSize()
+                    }
+                    Text(row.timeLabel)
+                        .lineLimit(1)
+                        .fixedSize()
+                        .layoutPriority(1)
                 }
+                .font(VS.TextStyle.caption(.medium))
+                .foregroundStyle(VS.Color.textTertiary)
             }
-            Spacer(minLength: 8)
-            VStack(alignment: .trailing, spacing: 3) {
-                Text(distance)
-                    .font(VS.Typography.heading(17, weight: .bold))
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            VStack(alignment: .trailing, spacing: 5) {
+                Text(row.value)
+                    .font(VS.TextStyle.headline())
                     .foregroundStyle(VS.Color.accent)
-                if let fuel {
-                    Text(fuel)
-                        .font(VS.Typography.mono(12, weight: .medium))
-                        .foregroundStyle(VS.Color.textTertiary)
-                }
+                    .fixedSize()
+                Text(row.detail)
+                    .font(VS.TextStyle.caption(.medium))
+                    .foregroundStyle(VS.Color.textTertiary)
+                    .fixedSize()
             }
         }
-        .padding(.leading, 10)
-        .padding(.trailing, 14)
-        .padding(.vertical, 10)
-        .background(VS.Color.chip, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .stroke(VS.Color.hairline, lineWidth: 1)
-        )
-        .contentShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .padding(.horizontal, 14)
+        .padding(.vertical, 16)
+        .background((highlight?.opacity(0.08) ?? VS.Color.chip), in: shape)
+        .overlay(alignment: .top) {
+            // Hairline between rows of the same card, inset evenly from both edges.
+            if !isFirst {
+                Rectangle()
+                    .fill(VS.Color.hairline)
+                    .frame(height: 1)
+                    .padding(.horizontal, 14)
+            }
+        }
+        .contentShape(shape)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(title). \(row.accessibilityLabel)")
+        .accessibilityHint(row.accessibilityHint ?? "")
+        .onAppear {
+            // Instant from disk cache; only unseen spots hit the geocoder.
+            if let start = row.startCoordinate { startPlace = TripPlaceNames.cached(for: start) }
+            if let end = row.endCoordinate { endPlace = TripPlaceNames.cached(for: end) }
+        }
+        .task(id: row.id) {
+            guard startPlace == nil || endPlace == nil else { return }
+            let start = await row.startCoordinate.asyncMap { await TripPlaceNames.name(for: $0) } ?? nil
+            let end = await row.endCoordinate.asyncMap { await TripPlaceNames.name(for: $0) } ?? nil
+            guard !Task.isCancelled else { return }
+            withAnimation(.easeOut(duration: 0.2)) {
+                startPlace = start
+                endPlace = end
+            }
+        }
+    }
+}
+
+/// Header sparkline: one bar per recent drive, newest in accent.
+private struct DriveSparkBars: View {
+    let values: [Double]
+
+    var body: some View {
+        GeometryReader { geo in
+            let peak = max(values.max() ?? 1, 0.1)
+            let gap: CGFloat = 4
+            let barWidth = max(2, (geo.size.width - gap * CGFloat(values.count - 1)) / CGFloat(values.count))
+            HStack(alignment: .bottom, spacing: gap) {
+                ForEach(values.indices, id: \.self) { index in
+                    let isLatest = index == values.count - 1
+                    Capsule()
+                        .fill(isLatest ? VS.Color.accent : Color.white.opacity(0.18))
+                        .frame(
+                            width: barWidth,
+                            height: max(4, geo.size.height * CGFloat(values[index] / peak))
+                        )
+                }
+            }
+            .frame(width: geo.size.width, height: geo.size.height, alignment: .bottomTrailing)
+        }
+        .animation(.snappy(duration: 0.35), value: values)
+    }
+}
+
+/// Start = filled lime dot, finish = hollow neutral ring. Shared by list and detail.
+struct RouteStopMarker: View {
+    var isFinish: Bool
+    var size: CGFloat
+
+    var body: some View {
+        if isFinish {
+            Circle()
+                .strokeBorder(Color.white.opacity(0.85), lineWidth: max(1.5, size * 0.2))
+                .frame(width: size, height: size)
+        } else {
+            Circle()
+                .fill(VS.Color.accent)
+                .frame(width: size, height: size)
+        }
+    }
+}
+
+private extension Optional {
+    func asyncMap<T>(_ transform: (Wrapped) async -> T) async -> T? {
+        guard let self else { return nil }
+        return await transform(self)
     }
 }
 
 private struct MiniRoutePreview: View {
-    var routeId: String
+    /// Already simplified to the thumbnail budget by `DrivesListModel`.
     let route: [TripCoordinate]
-
-    private var displayRoute: [TripCoordinate] {
-        TripTrackingLogic.mapDisplayRoute(id: routeId, points: route, maximumPoints: 96)
-    }
 
     var body: some View {
         Canvas { context, size in
-            let points = displayRoute
+            let points = route
             guard points.count >= 2 else {
                 var path = Path()
                 path.move(to: CGPoint(x: size.width * 0.22, y: size.height * 0.72))
@@ -2056,12 +1779,14 @@ private struct MiniRoutePreview: View {
                 return
             }
 
-            let lats = points.map(\.latitude)
-            let lngs = points.map(\.longitude)
-            let minLat = lats.min()!, maxLat = lats.max()!
-            let minLng = lngs.min()!, maxLng = lngs.max()!
+            var minLat = points[0].latitude, maxLat = minLat
+            var minLng = points[0].longitude, maxLng = minLng
+            for point in points {
+                minLat = min(minLat, point.latitude); maxLat = max(maxLat, point.latitude)
+                minLng = min(minLng, point.longitude); maxLng = max(maxLng, point.longitude)
+            }
             let midLat = (minLat + maxLat) / 2
-            let pad: CGFloat = 4
+            let pad: CGFloat = 10
             let availW = max(size.width - pad * 2, 1)
             let availH = max(size.height - pad * 2, 1)
             let metersPerDegLat = 111_320.0
@@ -2074,20 +1799,36 @@ private struct MiniRoutePreview: View {
             let originX = (size.width - drawW) / 2
             let originY = (size.height - drawH) / 2
 
+            func project(_ point: TripCoordinate) -> CGPoint {
+                CGPoint(
+                    x: originX + CGFloat((point.longitude - minLng) * metersPerDegLng * scale),
+                    y: originY + CGFloat((maxLat - point.latitude) * metersPerDegLat * scale)
+                )
+            }
+
             var path = Path()
             for (i, point) in points.enumerated() {
-                let x = originX + CGFloat((point.longitude - minLng) * metersPerDegLng * scale)
-                let y = originY + CGFloat((maxLat - point.latitude) * metersPerDegLat * scale)
-                if i == 0 { path.move(to: CGPoint(x: x, y: y)) }
-                else { path.addLine(to: CGPoint(x: x, y: y)) }
+                if i == 0 { path.move(to: project(point)) }
+                else { path.addLine(to: project(point)) }
             }
             context.stroke(
                 path,
                 with: .color(VS.Color.accent),
                 style: StrokeStyle(lineWidth: 2.2, lineCap: .round, lineJoin: .round)
             )
+
+            // Start: filled lime. Finish: neutral hollow ring — red read as an error.
+            let startCenter = project(points[0])
+            context.fill(
+                Path(ellipseIn: CGRect(x: startCenter.x - 3, y: startCenter.y - 3, width: 6, height: 6)),
+                with: .color(VS.Color.accent)
+            )
+            let endCenter = project(points[points.count - 1])
+            let ring = Path(ellipseIn: CGRect(x: endCenter.x - 3, y: endCenter.y - 3, width: 6, height: 6))
+            context.fill(ring, with: .color(Color(hex: 0x161916)))
+            context.stroke(ring, with: .color(.white.opacity(0.9)), lineWidth: 1.5)
         }
-        .background(Color.black.opacity(0.28), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .background(Color.black.opacity(0.32), in: RoundedRectangle(cornerRadius: 13, style: .continuous))
         .accessibilityHidden(true)
     }
 }
@@ -2142,109 +1883,86 @@ struct TripDetailView: View {
             ?? "Drive"
     }
 
+    @State private var startPlace: TripPlaceNames.Place?
+    @State private var endPlace: TripPlaceNames.Place?
+    @State private var placesResolved = false
+
+    private var vehicle: Vehicle? {
+        store.vehicles.first(where: { $0.id == trip.vehicleId })
+            ?? store.archivedVehicles.first(where: { $0.id == trip.vehicleId })
+    }
+
     var body: some View {
         NavigationStack {
             ScrollView {
-                VStack(alignment: .leading, spacing: 16) {
-                    routeMap
-                        .frame(height: 280)
-                        .clipShape(RoundedRectangle(cornerRadius: VS.Radius.card, style: .continuous))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: VS.Radius.card, style: .continuous)
-                                .stroke(VS.Color.hairline, lineWidth: 1)
-                        )
+                VStack(alignment: .leading, spacing: 0) {
+                    routeHero
 
-                    TripReviewSummary(
-                        startedAt: trip.startedAt,
-                        distanceKm: trip.distanceKm,
-                        durationSec: trip.durationSec,
-                        maxSpeedKmh: trip.maxSpeedKmh,
-                        avgSpeedKmh: trip.avgSpeedKmh,
-                        vehicleName: vehicleName,
-                        unit: unit,
-                        speedBuckets: trip.speedBuckets,
-                        role: trip.tripRole
-                    )
+                    VStack(alignment: .leading, spacing: 26) {
+                        header
+                        statsPanel
+                        routeTimeline
+                        detailSection("Speed mix", trailing: unit == "mi" ? "MPH" : "KM/H") {
+                            SpeedMixView(
+                                speedBuckets: trip.speedBuckets,
+                                avgSpeedKmh: trip.avgSpeedKmh,
+                                maxSpeedKmh: trip.maxSpeedKmh,
+                                unit: unit,
+                                showsHeader: false
+                            )
+                            .padding(16)
+                            .detailCard()
+                        }
+                        detailSection("Fuel & odometer") {
+                            fuelPanel
+                        }
 
-                    if trip.countsAsDriven {
-                    HStack(spacing: 12) {
-                        VSIcon(icon: .checkCircle, size: 22, weight: .fill, tint: VS.Color.success)
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(TrackyVoice.Soft.inEstimateTitle)
-                                .font(VS.Typography.heading(15, weight: .bold))
-                                .foregroundStyle(VS.Color.textPrimary)
-                            Text(TrackyVoice.Soft.inEstimateBody(
-                                distance: DistanceFormat.formatDistance(trip.distanceKm, unit: unit)
-                            ))
-                                .font(VS.Typography.body(13, weight: .medium))
-                                .foregroundStyle(VS.Color.textTertiary)
-                                .fixedSize(horizontal: false, vertical: true)
+                        if let shareError {
+                            Text(shareError)
+                                .font(VS.TextStyle.footnote(.medium))
+                                .foregroundStyle(VS.Color.warning)
+                        }
+                        if let deleteError {
+                            Text(deleteError)
+                                .font(VS.TextStyle.footnote(.medium))
+                                .foregroundStyle(VS.Color.error)
                         }
                     }
-                    .padding(16)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(VS.Color.chip, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 22, style: .continuous)
-                            .stroke(VS.Color.hairline, lineWidth: 1)
-                    )
-                    } else {
-                        Text("Passenger trip. It stays in your log and off the odometer.")
-                            .font(VS.Typography.body(13, weight: .medium))
-                            .foregroundStyle(VS.Color.textTertiary)
-                    }
-
-                    if let shareError {
-                        Text(shareError)
-                            .font(VS.Typography.body(13, weight: .medium))
-                            .foregroundStyle(VS.Color.warning)
-                    }
-
-                    if let deleteError {
-                        Text(deleteError)
-                            .font(VS.Typography.body(13, weight: .medium))
-                            .foregroundStyle(VS.Color.error)
-                    }
-
-                    PrimaryCTAButton(
-                        title: isPreparingShare ? "Preparing…" : TrackyVoice.Soft.shareDrive,
-                        icon: nil,
-                        isLoading: isPreparingShare
-                    ) {
-                        Task { await prepareShare() }
-                    }
-
-                    Button {
-                        confirmDelete = true
-                    } label: {
-                        HStack(spacing: 8) {
-                            if isDeleting {
-                                ProgressView().tint(VS.Color.error)
-                            } else {
-                                Image(systemName: "trash")
-                                    .font(.system(size: 14, weight: .semibold))
-                            }
-                            Text("Delete drive")
-                                .font(VS.Typography.body(14, weight: .semibold))
-                        }
-                        .foregroundStyle(VS.Color.error)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 14)
-                        .glassCard(radius: VS.Radius.card)
-                    }
-                    .buttonStyle(.plain)
-                    .disabled(isDeleting || isPreparingShare)
+                    .padding(.horizontal, VS.Spacing.sheetInset)
+                    .padding(.bottom, 20)
                 }
-                .padding(.horizontal, VS.Spacing.sheetInset)
-                .padding(.top, 12)
-                .padding(.bottom, 32)
             }
+            .scrollIndicators(.hidden)
+            // Map runs edge-to-edge under the close button.
+            .ignoresSafeArea(.container, edges: .top)
+            // Actions stay reachable at any scroll depth; content insets above them.
+            .safeAreaInset(edge: .bottom, spacing: 0) { actionBar }
             .veloseetePage()
             .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    // Destructive action tucked away, Strava-style — not a permanent button.
+                    Menu {
+                        Button(role: .destructive) {
+                            confirmDelete = true
+                        } label: {
+                            Label("Delete drive", systemImage: "trash")
+                        }
+                    } label: {
+                        if isDeleting {
+                            ProgressView()
+                        } else {
+                            Image(systemName: "ellipsis")
+                        }
+                    }
+                    .disabled(isDeleting || isPreparingShare)
+                    .accessibilityLabel("More actions")
+                }
                 ToolbarItem(placement: .topBarTrailing) {
                     ModalCloseButton { dismiss() }
                 }
             }
+            .toolbarBackground(.hidden, for: .navigationBar)
+            .task { await resolvePlaces() }
             .alert(TrackyVoice.Calm.deleteDriveTitle, isPresented: $confirmDelete) {
                 Button("Cancel", role: .cancel) {}
                 Button(TrackyVoice.Calm.deleteDrive, role: .destructive) {
@@ -2262,6 +1980,350 @@ struct TripDetailView: View {
                 }
             }
         }
+    }
+
+    // MARK: Sections
+
+    private var routeHero: some View {
+        routeMap
+            .frame(height: 340)
+            .overlay(alignment: .top) {
+                // Keeps the status bar / close button legible over bright tiles.
+                LinearGradient(colors: [VS.Color.bgPrimary.opacity(0.7), .clear], startPoint: .top, endPoint: .bottom)
+                    .frame(height: 110)
+                    .allowsHitTesting(false)
+            }
+            .overlay(alignment: .bottom) {
+                LinearGradient(colors: [.clear, VS.Color.bgPrimary], startPoint: .top, endPoint: .bottom)
+                    .frame(height: 96)
+                    .allowsHitTesting(false)
+            }
+    }
+
+    private var header: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(dayLine.uppercased())
+                    .font(VS.TextStyle.label())
+                    .foregroundStyle(VS.Color.accent)
+                Text(timeRangeLine)
+                    .font(VS.TextStyle.largeTitle())
+                    .foregroundStyle(VS.Color.textPrimary)
+                    .minimumScaleFactor(0.7)
+                    .lineLimit(1)
+            }
+
+            HStack(spacing: 8) {
+                if let vehicle {
+                    metaChip {
+                        VehicleMark(
+                            style: VehicleMarkStyle.resolve(vehicle.icon),
+                            size: 18,
+                            paint: VehiclePaintColor.resolve(vehicle.paintColor)
+                        )
+                    } text: { vehicle.nickname }
+                }
+                metaChip {
+                    VSIcon(icon: trip.tripRole == .passenger ? .user : .gauge, size: 13, weight: .fill, tint: VS.Color.textSecondary)
+                } text: { trip.tripRole.label }
+                metaChip {
+                    VSIcon(icon: trip.source == "auto" ? .target : .play, size: 13, weight: .fill, tint: VS.Color.textSecondary)
+                } text: { trip.source == "auto" ? "Auto-tracked" : "Manual" }
+            }
+        }
+        .accessibilityElement(children: .combine)
+    }
+
+    private var statsPanel: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("DISTANCE")
+                    .font(VS.TextStyle.label())
+                    .foregroundStyle(VS.Color.textTertiary)
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    Text(distanceValue)
+                        .font(VS.TextStyle.display())
+                        .foregroundStyle(VS.Color.textPrimary)
+                    Text(unit == "mi" ? "mi" : "km")
+                        .font(VS.TextStyle.title3())
+                        .foregroundStyle(VS.Color.textTertiary)
+                }
+            }
+
+            Rectangle().fill(VS.Color.hairline).frame(height: 1)
+
+            HStack(alignment: .top, spacing: 0) {
+                inlineStat(durationLabel, "Duration")
+                statDivider
+                inlineStat(speedLabel(trip.avgSpeedKmh), "Avg speed")
+                statDivider
+                inlineStat(speedLabel(trip.maxSpeedKmh), "Top speed")
+            }
+        }
+    }
+
+    private var routeTimeline: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            timelineRow(
+                isFinish: false,
+                label: "Start",
+                time: trip.startedAt.formatted(date: .omitted, time: .shortened),
+                place: startPlace
+            )
+            // Connector between the two stops.
+            HStack(spacing: 0) {
+                Rectangle()
+                    .fill(VS.Color.hairlineStrong)
+                    .frame(width: 2, height: 22)
+                    .padding(.leading, 5)
+                Spacer()
+            }
+            timelineRow(
+                isFinish: true,
+                label: "Finish",
+                time: trip.endedAt.formatted(date: .omitted, time: .shortened),
+                place: endPlace
+            )
+        }
+        .padding(.top, 20)
+        .overlay(alignment: .top) {
+            Rectangle().fill(VS.Color.hairline).frame(height: 1)
+        }
+    }
+
+    private var fuelPanel: some View {
+        VStack(spacing: 0) {
+            if let liters = estimatedLiters {
+                detailRow(systemImage: "fuelpump.fill", title: "Fuel used", value: "~\(VolumeFormat.format(liters, unit: vehicle?.fuelVolumeUnit ?? VolumeFormat.liters))")
+                rowDivider
+                if let cost = estimatedCost(liters: liters) {
+                    detailRow(systemImage: "creditcard.fill", title: "Est. cost", value: "~\(cost)")
+                    rowDivider
+                }
+            }
+            HStack(alignment: .top, spacing: 12) {
+                Image(systemName: trip.countsAsDriven ? "checkmark.circle.fill" : "person.fill")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(trip.countsAsDriven ? VS.Color.success : VS.Color.textTertiary)
+                    .frame(width: 22)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(trip.countsAsDriven ? TrackyVoice.Soft.inEstimateTitle : "Off the odometer")
+                        .font(VS.TextStyle.headline())
+                        .foregroundStyle(VS.Color.textPrimary)
+                    Text(trip.countsAsDriven
+                         ? TrackyVoice.Soft.inEstimateBody(distance: DistanceFormat.formatDistance(trip.distanceKm, unit: unit))
+                         : "Passenger trip. It stays in your log and off the odometer.")
+                        .font(VS.TextStyle.footnote(.medium))
+                        .foregroundStyle(VS.Color.textTertiary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(.vertical, 14)
+        }
+        .padding(.horizontal, 16)
+        .detailCard()
+    }
+
+    private var actionBar: some View {
+        HStack {
+            PrimaryCTAButton(
+                title: isPreparingShare ? "Preparing…" : TrackyVoice.Soft.shareDrive,
+                icon: nil,
+                isLoading: isPreparingShare
+            ) {
+                Task { await prepareShare() }
+            }
+
+        }
+        .padding(.horizontal, VS.Spacing.sheetInset)
+        .padding(.top, 14)
+        .padding(.bottom, 6)
+        .background {
+            // Content fades out under the bar instead of a hard edge.
+            LinearGradient(
+                stops: [
+                    .init(color: VS.Color.bgPrimary.opacity(0), location: 0),
+                    .init(color: VS.Color.bgPrimary, location: 0.35)
+                ],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+            .ignoresSafeArea(edges: .bottom)
+        }
+    }
+
+    // MARK: Building blocks
+
+    private func detailSection<Content: View>(
+        _ title: String,
+        trailing: String? = nil,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Text(title)
+                    .font(VS.TextStyle.headline())
+                    .foregroundStyle(VS.Color.textSecondary)
+                Spacer()
+                if let trailing {
+                    Text(trailing)
+                        .font(VS.TextStyle.label())
+                        .foregroundStyle(VS.Color.textTertiary)
+                }
+            }
+            .padding(.horizontal, 2)
+            content()
+        }
+    }
+
+    private func metaChip<Icon: View>(@ViewBuilder icon: () -> Icon, text: () -> String) -> some View {
+        HStack(spacing: 6) {
+            icon()
+            Text(text())
+                .font(VS.TextStyle.footnote(.semibold))
+                .foregroundStyle(VS.Color.textSecondary)
+                .lineLimit(1)
+        }
+        .padding(.horizontal, 11)
+        .padding(.vertical, 7)
+        .background(VS.Color.chip, in: Capsule())
+        .overlay(Capsule().stroke(VS.Color.hairline, lineWidth: 1))
+    }
+
+    private func inlineStat(_ value: String, _ label: String) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(value)
+                .font(VS.TextStyle.title3())
+                .foregroundStyle(VS.Color.textPrimary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+            Text(label.uppercased())
+                .font(VS.TextStyle.label())
+                .foregroundStyle(VS.Color.textTertiary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .combine)
+    }
+
+    private var statDivider: some View {
+        Rectangle()
+            .fill(VS.Color.hairline)
+            .frame(width: 1, height: 34)
+            .padding(.trailing, 14)
+    }
+
+    private var rowDivider: some View {
+        Rectangle().fill(VS.Color.hairline).frame(height: 1)
+    }
+
+    private func detailRow(systemImage: String, title: String, value: String) -> some View {
+        HStack(spacing: 12) {
+            Image(systemName: systemImage)
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(VS.Color.textSecondary)
+                .frame(width: 22)
+            Text(title)
+                .font(VS.TextStyle.body(.medium))
+                .foregroundStyle(VS.Color.textSecondary)
+            Spacer()
+            Text(value)
+                .font(VS.TextStyle.headline())
+                .foregroundStyle(VS.Color.textPrimary)
+        }
+        .padding(.vertical, 14)
+        .accessibilityElement(children: .combine)
+    }
+
+    private func timelineRow(isFinish: Bool, label: String, time: String, place: TripPlaceNames.Place?) -> some View {
+        HStack(alignment: .top, spacing: 12) {
+            RouteStopMarker(isFinish: isFinish, size: 12)
+                .padding(.top, 4)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(place?.title ?? (placesResolved ? "Pinned on the map" : "Finding place…"))
+                    .font(VS.TextStyle.headline())
+                    .foregroundStyle(place == nil ? VS.Color.textTertiary : VS.Color.textPrimary)
+                    .lineLimit(1)
+                    .redacted(reason: place == nil && !placesResolved ? .placeholder : [])
+                Text([label.uppercased(), place?.city?.uppercased()].compactMap { $0 }.joined(separator: " · "))
+                    .font(VS.TextStyle.label())
+                    .foregroundStyle(VS.Color.textTertiary)
+                    .lineLimit(1)
+            }
+            Spacer(minLength: 8)
+            Text(time)
+                .font(VS.TextStyle.callout(.semibold))
+                .foregroundStyle(VS.Color.textSecondary)
+        }
+        .accessibilityElement(children: .combine)
+    }
+
+    // MARK: Derived values
+
+    private var dayLine: String {
+        if Calendar.current.isDateInToday(trip.startedAt) { return "Today" }
+        if Calendar.current.isDateInYesterday(trip.startedAt) { return "Yesterday" }
+        return trip.startedAt.formatted(.dateTime.weekday(.wide).day().month(.wide))
+    }
+
+    private var timeRangeLine: String {
+        let start = trip.startedAt.formatted(date: .omitted, time: .shortened)
+        let end = trip.endedAt.formatted(date: .omitted, time: .shortened)
+        return start == end ? start : "\(start) – \(end)"
+    }
+
+    private var distanceValue: String {
+        let value = unit == "mi" ? trip.distanceKm * 0.621371 : trip.distanceKm
+        return String(format: value >= 100 ? "%.0f" : "%.1f", value)
+    }
+
+    private var durationLabel: String {
+        let total = Int(trip.durationSec)
+        let hours = total / 3600
+        let minutes = (total % 3600) / 60
+        if hours > 0 { return "\(hours)h \(minutes)m" }
+        return "\(max(minutes, 1)) min"
+    }
+
+    private func speedLabel(_ kmh: Double) -> String {
+        unit == "mi"
+            ? String(format: "%.0f mph", kmh * 0.621371)
+            : String(format: "%.0f km/h", kmh)
+    }
+
+    private var vehicleLogs: [FuelLog] {
+        store.fuelLogs.filter { $0.vehicleId == trip.vehicleId }
+    }
+
+    /// Rough fuel for this leg from the car's own consumption. Passenger legs are skipped.
+    private var estimatedLiters: Double? {
+        guard trip.countsAsDriven, trip.distanceKm >= 0.2, let vehicle else { return nil }
+        let litersPer100 = DriveMoodBaseline.resolve(
+            vehicle: vehicle,
+            logs: vehicleLogs,
+            manufacturerStandard: store.manufacturerStandard
+        )
+        guard litersPer100 > 0 else { return nil }
+        let liters = trip.distanceKm * litersPer100 / 100
+        return liters >= 0.05 ? liters : nil
+    }
+
+    /// Priced from the most recent fill-up's per-litre cost.
+    private func estimatedCost(liters: Double) -> String? {
+        guard let last = vehicleLogs
+            .filter({ $0.fuelVolume > 0 && $0.totalCost > 0 })
+            .max(by: { $0.timestamp < $1.timestamp }) else { return nil }
+        return CurrencyFormat.format(liters * last.totalCost / last.fuelVolume, currency: last.currency)
+    }
+
+    private func resolvePlaces() async {
+        guard !placesResolved else { return }
+        let start = trip.startCoordinate ?? trip.route.first
+        let end = trip.endCoordinate ?? trip.route.last
+        // Sequential on purpose: CLGeocoder rejects overlapping requests.
+        if let start { startPlace = await TripPlaceNames.name(for: start) }
+        if let end { endPlace = await TripPlaceNames.name(for: end) }
+        placesResolved = true
     }
 
     private func deleteTrip() async {
@@ -2314,7 +2376,8 @@ struct TripDetailView: View {
     }
 
     private var routeMap: some View {
-        Map(initialPosition: .region(routeRegion)) {
+        // Pinch to zoom only — panning would fight the page scroll.
+        Map(initialPosition: .region(routeRegion), interactionModes: [.zoom]) {
             let displayRoute = TripTrackingLogic.mapDisplayRoute(id: trip.id, points: trip.route, maximumPoints: 800)
             if displayRoute.count >= 2 {
                 MapPolyline(coordinates: displayRoute.map {
@@ -2333,22 +2396,13 @@ struct TripDetailView: View {
             }
             if let end = trip.endCoordinate ?? trip.route.last {
                 Annotation("Finish", coordinate: CLLocationCoordinate2D(latitude: end.latitude, longitude: end.longitude)) {
-                    routeMarker(color: VS.Color.routeEnd, icon: "flag.fill")
+                    routeMarker(color: Color.white, icon: "flag.fill")
                 }
             }
         }
         .mapStyle(Self.lockedMapStyle)
         .mapControlVisibility(.hidden)
         .preferredColorScheme(.dark)
-        .overlay(alignment: .bottomLeading) {
-            Text("RECORDED ROUTE")
-                .font(VS.Typography.heading(11, weight: .bold))
-                .foregroundStyle(VS.Color.navPill)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 7)
-                .background(VS.Color.accent, in: Capsule())
-                .padding(14)
-        }
     }
 
     private static let lockedMapStyle: MapStyle = .standard(
@@ -2366,4 +2420,893 @@ struct TripDetailView: View {
             .overlay(Circle().stroke(Color.white.opacity(0.85), lineWidth: 2))
     }
 
+}
+
+// MARK: - My Drives data
+
+/// Everything My Drives derives from the store. Compared each body pass (array
+/// buffers short-circuit on identity), so the list rebuilds only on real changes.
+struct DrivesInputs: Equatable {
+    var trips: [Trip]
+    var vehicles: [Vehicle]
+    var archivedVehicles: [Vehicle]
+    var pending: [PendingTripSave]
+    var fuelLogs: [FuelLog]
+    var manufacturerStandard: Double?
+    var selectedVehicleId: String?
+    var sort: DriveSort
+    var unit: String
+}
+
+struct DriveRowModel: Identifiable, Equatable {
+    let id: String
+    /// Simplified to the thumbnail budget once, not per draw.
+    let route: [TripCoordinate]
+    /// Used to name the row "From → To" once places resolve.
+    let startCoordinate: TripCoordinate?
+    let endCoordinate: TripCoordinate?
+    /// Shown until (or instead of) place names — "Morning drive".
+    let fallbackTitle: String
+    /// "3:20 AM · 18 min" — full line for accessibility.
+    let meta: String
+    /// "3:20 AM", or "Aug 21 · 3:20 AM" outside day groups.
+    let timeLabel: String
+    /// Trailing hero value — distance, or top speed on the speed leaderboard.
+    let value: String
+    /// Under the value: duration, or distance on the speed leaderboard.
+    let detail: String
+    let note: String?
+    let accessibilityLabel: String
+    let accessibilityHint: String?
+
+    static func == (lhs: DriveRowModel, rhs: DriveRowModel) -> Bool {
+        lhs.id == rhs.id
+            && lhs.fallbackTitle == rhs.fallbackTitle
+            && lhs.meta == rhs.meta
+            && lhs.value == rhs.value
+            && lhs.detail == rhs.detail
+            && lhs.note == rhs.note
+            && lhs.route.count == rhs.route.count
+    }
+}
+
+struct DriveDayGroupModel: Identifiable, Equatable {
+    let id: Date
+    let title: String
+    /// "2 drives · 25.4 km" — nil for single-drive days (the card already says it).
+    let summary: String?
+    let rows: [DriveRowModel]
+}
+
+/// Map-ready polyline for one historic drive.
+struct DriveMapRoute: Identifiable, Equatable {
+    let id: String
+    let coordinates: [CLLocationCoordinate2D]
+
+    init?(trip: Trip) {
+        let display: [TripCoordinate] = trip.route.count >= 2
+            ? TripTrackingLogic.mapDisplayRoute(id: trip.id, points: trip.route, maximumPoints: 160)
+            : [trip.startCoordinate, trip.endCoordinate].compactMap { $0 }
+        guard display.count >= 2 else { return nil }
+        id = trip.id
+        coordinates = display.map { CLLocationCoordinate2D(latitude: $0.latitude, longitude: $0.longitude) }
+    }
+
+    static func == (lhs: DriveMapRoute, rhs: DriveMapRoute) -> Bool {
+        lhs.id == rhs.id && lhs.coordinates.count == rhs.coordinates.count
+    }
+}
+
+struct DrivesListModel {
+    var revision = 0
+    var trips: [Trip] = []
+    var pending: [PendingTripSave] = []
+    var pendingRows: [DriveRowModel] = []
+    /// Day sections for chronological sorts.
+    var groups: [DriveDayGroupModel] = []
+    /// Flat leaderboard for ranked sorts.
+    var flatRows: [DriveRowModel] = []
+    var isChronological = true
+    var mapRoutes: [DriveMapRoute] = []
+    /// Start/end of every drive so the overview frames the full footprint.
+    var overviewCoordinates: [TripCoordinate] = []
+    var rollupLine = "Tap a drive to explore its route"
+    /// Header hero: total distance, value and unit split for typography.
+    var heroValue = "0"
+    var heroUnit = "km"
+    /// "10 drives · 2h 41m · 112 km/h top"
+    var heroCaption = "No drives yet"
+    /// Distance of the most recent drives, oldest → newest, for the header sparkline.
+    var recentBars: [Double] = []
+
+    var isEmpty: Bool { trips.isEmpty && pending.isEmpty }
+    var totalCount: Int { trips.count + pending.count }
+
+    private static let dayFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "MMM d"
+        return formatter
+    }()
+
+    private static let groupFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "EEE, MMM d"
+        return formatter
+    }()
+
+    static func build(from input: DrivesInputs, revision: Int) -> DrivesListModel {
+        var model = DrivesListModel()
+        model.revision = revision
+        model.isChronological = input.sort.isChronological
+
+        // Active garage only — archived cars keep their history, but it
+        // doesn't clutter My Drives (their cars aren't in the filter either).
+        let activeIds = Set(input.vehicles.map(\.id))
+        let selected = input.selectedVehicleId
+        var trips = input.trips.filter { activeIds.contains($0.vehicleId) }
+        if let selected {
+            trips = trips.filter { $0.vehicleId == selected }
+        }
+        switch input.sort {
+        case .recent: trips.sort { $0.startedAt > $1.startedAt }
+        case .oldest: trips.sort { $0.startedAt < $1.startedAt }
+        case .fastest: trips.sort { $0.maxSpeedKmh > $1.maxSpeedKmh }
+        case .longest: trips.sort { $0.distanceKm > $1.distanceKm }
+        }
+        model.trips = trips
+
+        model.pending = input.pending
+            .filter { $0.vehicleId.isEmpty || activeIds.contains($0.vehicleId) }
+            .filter { selected == nil || $0.vehicleId == selected || $0.vehicleId.isEmpty }
+            .sorted { $0.endedAt > $1.endedAt }
+
+        // Consumption per car once — MetricsCalculator is far too heavy to run per row.
+        var fuelRates: [String: (litersPer100: Double, unit: String)?] = [:]
+        func fuelLabel(distanceKm: Double, vehicleId: String, counts: Bool) -> String? {
+            guard counts, distanceKm >= 0.2 else { return nil }
+            if fuelRates[vehicleId] == nil {
+                let vehicle = input.vehicles.first { $0.id == vehicleId }
+                    ?? input.archivedVehicles.first { $0.id == vehicleId }
+                fuelRates[vehicleId] = vehicle.map { vehicle in
+                    let rate = DriveMoodBaseline.resolve(
+                        vehicle: vehicle,
+                        logs: input.fuelLogs.filter { $0.vehicleId == vehicle.id },
+                        manufacturerStandard: input.manufacturerStandard
+                    )
+                    return (rate, vehicle.fuelVolumeUnit)
+                }
+            }
+            guard let rate = fuelRates[vehicleId] ?? nil, rate.litersPer100 > 0 else { return nil }
+            let liters = distanceKm * rate.litersPer100 / 100
+            guard liters >= 0.05 else { return nil }
+            return "~\(VolumeFormat.format(liters, unit: rate.unit))"
+        }
+
+        func timeOfDayTitle(_ date: Date) -> String {
+            switch Calendar.current.component(.hour, from: date) {
+            case 5..<12: return "Morning drive"
+            case 12..<17: return "Afternoon drive"
+            case 17..<21: return "Evening drive"
+            default: return "Night drive"
+            }
+        }
+
+        func speedLabel(_ kmh: Double) -> String {
+            input.unit == "mi"
+                ? String(format: "%.0f mph", kmh * 0.621371)
+                : String(format: "%.0f km/h", kmh)
+        }
+
+        model.pendingRows = model.pending.map { pending in
+            let id = pending.id.uuidString
+            let day = dayFormatter.string(from: pending.startedAt)
+            let duration = DriveListCopy.duration(pending.durationSec)
+            let distance = DistanceFormat.formatDistance(pending.distanceKm, unit: input.unit)
+            return DriveRowModel(
+                id: id,
+                route: TripTrackingLogic.mapDisplayRoute(id: id, points: pending.route, maximumPoints: 96),
+                startCoordinate: pending.startCoordinate ?? pending.route.first,
+                endCoordinate: pending.endCoordinate ?? pending.route.last,
+                fallbackTitle: timeOfDayTitle(pending.startedAt),
+                meta: "\(day) · \(pending.startedAt.formatted(date: .omitted, time: .shortened)) · \(duration)",
+                timeLabel: "\(day) · \(pending.startedAt.formatted(date: .omitted, time: .shortened))",
+                value: distance,
+                detail: DriveListCopy.shortDuration(pending.durationSec),
+                note: "Needs review",
+                accessibilityLabel: "\(TrackyVoice.Soft.pendingSection). \(day), \(distance), \(duration)",
+                accessibilityHint: "Opens this drive for confirmation"
+            )
+        }
+
+        func row(_ trip: Trip, showsDay: Bool) -> DriveRowModel {
+            let time = trip.startedAt.formatted(date: .omitted, time: .shortened)
+            // Leaderboards care which day, not which minute — keeps room for the origin.
+            var timeLabel = showsDay ? dayFormatter.string(from: trip.startedAt) : time
+            if trip.tripRole == .passenger { timeLabel += " · Passenger" }
+            let meta = "\(timeLabel) · \(DriveListCopy.duration(trip.durationSec))"
+            let distance = DistanceFormat.formatDistance(trip.distanceKm, unit: input.unit)
+            let fuel = fuelLabel(distanceKm: trip.distanceKm, vehicleId: trip.vehicleId, counts: trip.countsAsDriven)
+            // The speed leaderboard leads with what it ranks by.
+            let value = input.sort == .fastest ? speedLabel(trip.maxSpeedKmh) : distance
+            let detail = input.sort == .fastest ? distance : DriveListCopy.shortDuration(trip.durationSec)
+            return DriveRowModel(
+                id: trip.id,
+                route: TripTrackingLogic.mapDisplayRoute(id: trip.id, points: trip.route, maximumPoints: 96),
+                startCoordinate: trip.startCoordinate ?? trip.route.first,
+                endCoordinate: trip.endCoordinate ?? trip.route.last,
+                fallbackTitle: timeOfDayTitle(trip.startedAt),
+                meta: meta,
+                timeLabel: timeLabel,
+                value: value,
+                detail: detail,
+                note: nil,
+                accessibilityLabel: "\(meta), \(distance) driven, top \(speedLabel(trip.maxSpeedKmh))\(fuel.map { ", about \($0) fuel" } ?? "")",
+                accessibilityHint: nil
+            )
+        }
+
+        if input.sort.isChronological {
+            let calendar = Calendar.current
+            // `trips` is already date-sorted, so day order falls out of a single pass.
+            var order: [Date] = []
+            var byDay: [Date: [Trip]] = [:]
+            for trip in trips {
+                let day = calendar.startOfDay(for: trip.startedAt)
+                if byDay[day] == nil { order.append(day) }
+                byDay[day, default: []].append(trip)
+            }
+            model.groups = order.map { day in
+                let dayTrips = byDay[day] ?? []
+                let title: String
+                if calendar.isDateInToday(day) {
+                    title = "Today"
+                } else if calendar.isDateInYesterday(day) {
+                    title = "Yesterday"
+                } else {
+                    title = groupFormatter.string(from: day)
+                }
+                let total = DistanceFormat.formatDistance(dayTrips.reduce(0) { $0 + $1.distanceKm }, unit: input.unit)
+                let count = dayTrips.count == 1 ? "1 drive" : "\(dayTrips.count) drives"
+                return DriveDayGroupModel(
+                    id: day,
+                    title: title,
+                    summary: dayTrips.count > 1 ? "\(count) · \(total)" : nil,
+                    rows: dayTrips.map { row($0, showsDay: false) }
+                )
+            }
+        } else {
+            model.flatRows = trips.map { row($0, showsDay: true) }
+        }
+
+        model.mapRoutes = trips.compactMap(DriveMapRoute.init(trip:))
+        model.overviewCoordinates = trips.flatMap { trip -> [TripCoordinate] in
+            [trip.startCoordinate, trip.endCoordinate, trip.route.first, trip.route.last].compactMap { $0 }
+        }
+
+        if !trips.isEmpty {
+            let totalKm = trips.reduce(0) { $0 + $1.distanceKm }
+            let topKmh = trips.map(\.maxSpeedKmh).max() ?? 0
+            let distance = DistanceFormat.formatDistance(totalKm, unit: input.unit)
+            let speed = input.unit == "mi"
+                ? String(format: "%.0f mph top", topKmh * 0.621371)
+                : String(format: "%.0f km/h top", topKmh)
+            let count = trips.count == 1 ? "1 drive" : "\(trips.count) drives"
+            model.rollupLine = "\(distance) · \(count) · \(speed)"
+            let miles = input.unit == "mi"
+            let distanceValue = miles ? totalKm * 0.621371 : totalKm
+            model.heroValue = String(format: distanceValue >= 1_000 ? "%.0f" : "%.1f", distanceValue)
+            model.heroUnit = miles ? "mi" : "km"
+            let totalSeconds = Int(trips.reduce(0) { $0 + $1.durationSec })
+            let hours = totalSeconds / 3600, minutes = (totalSeconds % 3600) / 60
+            let time = hours > 0 ? "\(hours)h \(minutes)m" : "\(max(minutes, 1))m"
+            model.heroCaption = "\(count) · \(time) · \(speed)"
+            // Chronological regardless of sort — the sparkline is a timeline.
+            model.recentBars = trips
+                .sorted { $0.startedAt < $1.startedAt }
+                .suffix(12)
+                .map(\.distanceKm)
+        }
+        return model
+    }
+}
+
+private enum DriveListCopy {
+    /// Compact form for the list's right column: "18 min", "1h 5m".
+    static func shortDuration(_ seconds: Double) -> String {
+        let total = Int(seconds)
+        let hours = total / 3600
+        let minutes = (total % 3600) / 60
+        return hours > 0 ? "\(hours)h \(minutes)m" : "\(max(minutes, 1)) min"
+    }
+
+    static func duration(_ seconds: Double) -> String {
+        let total = Int(seconds)
+        let hours = total / 3600
+        let minutes = (total % 3600) / 60
+        if hours > 0 && minutes > 0 { return "\(hours) hr \(minutes) min" }
+        if hours == 1 { return "1 hour" }
+        if hours > 1 { return "\(hours) hours" }
+        return "\(max(minutes, 1)) min"
+    }
+}
+
+// MARK: - Tracking panel data
+
+struct TrackingInputs: Equatable {
+    var vehicleId: String?
+    var vehicles: [Vehicle]
+    var trips: [Trip]
+    var fuelLogs: [FuelLog]
+    var serviceLogs: [ServiceLog]
+    var pending: [PendingTripSave]
+    var manufacturerStandard: Double?
+    var unit: String
+}
+
+/// Odometer, month total, fuel watch and consumption baseline for the tracked car.
+/// The tracking panel re-renders on every GPS follow tick and HUD snapshot, so
+/// these full-history scans run once per data change instead.
+struct TrackingInsights {
+    struct FuelWarning {
+        let title: String
+        let detail: String
+        let tint: Color
+    }
+
+    var vehicleId: String?
+    var estimate: OdometerEstimate?
+    var monthKm: Double = 0
+    var fuelWarning: FuelWarning?
+    var vehicleLogs: [FuelLog] = []
+    var baselineL100: Double?
+
+    @MainActor
+    static func build(vehicle: Vehicle?, store: DataStore, pending: [PendingTripSave]) -> TrackingInsights {
+        guard let vehicle else { return TrackingInsights() }
+        var insights = TrackingInsights()
+        insights.vehicleId = vehicle.id
+        insights.vehicleLogs = store.fuelLogs.filter { $0.vehicleId == vehicle.id }
+        insights.baselineL100 = DriveMoodBaseline.resolve(
+            vehicle: vehicle,
+            logs: insights.vehicleLogs,
+            manufacturerStandard: store.manufacturerStandard
+        )
+        let estimate = store.odometerEstimate(vehicleId: vehicle.id)
+        insights.estimate = estimate
+
+        let calendar = Calendar.current
+        let monthStart = calendar.date(from: calendar.dateComponents([.year, .month], from: Date())) ?? Date()
+        let tripsKm = store.trips
+            .filter { $0.vehicleId == vehicle.id && $0.startedAt >= monthStart }
+            .reduce(0.0) { $0 + $1.distanceKm }
+        let pendingKm = pending
+            .filter { $0.vehicleId == vehicle.id && $0.startedAt >= monthStart }
+            .reduce(0.0) { $0 + $1.distanceKm }
+        insights.monthKm = tripsKm + pendingKm
+
+        let prediction = FuelInsightLogic.predictNextFill(
+            logs: insights.vehicleLogs,
+            estimatedOdometer: estimate?.estimatedKm ?? vehicle.currentOdometer,
+            tankCapacityLiters: vehicle.fuelTankCapacity,
+            brochureL100km: store.manufacturerStandard,
+            learning: VehicleLearningStore.shared.state(for: vehicle.id)
+        )
+        if let prediction, prediction.urgency >= .watch, prediction.confidence >= 0.4 {
+            let range: String
+            if let km = prediction.kmRemaining {
+                range = DistanceFormat.formatDistance(km, unit: store.defaultDistanceUnit) + " left"
+            } else {
+                range = "\(prediction.daysRemaining)d left"
+            }
+            switch prediction.urgency {
+            case .empty:
+                insights.fuelWarning = FuelWarning(title: "Running on fumes", detail: range, tint: VS.Color.warning)
+            case .low:
+                insights.fuelWarning = FuelWarning(title: "Low fuel", detail: range, tint: VS.Color.warning)
+            case .watch:
+                insights.fuelWarning = FuelWarning(title: "Fuel watch", detail: range, tint: VS.Color.accentSecondary)
+            case .none:
+                break
+            }
+        }
+        return insights
+    }
+}
+
+// MARK: - My Drives drawer
+
+/// Bottom sheet for My Drives. Owns its drag state so a live drag only re-renders
+/// this view — never TripsView or MapKit. The panel is laid out once at its
+/// expanded height and slid with a transform + reveal mask, so dragging and the
+/// settle spring never re-layout the list.
+private struct DrivesDrawer: View, Equatable {
+    struct Actions {
+        var selectVehicle: (String?) -> Void
+        var selectSort: (DriveSort) -> Void
+        var openTrip: (String) -> Void
+        var openPending: (String) -> Void
+        var confirmAll: () -> Void
+        var setUpTracking: () -> Void
+    }
+
+    let model: DrivesListModel
+    let sort: DriveSort
+    let vehicleFilterLabel: String
+    let vehicles: [Vehicle]
+    let isConfirmingAll: Bool
+    let showsSetUpTracking: Bool
+    let collapsedHeight: CGFloat
+    let expandedHeight: CGFloat
+    @Binding var expanded: Bool
+    let actions: Actions
+
+    @State private var dragTranslation: CGFloat = 0
+    @GestureState private var isDragging = false
+
+    private static let settleSpring = Animation.spring(response: 0.38, dampingFraction: 0.86)
+
+    static func == (lhs: DrivesDrawer, rhs: DrivesDrawer) -> Bool {
+        lhs.model.revision == rhs.model.revision
+            && lhs.sort == rhs.sort
+            && lhs.vehicleFilterLabel == rhs.vehicleFilterLabel
+            && lhs.vehicles == rhs.vehicles
+            && lhs.isConfirmingAll == rhs.isConfirmingAll
+            && lhs.showsSetUpTracking == rhs.showsSetUpTracking
+            && lhs.collapsedHeight == rhs.collapsedHeight
+            && lhs.expandedHeight == rhs.expandedHeight
+            && lhs.expanded == rhs.expanded
+    }
+
+    private var travel: CGFloat { max(0, expandedHeight - collapsedHeight) }
+
+    /// How much of the panel is pushed below the visible area (0 = fully expanded).
+    private var hiddenHeight: CGFloat {
+        let resting = expanded ? 0 : travel
+        return min(travel, max(0, resting + dragTranslation))
+    }
+
+    var body: some View {
+        let hidden = hiddenHeight
+        panel
+            .frame(height: expandedHeight, alignment: .top)
+            .offset(y: hidden)
+            .clipShape(DrawerRevealShape(hiddenTop: hidden, cornerRadius: VS.Radius.panel))
+            // Hidden rows sit under the nav; don't let them catch taps.
+            .contentShape(DrawerRevealShape(hiddenTop: hidden, cornerRadius: VS.Radius.panel))
+            .onChange(of: isDragging) { _, dragging in
+                // A cancelled drag skips onEnded — never leave the sheet parked mid-way.
+                guard !dragging, dragTranslation != 0 else { return }
+                withAnimation(Self.settleSpring) { dragTranslation = 0 }
+            }
+    }
+
+    private var panel: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            header
+                .contentShape(Rectangle())
+                .onTapGesture { toggle() }
+                .highPriorityGesture(dragGesture)
+
+            if model.isEmpty {
+                emptyState
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                list
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .background(
+            RoundedRectangle(cornerRadius: VS.Radius.panel, style: .continuous)
+                .fill(Color(hex: 0x161916))
+                .overlay(
+                    RoundedRectangle(cornerRadius: VS.Radius.panel, style: .continuous)
+                        .stroke(VS.Color.hairline, lineWidth: 1)
+                )
+        )
+    }
+
+    private var header: some View {
+        VStack(spacing: 10) {
+            Capsule()
+                .fill(Color.white.opacity(0.26))
+                .frame(width: 42, height: 5)
+                .padding(.top, 8)
+
+            VStack(alignment: .leading, spacing: 6) {
+                // Overline: section + car filter inline, then status and sort.
+                HStack(spacing: 8) {
+                    Text("MY DRIVES")
+                        .font(VS.TextStyle.label())
+                        .foregroundStyle(VS.Color.textTertiary)
+                    Text("·")
+                        .font(VS.TextStyle.label())
+                        .foregroundStyle(VS.Color.textTertiary)
+                    vehicleMenu
+                    Spacer(minLength: 8)
+                    if !model.pending.isEmpty {
+                        HStack(spacing: 5) {
+                            Circle().fill(VS.Color.warning).frame(width: 6, height: 6)
+                            Text("\(model.pending.count) to review")
+                                .font(VS.TextStyle.caption(.bold))
+                                .foregroundStyle(VS.Color.warning)
+                        }
+                        .padding(.horizontal, 9)
+                        .padding(.vertical, 5)
+                        .background(VS.Color.warning.opacity(0.14), in: Capsule())
+                    }
+                    sortMenu
+                }
+
+                // Hero: the number is the headline.
+                HStack(alignment: .bottom, spacing: 12) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        HStack(alignment: .firstTextBaseline, spacing: 5) {
+                            Text(model.heroValue)
+                                .font(VS.TextStyle.display())
+                                .foregroundStyle(VS.Color.textPrimary)
+                                .contentTransition(.numericText())
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.6)
+                            Text(model.heroUnit)
+                                .font(VS.TextStyle.title3())
+                                .foregroundStyle(VS.Color.textTertiary)
+                        }
+                        Text(model.heroCaption)
+                            .font(VS.TextStyle.footnote(.semibold))
+                            .foregroundStyle(VS.Color.textSecondary)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.85)
+                    }
+                    .accessibilityElement(children: .combine)
+                    .accessibilityLabel("\(model.heroValue) \(model.heroUnit) total. \(model.heroCaption)")
+
+                    Spacer(minLength: 8)
+
+                    if model.recentBars.count >= 2 {
+                        DriveSparkBars(values: model.recentBars)
+                            .frame(width: 108, height: 40)
+                            .padding(.bottom, 4)
+                            .accessibilityLabel("Distance of your last \(model.recentBars.count) drives")
+                    }
+                }
+            }
+            .padding(.horizontal, 18)
+        }
+        .accessibilityHint(expanded ? "Collapses the drive list" : "Expands the drive list")
+    }
+
+    private var vehicleMenu: some View {
+        Menu {
+            Button("All Cars") { actions.selectVehicle(nil) }
+            ForEach(vehicles) { vehicle in
+                Button {
+                    actions.selectVehicle(vehicle.id)
+                } label: {
+                    Label {
+                        Text(vehicle.nickname)
+                    } icon: {
+                        VehicleMark(
+                            style: VehicleMarkStyle.resolve(vehicle.icon),
+                            size: 18,
+                            paint: VehiclePaintColor.resolve(vehicle.paintColor)
+                        )
+                    }
+                }
+            }
+        } label: {
+            HStack(spacing: 4) {
+                Text(vehicleFilterLabel.uppercased())
+                    .font(VS.TextStyle.label())
+                    .foregroundStyle(VS.Color.accent)
+                    .lineLimit(1)
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 8, weight: .heavy))
+                    .foregroundStyle(VS.Color.accent)
+            }
+            .padding(.vertical, 6)
+            .contentShape(Rectangle())
+        }
+        .accessibilityLabel("Car filter, \(vehicleFilterLabel)")
+    }
+
+    private var sortMenu: some View {
+        Menu {
+            ForEach(DriveSort.allCases) { option in
+                Button {
+                    actions.selectSort(option)
+                } label: {
+                    if sort == option {
+                        Label(option.label, systemImage: "checkmark")
+                    } else {
+                        Text(option.label)
+                    }
+                }
+            }
+        } label: {
+            // Lit when the list isn't in its default order, so a non-default sort is never hidden.
+            let isDefault = sort == .recent
+            Image(systemName: "arrow.up.arrow.down")
+                .font(.system(size: 12, weight: .bold))
+                .foregroundStyle(isDefault ? VS.Color.textSecondary : VS.Color.navPill)
+                .frame(width: 32, height: 32)
+                .background(isDefault ? VS.Color.chip : VS.Color.accent, in: Circle())
+                .overlay(Circle().stroke(isDefault ? VS.Color.hairline : .clear, lineWidth: 1))
+        }
+        .accessibilityLabel("Sort, \(sort.label)")
+    }
+
+    private var list: some View {
+        ScrollView {
+            LazyVStack(spacing: 0) {
+                if !model.pendingRows.isEmpty {
+                    pendingHeader
+                        .padding(.bottom, 10)
+
+                    groupedRows(model.pendingRows, highlight: VS.Color.warning) { actions.openPending($0) }
+                }
+
+                if model.isChronological {
+                    ForEach(model.groups) { group in
+                        sectionHeader(group.title, trailing: group.summary)
+                        groupedRows(group.rows) { actions.openTrip($0) }
+                    }
+                } else {
+                    sectionHeader(sort.label, trailing: model.rollupLine)
+                    groupedRows(model.flatRows) { actions.openTrip($0) }
+                }
+            }
+            .padding(.horizontal, 14)
+            .padding(.bottom, 28)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        // Rows fade under the header instead of being sliced by a hard edge.
+        .mask(
+            VStack(spacing: 0) {
+                LinearGradient(colors: [.clear, .black], startPoint: .top, endPoint: .bottom)
+                    .frame(height: 14)
+                Rectangle()
+            }
+        )
+        .scrollDisabled(!expanded)
+        // Collapsed: dragging the list pulls the sheet up. Expanded: the list scrolls.
+        .simultaneousGesture(dragGesture, including: expanded ? .subviews : .all)
+    }
+
+    private func sectionHeader(_ title: String, trailing: String?) -> some View {
+        HStack(alignment: .firstTextBaseline) {
+            Text(title)
+                .font(VS.TextStyle.subheadline())
+                .foregroundStyle(VS.Color.textSecondary)
+            Spacer(minLength: 8)
+            if let trailing {
+                Text(trailing)
+                    .font(VS.TextStyle.caption(.semibold))
+                    .foregroundStyle(VS.Color.textTertiary)
+                    .lineLimit(1)
+            }
+        }
+        .padding(.horizontal, 4)
+        .padding(.top, 18)
+        .padding(.bottom, 8)
+    }
+
+    /// One continuous card per section, but each row stays its own lazy item —
+    /// only the outer corners round, so long histories never build off-screen rows.
+    @ViewBuilder
+    private func groupedRows(
+        _ rows: [DriveRowModel],
+        highlight: Color? = nil,
+        open: @escaping (String) -> Void
+    ) -> some View {
+        let lastIndex = rows.count - 1
+        ForEach(Array(rows.enumerated()), id: \.element.id) { index, row in
+            Button { open(row.id) } label: {
+                DriveListRow(
+                    row: row,
+                    isFirst: index == 0,
+                    isLast: index == lastIndex,
+                    highlight: highlight
+                )
+            }
+            .buttonStyle(.plain)
+        }
+    }
+
+    private var pendingHeader: some View {
+        HStack(spacing: 8) {
+            Text(TrackyVoice.reviewRequired())
+                .font(VS.TextStyle.subheadline())
+                .foregroundStyle(VS.Color.warning)
+            Text("\(model.pendingRows.count)")
+                .font(VS.TextStyle.tag())
+                .foregroundStyle(VS.Color.navPill)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 3)
+                .background(VS.Color.warning, in: Capsule())
+            Spacer()
+            Button(action: actions.confirmAll) {
+                HStack(spacing: 6) {
+                    if isConfirmingAll {
+                        ProgressView()
+                            .controlSize(.mini)
+                            .tint(VS.Color.navPill)
+                    } else {
+                        VSIcon(icon: .checkCircle, size: 13, weight: .bold, tint: VS.Color.navPill)
+                    }
+                    Text(isConfirmingAll ? "Locking in…" : TrackyVoice.confirmAll())
+                        .font(VS.TextStyle.tag())
+                        .foregroundStyle(VS.Color.navPill)
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .background(VS.Color.accent, in: Capsule())
+            }
+            .buttonStyle(.plain)
+            .disabled(isConfirmingAll)
+            .accessibilityLabel("Confirm all pending drives")
+        }
+        .padding(.top, 2)
+    }
+
+    private var emptyState: some View {
+        VStack(spacing: 14) {
+            VSIcon(icon: .mapTrifold, size: 40, weight: .regular, tint: VS.Color.accent)
+            Text(TrackyVoice.emptyDrivesTitle())
+                .font(VS.TextStyle.title3(.semibold))
+                .foregroundStyle(VS.Color.textPrimary)
+            Text(TrackyVoice.emptyDrivesBody())
+                .font(VS.TextStyle.footnote())
+                .foregroundStyle(VS.Color.textSecondary)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 28)
+            if showsSetUpTracking {
+                Button(action: actions.setUpTracking) {
+                    HStack(spacing: 8) {
+                        VSIcon(icon: .mapPin, size: 18, weight: .fill, tint: VS.Color.navPill)
+                        Text(TrackyVoice.Soft.setUpTracking)
+                            .font(VS.TextStyle.headline(.semibold))
+                    }
+                    .foregroundStyle(VS.Color.navPill)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 12)
+                    .background(VS.Color.accent, in: Capsule())
+                }
+                .buttonStyle(ScaleButtonStyle())
+                .padding(.top, 6)
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+        .padding(.horizontal, 16)
+        .padding(.bottom, 16)
+    }
+
+    // MARK: Gesture
+
+    private var dragGesture: some Gesture {
+        DragGesture(minimumDistance: 8, coordinateSpace: .global)
+            .updating($isDragging) { _, state, _ in state = true }
+            .onChanged { value in
+                guard travel > 0 else { return }
+                dragTranslation = value.translation.height
+            }
+            .onEnded { value in
+                settle(predictedTranslation: value.predictedEndTranslation.height)
+            }
+    }
+
+    private func settle(predictedTranslation: CGFloat) {
+        guard travel > 0 else {
+            dragTranslation = 0
+            return
+        }
+        let resting = expanded ? 0 : travel
+        // Velocity-aware: a short flick carries through via the predicted end.
+        let projected = min(travel, max(0, resting + predictedTranslation))
+        let shouldExpand = projected < travel / 2
+        if shouldExpand != expanded {
+            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        }
+        withAnimation(Self.settleSpring) {
+            expanded = shouldExpand
+            dragTranslation = 0
+        }
+    }
+
+    private func toggle() {
+        guard travel > 0 else { return }
+        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        withAnimation(Self.settleSpring) {
+            expanded.toggle()
+        }
+    }
+}
+
+/// Rounded rect covering only the revealed part of the drawer. Animatable, so the
+/// mask tracks the slide offset frame-for-frame inside the same spring.
+private struct DrawerRevealShape: Shape {
+    var hiddenTop: CGFloat
+    var cornerRadius: CGFloat
+
+    var animatableData: CGFloat {
+        get { hiddenTop }
+        set { hiddenTop = newValue }
+    }
+
+    func path(in rect: CGRect) -> Path {
+        let top = min(max(0, hiddenTop), rect.height)
+        let visible = CGRect(x: rect.minX, y: rect.minY + top, width: rect.width, height: rect.height - top)
+        return RoundedRectangle(cornerRadius: cornerRadius, style: .continuous).path(in: visible)
+    }
+}
+
+/// Reverse-geocoded start / finish names. Cached on disk per rounded coordinate,
+/// so the drive list only geocodes a spot once, ever. Requests run one at a time:
+/// CLGeocoder rejects overlapping calls and throttles bursts.
+@MainActor
+enum TripPlaceNames {
+    struct Place: Equatable {
+        /// Street or neighbourhood — the recognisable bit.
+        let title: String
+        let city: String?
+    }
+
+    private static let defaultsKey = "tripPlaceNames.v1"
+    private static let maxEntries = 2_000
+    private static var cache: [String: Place] = loadCache()
+    private static let geocoder = CLGeocoder()
+    private static var queueTail: Task<Void, Never>?
+
+    static func cached(for coordinate: TripCoordinate) -> Place? {
+        cache[key(for: coordinate)]
+    }
+
+    static func name(for coordinate: TripCoordinate) async -> Place? {
+        let key = key(for: coordinate)
+        if let cached = cache[key] { return cached }
+        let previous = queueTail
+        let lookup = Task { () -> Place? in
+            await previous?.value
+            if let cached = cache[key] { return cached }
+            let location = CLLocation(latitude: coordinate.latitude, longitude: coordinate.longitude)
+            guard let placemark = try? await geocoder.reverseGeocodeLocation(location).first,
+                  let title = placemark.thoroughfare ?? placemark.name ?? placemark.locality else { return nil }
+            let place = Place(title: title, city: placemark.locality == title ? nil : placemark.locality)
+            store(place, for: key)
+            return place
+        }
+        queueTail = Task { _ = await lookup.value }
+        return await lookup.value
+    }
+
+    private static func key(for coordinate: TripCoordinate) -> String {
+        // ~11 m buckets: same driveway, same name.
+        String(format: "%.4f,%.4f", coordinate.latitude, coordinate.longitude)
+    }
+
+    private static func store(_ place: Place, for key: String) {
+        if cache.count >= maxEntries { cache.removeAll(keepingCapacity: true) }
+        cache[key] = place
+        let encoded = cache.mapValues { [$0.title, $0.city ?? ""] }
+        UserDefaults.standard.set(encoded, forKey: defaultsKey)
+    }
+
+    private static func loadCache() -> [String: Place] {
+        guard let raw = UserDefaults.standard.dictionary(forKey: defaultsKey) as? [String: [String]] else { return [:] }
+        return raw.compactMapValues { parts in
+            guard let title = parts.first, !title.isEmpty else { return nil }
+            let city = parts.count > 1 && !parts[1].isEmpty ? parts[1] : nil
+            return Place(title: title, city: city)
+        }
+    }
+}
+
+private extension View {
+    /// Single surface style for trip detail sections.
+    func detailCard() -> some View {
+        background(VS.Color.chip, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 22, style: .continuous)
+                    .stroke(VS.Color.hairline, lineWidth: 1)
+            )
+    }
 }

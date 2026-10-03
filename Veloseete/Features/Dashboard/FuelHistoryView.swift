@@ -65,7 +65,7 @@ struct FuelHistoryView: View {
                 VStack(alignment: .leading, spacing: VS.Spacing.lg) {
                     if groups.isEmpty {
                         Text(TrackyVoice.Soft.emptyHistory)
-                            .font(VS.Typography.body(14))
+                            .font(VS.TextStyle.callout())
                             .foregroundStyle(VS.Color.textTertiary)
                             .frame(maxWidth: .infinity)
                             .padding(.top, 60)
@@ -123,12 +123,12 @@ struct FuelHistoryView: View {
     private func lifetimeStat(value: String, label: String) -> some View {
         VStack(spacing: 4) {
             Text(value)
-                .font(VS.Typography.heading(16, weight: .bold))
+                .font(VS.TextStyle.headline())
                 .foregroundStyle(VS.Color.textPrimary)
                 .lineLimit(1)
                 .minimumScaleFactor(0.75)
             Text(label.uppercased())
-                .font(VS.Typography.body(10, weight: .medium))
+                .font(VS.TextStyle.caption2(.medium))
                 .foregroundStyle(VS.Color.textTertiary)
         }
         .frame(maxWidth: .infinity)
@@ -138,10 +138,10 @@ struct FuelHistoryView: View {
         VStack(alignment: .leading, spacing: 10) {
             VStack(alignment: .leading, spacing: 3) {
                 Text(group.title)
-                    .font(VS.Typography.heading(16, weight: .bold))
+                    .font(VS.TextStyle.headline())
                     .foregroundStyle(VS.Color.textPrimary)
                 Text(monthSubtotal(group))
-                    .font(VS.Typography.body(12))
+                    .font(VS.TextStyle.caption())
                     .foregroundStyle(VS.Color.textTertiary)
             }
 
