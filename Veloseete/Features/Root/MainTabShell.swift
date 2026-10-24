@@ -1876,6 +1876,7 @@ struct ServiceEditorSheet: View {
     /// Last reminder we prefilled; once the driver edits it, we stop overwriting.
     @State private var suggestedOdometer: String?
     @State private var suggestedDate: Date?
+    @State private var showTypePicker = false
 
     private let types = ServiceLog.knownTypes
 
@@ -2028,10 +2029,42 @@ struct ServiceEditorSheet: View {
     private var typeSection: some View {
         VStack(alignment: .leading, spacing: 10) {
             fieldLabel("Service type")
-            // Wraps so every common service is visible at once — no hunting sideways.
-            FlowChipWrap(items: types, selected: serviceType) { type in
+            // One row, one decision — the full list lives in a searchable sheet.
+            Button {
                 UISelectionFeedbackGenerator().selectionChanged()
-                serviceType = type
+                showTypePicker = true
+            } label: {
+                HStack(spacing: 12) {
+                    ServiceTypeIcon(type: serviceType, size: 40)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(serviceType)
+                            .font(VS.TextStyle.headline())
+                            .foregroundStyle(VS.Color.textPrimary)
+                        Text(ServiceSchedule.intervalSummary(for: serviceType) ?? "Name it below")
+                            .font(VS.TextStyle.caption())
+                            .foregroundStyle(VS.Color.textTertiary)
+                    }
+                    Spacer(minLength: 8)
+                    Text("Change")
+                        .font(VS.TextStyle.footnote(.semibold))
+                        .foregroundStyle(VS.Color.accent)
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(VS.Color.textTertiary)
+                }
+                .padding(14)
+                .glassCard(elevated: true)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Service type, \(serviceType)")
+            .accessibilityHint("Opens the list of service types")
+            .sheet(isPresented: $showTypePicker) {
+                ServiceTypePickerSheet(
+                    selected: serviceType,
+                    recent: recentTypes
+                ) { type in
+                    serviceType = type
+                }
             }
 
             if isOtherType {
@@ -2106,12 +2139,20 @@ struct ServiceEditorSheet: View {
     }
 
     private var intervalHint: String? {
-        guard let interval = ServiceSchedule.suggestedInterval(for: serviceType) else { return nil }
-        let parts = [
-            interval.km.map { DistanceFormat.formatOdometer($0, unit: "km") },
-            interval.months.map { $0 % 12 == 0 ? "\($0 / 12) year\($0 == 12 ? "" : "s")" : "\($0) months" }
-        ].compactMap { $0 }
-        return "Typical for \(serviceType.lowercased()): every \(parts.joined(separator: " or ")). Your manual wins."
+        guard let summary = ServiceSchedule.intervalSummary(for: serviceType) else { return nil }
+        return "Typical for \(serviceType.lowercased()): \(summary.lowercased()). Your manual wins."
+    }
+
+    /// This car's last few distinct service types, newest first.
+    private var recentTypes: [String] {
+        var seen = Set<String>()
+        return store.serviceLogs
+            .filter { $0.vehicleId == vehicle?.id && types.contains($0.serviceType) }
+            .sorted { $0.timestamp > $1.timestamp }
+            .map(\.serviceType)
+            .filter { seen.insert($0).inserted }
+            .prefix(3)
+            .map { $0 }
     }
 
     /// Prefill the next reminder from the type's usual interval — new entries only,
@@ -2235,6 +2276,139 @@ struct ServiceEditorSheet: View {
         } catch {
             errorMessage = error.localizedDescription
         }
+    }
+}
+
+// MARK: - Service type picker
+
+/// Grouped, searchable list — replaces a wall of pills with rows you can scan.
+struct ServiceTypePickerSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    let selected: String
+    let recent: [String]
+    let onPick: (String) -> Void
+    @State private var query = ""
+
+    private var sections: [(title: String, types: [String])] {
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.isEmpty else {
+            let hits = ServiceLog.knownTypes.filter { $0.localizedCaseInsensitiveContains(trimmed) }
+            return hits.isEmpty ? [("No match — pick Other to name it", ["Other"])] : [("Results", hits)]
+        }
+        let recentSection: [(title: String, types: [String])] = recent.isEmpty ? [] : [("Recent on this car", recent)]
+        return recentSection + ServiceSchedule.groups
+    }
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 22) {
+                    ForEach(sections, id: \.title) { section in
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text(section.title.uppercased())
+                                .font(VS.TextStyle.label())
+                                .foregroundStyle(VS.Color.textTertiary)
+                                .padding(.horizontal, 4)
+                            VStack(spacing: 0) {
+                                ForEach(section.types, id: \.self) { type in
+                                    row(type)
+                                    if type != section.types.last {
+                                        Divider().overlay(VS.Color.divider).padding(.leading, 66)
+                                    }
+                                }
+                            }
+                            .glassCard(elevated: true)
+                        }
+                    }
+                }
+                .padding(.horizontal, 20)
+                .padding(.top, 8)
+                .padding(.bottom, 28)
+            }
+            .veloseetePage()
+            .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always), prompt: "Search services")
+            .navigationTitle("Service type")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button("Cancel") { dismiss() }
+                        .foregroundStyle(VS.Color.textSecondary)
+                }
+            }
+        }
+        .presentationDetents([.large])
+        .veloseeteSheet()
+    }
+
+    private func row(_ type: String) -> some View {
+        Button {
+            UISelectionFeedbackGenerator().selectionChanged()
+            onPick(type)
+            dismiss()
+        } label: {
+            HStack(spacing: 12) {
+                ServiceTypeIcon(type: type, size: 38)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(type == "Other" ? "Other (name it)" : type)
+                        .font(VS.TextStyle.subheadline(.semibold))
+                        .foregroundStyle(VS.Color.textPrimary)
+                    if let summary = ServiceSchedule.intervalSummary(for: type) {
+                        Text(summary)
+                            .font(VS.TextStyle.caption())
+                            .foregroundStyle(VS.Color.textTertiary)
+                    }
+                }
+                Spacer(minLength: 8)
+                if type == selected {
+                    Image(systemName: "checkmark")
+                        .font(.system(size: 14, weight: .bold))
+                        .foregroundStyle(VS.Color.accent)
+                }
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 11)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(type == selected ? .isSelected : [])
+    }
+}
+
+/// Round tinted glyph per service type, so rows scan by shape, not just words.
+struct ServiceTypeIcon: View {
+    let type: String
+    var size: CGFloat = 38
+
+    private var symbol: String {
+        switch type {
+        case "Oil Change": "drop.fill"
+        case "Tire Rotation": "arrow.triangle.2.circlepath"
+        case "Wheel Alignment": "steeringwheel"
+        case "New Tires": "circle.circle"
+        case "Brake Service": "exclamationmark.brakesignal"
+        case "Brake Fluid": "drop.halffull"
+        case "Air Filter": "wind"
+        case "Cabin Filter": "air.purifier.fill"
+        case "AC Service": "snowflake"
+        case "Battery Replacement": "minus.plus.batteryblock.fill"
+        case "Wiper Blades": "windshield.front.and.wiper"
+        case "Spark Plugs": "bolt.fill"
+        case "Coolant Flush": "thermometer.medium"
+        case "Transmission Service": "gearshift.layout.sixspeed"
+        case "Timing Belt": "gearshape.2.fill"
+        case "General Inspection": "checklist"
+        case "Registration": "doc.text.fill"
+        default: "wrench.and.screwdriver.fill"
+        }
+    }
+
+    var body: some View {
+        Image(systemName: symbol)
+            .font(.system(size: size * 0.4, weight: .semibold))
+            .foregroundStyle(VS.Color.accent)
+            .frame(width: size, height: size)
+            .background(VS.Color.accent.opacity(0.12), in: Circle())
+            .accessibilityHidden(true)
     }
 }
 

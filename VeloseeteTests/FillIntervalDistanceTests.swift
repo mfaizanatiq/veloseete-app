@@ -118,6 +118,13 @@ final class ServiceScheduleTests: XCTestCase {
         XCTAssertNil(ServiceSchedule.nextUp(logs: [service("Wiper Blades", odo: 40_000, daysAgo: 10)], currentKm: 41_000, now: now))
     }
 
+    func testPickerGroupsListEveryTypeOnce() {
+        let grouped = ServiceSchedule.groups.flatMap(\.types)
+        XCTAssertEqual(grouped.count, Set(grouped).count)
+        XCTAssertEqual(Set(grouped), Set(ServiceLog.knownTypes))
+        XCTAssertEqual(ServiceSchedule.intervalSummary(for: "Oil Change"), "Every 10,000 km or 1 year")
+    }
+
     func testEveryCommonTypeHasAnInterval() {
         for type in ServiceLog.knownTypes where type != "Other" {
             XCTAssertNotNil(ServiceSchedule.suggestedInterval(for: type), type)

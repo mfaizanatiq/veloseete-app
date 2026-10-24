@@ -508,6 +508,26 @@ enum ServiceSchedule {
         }
     }
 
+    /// Picker sections — every known type appears exactly once.
+    static let groups: [(title: String, types: [String])] = [
+        ("Routine", ["Oil Change", "Tire Rotation", "Air Filter", "Cabin Filter", "Wiper Blades", "General Inspection"]),
+        ("Tires & brakes", ["New Tires", "Wheel Alignment", "Brake Service", "Brake Fluid"]),
+        ("Engine & drivetrain", ["Spark Plugs", "Coolant Flush", "Transmission Service", "Timing Belt"]),
+        ("Electrical & comfort", ["Battery Replacement", "AC Service"]),
+        ("Paperwork", ["Registration"]),
+        ("Something else", ["Other"])
+    ]
+
+    /// "Every 10,000 km or 1 year" — nil when there's no sensible default.
+    static func intervalSummary(for type: String) -> String? {
+        guard let interval = suggestedInterval(for: type) else { return nil }
+        let parts = [
+            interval.km.map { DistanceFormat.formatOdometer($0, unit: "km") },
+            interval.months.map { $0 % 12 == 0 ? "\($0 / 12) year\($0 == 12 ? "" : "s")" : "\($0) months" }
+        ].compactMap { $0 }
+        return "Every " + parts.joined(separator: " or ")
+    }
+
     enum Status: Equatable { case onTrack, dueSoon, overdue }
 
     struct NextUp: Equatable {
