@@ -58,8 +58,7 @@ struct MainTabShell: View {
                 }
             }
             // Trips is a full-bleed map; every other tab is a phone-width column.
-            .frame(maxWidth: tab == .trips ? .infinity : VS.Layout.readableWidth)
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .tabContentWidth(fullBleed: tab == .trips)
             .coordinateSpace(name: "bottomNavScroll")
 
             BottomNavBar(active: $tab)

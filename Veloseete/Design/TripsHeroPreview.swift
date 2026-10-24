@@ -81,12 +81,15 @@ struct TripsHeroPreview: View {
                 Spacer(minLength: 0)
                     .allowsHitTesting(false)
 
+                // Same panel cap as TripsView's floatingInFrame.
                 if showDrives {
                     drivesSheet
+                        .frame(maxWidth: VS.Layout.floatingPanelWidth)
                         .padding(.horizontal, 14)
                         .padding(.bottom, 18)
                 } else {
                     rideSheet
+                        .frame(maxWidth: VS.Layout.floatingPanelWidth)
                         .padding(.horizontal, 14)
                         .padding(.bottom, 18)
                 }

@@ -674,6 +674,8 @@ struct TripDetailPreview: View {
 
     var body: some View {
         TripDetailView(trip: Self.trip, unit: "km")
+            // In the app it's a sheet, which applies the same width via veloseeteSheet().
+            .readableWidth()
             .environmentObject(store)
             .preferredColorScheme(.dark)
             .tint(VS.Color.accent)

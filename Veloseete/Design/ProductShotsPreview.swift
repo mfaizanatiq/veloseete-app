@@ -27,6 +27,9 @@ struct ProductShotsPreview: View {
 
     var body: some View {
         ZStack(alignment: .bottom) {
+            // The app root paints this behind every tab — the margins beside the
+            // centred column need it too.
+            VeloseeteBackground()
             Group {
                 switch tab {
                 case .fuel:
@@ -41,6 +44,8 @@ struct ProductShotsPreview: View {
                     ServiceListView(onProfile: {})
                 }
             }
+            // Same width rule as MainTabShell, so shots match the real app.
+            .tabContentWidth(fullBleed: tab == .trips)
 
             BottomNavBar(active: $tab)
                 .allowsHitTesting(false)

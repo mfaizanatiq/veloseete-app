@@ -307,6 +307,12 @@ extension View {
         background { VeloseeteBackground() }
     }
 
+    /// Tab page width: full-bleed for the Trips map, a centred phone-width column otherwise.
+    func tabContentWidth(fullBleed: Bool) -> some View {
+        frame(maxWidth: fullBleed ? .infinity : VS.Layout.readableWidth)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
     /// Cap to a phone-width column and centre it; no-op on regular iPhones.
     func readableWidth(_ width: CGFloat = VS.Layout.readableWidth) -> some View {
         frame(maxWidth: width).frame(maxWidth: .infinity)
