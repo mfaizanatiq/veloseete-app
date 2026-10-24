@@ -73,11 +73,14 @@ struct TripCoordinate: Codable, Equatable, Hashable {
 enum TripRole: String, Codable, Equatable {
     case driver
     case passenger
+    /// You drove, but a car that isn't in the garage — a rental or a friend's car.
+    case otherCar
 
     var label: String {
         switch self {
         case .driver: "Driver"
         case .passenger: "Passenger"
+        case .otherCar: "Other car"
         }
     }
 }
@@ -130,14 +133,16 @@ struct Trip: Identifiable, Equatable {
     var endCoordinate: TripCoordinate?
     var route: [TripCoordinate]
     var source: String // "auto" | "manual"
-    /// "driver" or "passenger". Missing on older trips means the person was driving.
+    /// "driver", "passenger" or "otherCar". Missing on older trips means the person was driving.
     var role: String = TripRole.driver.rawValue
     /// Five speed-band sample counts. Empty on trips recorded before the histogram.
     var speedBuckets: [Int] = []
 
     var tripRole: TripRole { TripRole(rawValue: role) ?? .driver }
-    /// Passenger legs are logged, but they are not kilometres this car was driven by you.
-    var countsAsDriven: Bool { tripRole == .driver }
+    /// You were behind the wheel — counts toward your driving stats.
+    var countsAsDriven: Bool { tripRole != .passenger }
+    /// Kilometres this garage car actually did — the odometer and fuel only follow these.
+    var countsOnVehicle: Bool { tripRole == .driver }
 }
 
 extension Trip {

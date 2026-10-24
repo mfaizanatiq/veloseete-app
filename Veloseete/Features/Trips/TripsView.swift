@@ -2007,7 +2007,8 @@ struct TripDetailView: View {
             }
 
             HStack(spacing: 8) {
-                if let vehicle {
+                // A rental drive sits under your car in the log, but it wasn't your car.
+                if let vehicle, trip.tripRole != .otherCar {
                     metaChip {
                         VehicleMark(
                             style: VehicleMarkStyle.resolve(vehicle.icon),
@@ -2017,7 +2018,7 @@ struct TripDetailView: View {
                     } text: { vehicle.nickname }
                 }
                 metaChip {
-                    VSIcon(icon: trip.tripRole == .passenger ? .user : .gauge, size: 13, weight: .fill, tint: VS.Color.textSecondary)
+                    VSIcon(icon: roleIcon, size: 13, weight: .fill, tint: VS.Color.textSecondary)
                 } text: { trip.tripRole.label }
                 metaChip {
                     VSIcon(icon: trip.source == "auto" ? .target : .play, size: 13, weight: .fill, tint: VS.Color.textSecondary)
@@ -2095,17 +2096,19 @@ struct TripDetailView: View {
                 }
             }
             HStack(alignment: .top, spacing: 12) {
-                Image(systemName: trip.countsAsDriven ? "checkmark.circle.fill" : "person.fill")
+                Image(systemName: trip.countsOnVehicle ? "checkmark.circle.fill" : (trip.tripRole == .otherCar ? "car.fill" : "person.fill"))
                     .font(.system(size: 16, weight: .semibold))
-                    .foregroundStyle(trip.countsAsDriven ? VS.Color.success : VS.Color.textTertiary)
+                    .foregroundStyle(trip.countsOnVehicle ? VS.Color.success : VS.Color.textTertiary)
                     .frame(width: 22)
                 VStack(alignment: .leading, spacing: 3) {
-                    Text(trip.countsAsDriven ? TrackyVoice.Soft.inEstimateTitle : "Off the odometer")
+                    Text(trip.countsOnVehicle ? TrackyVoice.Soft.inEstimateTitle : "Off the odometer")
                         .font(VS.TextStyle.headline())
                         .foregroundStyle(VS.Color.textPrimary)
-                    Text(trip.countsAsDriven
+                    Text(trip.countsOnVehicle
                          ? TrackyVoice.Soft.inEstimateBody(distance: DistanceFormat.formatDistance(trip.distanceKm, unit: unit))
-                         : "Passenger trip. It stays in your log and off the odometer.")
+                         : (trip.tripRole == .otherCar
+                            ? "Rental or borrowed car. It counts toward your driving, not your car’s odometer or fuel."
+                            : "Passenger trip. It stays in your log and off the odometer."))
                         .font(VS.TextStyle.footnote(.medium))
                         .foregroundStyle(VS.Color.textTertiary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -2288,9 +2291,17 @@ struct TripDetailView: View {
         store.fuelLogs.filter { $0.vehicleId == trip.vehicleId }
     }
 
+    private var roleIcon: VSIconName {
+        switch trip.tripRole {
+        case .driver: .gauge
+        case .passenger: .user
+        case .otherCar: .car
+        }
+    }
+
     /// Rough fuel for this leg from the car's own consumption. Passenger legs are skipped.
     private var estimatedLiters: Double? {
-        guard trip.countsAsDriven, trip.distanceKm >= 0.2, let vehicle else { return nil }
+        guard trip.countsOnVehicle, trip.distanceKm >= 0.2, let vehicle else { return nil }
         let litersPer100 = DriveMoodBaseline.resolve(
             vehicle: vehicle,
             logs: vehicleLogs,
@@ -2641,10 +2652,10 @@ struct DrivesListModel {
             let time = trip.startedAt.formatted(date: .omitted, time: .shortened)
             // Leaderboards care which day, not which minute — keeps room for the origin.
             var timeLabel = showsDay ? dayFormatter.string(from: trip.startedAt) : time
-            if trip.tripRole == .passenger { timeLabel += " · Passenger" }
+            if trip.tripRole != .driver { timeLabel += " · \(trip.tripRole.label)" }
             let meta = "\(timeLabel) · \(DriveListCopy.duration(trip.durationSec))"
             let distance = DistanceFormat.formatDistance(trip.distanceKm, unit: input.unit)
-            let fuel = fuelLabel(distanceKm: trip.distanceKm, vehicleId: trip.vehicleId, counts: trip.countsAsDriven)
+            let fuel = fuelLabel(distanceKm: trip.distanceKm, vehicleId: trip.vehicleId, counts: trip.countsOnVehicle)
             // The speed leaderboard leads with what it ranks by.
             let value = input.sort == .fastest ? speedLabel(trip.maxSpeedKmh) : distance
             let detail = input.sort == .fastest ? distance : DriveListCopy.shortDuration(trip.durationSec)

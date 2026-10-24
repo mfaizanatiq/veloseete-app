@@ -16,6 +16,13 @@ struct TripConfirmSheet: View {
     /// Car this drive is saved to. Starts as the car that was current when it was
     /// recorded; switch it for a rental or a friend's car.
     @State private var vehicleId: String = ""
+    /// Drove a car that isn't in the garage — no need to add a rental just to log it.
+    @State private var usesOtherCar = false
+
+    private var effectiveRole: TripRole {
+        if role == .passenger { return .passenger }
+        return usesOtherCar ? .otherCar : .driver
+    }
 
     private var selectedVehicle: Vehicle? {
         store.vehicles.first { $0.id == vehicleId }
@@ -37,7 +44,7 @@ struct TripConfirmSheet: View {
 
     /// The pending km is already in the recording car's estimate; for another car add it on top.
     private var movesToOtherCar: Bool {
-        !vehicleId.isEmpty && vehicleId != pending.vehicleId
+        !usesOtherCar && !vehicleId.isEmpty && vehicleId != pending.vehicleId
     }
 
     /// Estimate after this confirm — same total (pending → confirmed), for clarity.
@@ -77,17 +84,24 @@ struct TripConfirmSheet: View {
                         durationSec: pending.durationSec,
                         maxSpeedKmh: pending.maxSpeedKmh,
                         avgSpeedKmh: pending.avgSpeedKmh,
-                        vehicleName: selectedVehicle?.nickname ?? pending.vehicleName,
+                        vehicleName: usesOtherCar ? Self.otherCarLabel : (selectedVehicle?.nickname ?? pending.vehicleName),
                         unit: store.defaultDistanceUnit,
                         speedBuckets: pending.speedBuckets,
-                        role: role,
+                        role: effectiveRole,
                         roleSelection: $role
                     )
 
-                    vehiclePicker
+                    if role != .passenger {
+                        vehiclePicker
+                    }
 
                     if role == .passenger {
-                        Text("Logged as a passenger. This distance stays off your odometer.")
+                        Text("Logged as a passenger. Uber, a lift, a friend driving: it stays in your log and off your odometer.")
+                            .font(VS.TextStyle.footnote(.medium))
+                            .foregroundStyle(VS.Color.textTertiary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    } else if usesOtherCar {
+                        Text("Counts toward your driving. Stays off \(pending.vehicleName)’s odometer and fuel.")
                             .font(VS.TextStyle.footnote(.medium))
                             .foregroundStyle(VS.Color.textTertiary)
                             .fixedSize(horizontal: false, vertical: true)
@@ -184,39 +198,64 @@ struct TripConfirmSheet: View {
             Text("WHICH CAR?")
                 .font(VS.TextStyle.label())
                 .foregroundStyle(VS.Color.textTertiary)
-            if store.vehicles.count > 1 {
-                ScrollView(.horizontal) {
-                    HStack(spacing: 8) {
-                        ForEach(store.vehicles) { vehicle in
-                            vehicleChip(vehicle)
-                        }
+            ScrollView(.horizontal) {
+                // Recording car, then Rental / other — both on screen without scrolling.
+                HStack(spacing: 8) {
+                    if let first = pickerVehicles.first {
+                        vehicleChip(first)
+                    }
+                    chip(isSelected: usesOtherCar, title: Self.otherCarLabel) {
+                        usesOtherCar = true
+                    } icon: {
+                        VSIcon(icon: .car, size: 16, weight: .fill, tint: usesOtherCar ? VS.Color.navPill : VS.Color.textSecondary)
+                    }
+                    ForEach(pickerVehicles.dropFirst()) { vehicle in
+                        vehicleChip(vehicle)
                     }
                 }
-                .scrollIndicators(.hidden)
             }
-            Text(store.vehicles.count > 1
-                 ? "Driving a rental or a friend’s car? Pick it so these km stay off your own car."
-                 : "Driving a rental? Add it in Garage and it shows up here. Archive it when you hand it back.")
+            .scrollIndicators(.hidden)
+            Text("Rental or a friend’s car? Pick \(Self.otherCarLabel) — no need to add it to your garage.")
                 .font(VS.TextStyle.footnote(.medium))
                 .foregroundStyle(VS.Color.textTertiary)
                 .fixedSize(horizontal: false, vertical: true)
         }
     }
 
+    private static let otherCarLabel = "Rental / other"
+
+    private var pickerVehicles: [Vehicle] {
+        let recording = store.vehicles.filter { $0.id == pending.vehicleId }
+        return recording + store.vehicles.filter { $0.id != pending.vehicleId }
+    }
+
     private func vehicleChip(_ vehicle: Vehicle) -> some View {
-        let isSelected = vehicle.id == vehicleId
-        return Button {
+        chip(isSelected: !usesOtherCar && vehicle.id == vehicleId, title: vehicle.nickname) {
+            vehicleId = vehicle.id
+            usesOtherCar = false
+        } icon: {
+            VehicleMark(
+                style: VehicleMarkStyle.resolve(vehicle.icon),
+                size: 20,
+                paint: VehiclePaintColor.resolve(vehicle.paintColor)
+            )
+        }
+    }
+
+    private func chip<Icon: View>(
+        isSelected: Bool,
+        title: String,
+        select: @escaping () -> Void,
+        @ViewBuilder icon: () -> Icon
+    ) -> some View {
+        Button {
             guard !isSelected else { return }
             UISelectionFeedbackGenerator().selectionChanged()
-            vehicleId = vehicle.id
+            select()
         } label: {
             HStack(spacing: 7) {
-                VehicleMark(
-                    style: VehicleMarkStyle.resolve(vehicle.icon),
-                    size: 20,
-                    paint: VehiclePaintColor.resolve(vehicle.paintColor)
-                )
-                Text(vehicle.nickname)
+                icon()
+                Text(title)
                     .font(VS.TextStyle.subheadline(.semibold))
                     .foregroundStyle(isSelected ? VS.Color.navPill : VS.Color.textSecondary)
                     .lineLimit(1)
@@ -227,7 +266,7 @@ struct TripConfirmSheet: View {
             .background(isSelected ? VS.Color.accent : VS.Color.chip, in: Capsule())
         }
         .buttonStyle(.plain)
-        .accessibilityLabel(vehicle.nickname)
+        .accessibilityLabel(title)
         .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 
@@ -237,8 +276,9 @@ struct TripConfirmSheet: View {
         errorMessage = nil
         do {
             var saving = pending
-            saving.role = role.rawValue
-            if let selectedVehicle {
+            saving.role = effectiveRole.rawValue
+            // Other-car drives stay filed under the recording car, flagged off its odometer.
+            if !usesOtherCar, let selectedVehicle {
                 saving.vehicleId = selectedVehicle.id
                 saving.vehicleName = selectedVehicle.nickname
             }
@@ -384,7 +424,7 @@ struct TripReviewSummary: View {
             HStack(spacing: 10) {
                 reviewFact(icon: .car, title: "Vehicle", value: vehicleName)
                 reviewFact(
-                    icon: role == .passenger ? .user : .gauge,
+                    icon: role == .passenger ? .user : (role == .otherCar ? .car : .gauge),
                     title: "Role",
                     value: role.label
                 )
@@ -393,16 +433,18 @@ struct TripReviewSummary: View {
             if let roleSelection {
                 HStack(spacing: 8) {
                     ForEach([TripRole.driver, .passenger], id: \.self) { item in
+                        // An other-car drive is still you driving.
+                        let isOn = item == .passenger ? role == .passenger : role != .passenger
                         Button {
                             UISelectionFeedbackGenerator().selectionChanged()
                             roleSelection.wrappedValue = item
                         } label: {
                             Text(item == .driver ? "I'm driving" : "I'm a passenger")
                                 .font(VS.TextStyle.subheadline(.semibold))
-                                .foregroundStyle(role == item ? VS.Color.navPill : VS.Color.textSecondary)
+                                .foregroundStyle(isOn ? VS.Color.navPill : VS.Color.textSecondary)
                                 .frame(maxWidth: .infinity)
                                 .padding(.vertical, 12)
-                                .background(role == item ? VS.Color.accent : VS.Color.chip, in: Capsule())
+                                .background(isOn ? VS.Color.accent : VS.Color.chip, in: Capsule())
                         }
                         .buttonStyle(.plain)
                     }

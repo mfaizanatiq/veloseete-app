@@ -71,6 +71,15 @@ final class DriverProfileSnapshotTests: XCTestCase {
         XCTAssertEqual(snapshot.records.first { $0.kind == .longest }?.value, "10.0")
     }
 
+    func testRentalDrivesCountAsYourDrivingButNotYourCar() {
+        let rental = trip(daysAgo: 2, km: 120, role: .otherCar)
+        XCTAssertTrue(rental.countsAsDriven)
+        XCTAssertFalse(rental.countsOnVehicle)
+        let snapshot = build([trip(daysAgo: 1, km: 10), rental])
+        XCTAssertEqual(snapshot.lifetimeDrives, 2)
+        XCTAssertEqual(snapshot.records.first { $0.kind == .longest }?.value, "120")
+    }
+
     func testRollingWindowIgnoresCalendarMonth() {
         // 25 days ago is last month, but still inside the rolling 30 days.
         let snapshot = build([trip(daysAgo: 25, km: 40), trip(daysAgo: 45, km: 20)])

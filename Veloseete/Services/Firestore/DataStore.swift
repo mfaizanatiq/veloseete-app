@@ -121,7 +121,7 @@ final class DataStore: ObservableObject {
         let confirmed = trips
             .filter {
                 $0.vehicleId == vehicleId
-                    && $0.countsAsDriven
+                    && $0.countsOnVehicle
                     && $0.endedAt > verifiedAt
                     && $0.endedAt <= date
             }
