@@ -13,6 +13,13 @@ struct TripConfirmSheet: View {
     @State private var isSaving = false
     @State private var errorMessage: String?
     @State private var role: TripRole = .driver
+    /// Car this drive is saved to. Starts as the car that was current when it was
+    /// recorded; switch it for a rental or a friend's car.
+    @State private var vehicleId: String = ""
+
+    private var selectedVehicle: Vehicle? {
+        store.vehicles.first { $0.id == vehicleId }
+    }
 
     private var queuePeers: [PendingTripSave] {
         recorder.pendingSaves
@@ -25,12 +32,23 @@ struct TripConfirmSheet: View {
     }
 
     private var estimate: OdometerEstimate? {
-        store.odometerEstimate(vehicleId: pending.vehicleId)
+        store.odometerEstimate(vehicleId: vehicleId)
+    }
+
+    /// The pending km is already in the recording car's estimate; for another car add it on top.
+    private var movesToOtherCar: Bool {
+        !vehicleId.isEmpty && vehicleId != pending.vehicleId
     }
 
     /// Estimate after this confirm — same total (pending → confirmed), for clarity.
     private var estimateKm: Double? {
-        estimate?.estimatedKm
+        guard let estimate else { return nil }
+        guard movesToOtherCar else { return estimate.estimatedKm }
+        return VehicleLearningModel.estimatedKm(
+            verifiedKm: estimate.estimatedKm,
+            trackedKm: pending.distanceKm,
+            gpsScale: estimate.gpsScale
+        )
     }
 
     var body: some View {
@@ -59,12 +77,14 @@ struct TripConfirmSheet: View {
                         durationSec: pending.durationSec,
                         maxSpeedKmh: pending.maxSpeedKmh,
                         avgSpeedKmh: pending.avgSpeedKmh,
-                        vehicleName: pending.vehicleName,
+                        vehicleName: selectedVehicle?.nickname ?? pending.vehicleName,
                         unit: store.defaultDistanceUnit,
                         speedBuckets: pending.speedBuckets,
                         role: role,
                         roleSelection: $role
                     )
+
+                    vehiclePicker
 
                     if role == .passenger {
                         Text("Logged as a passenger. This distance stays off your odometer.")
@@ -78,7 +98,9 @@ struct TripConfirmSheet: View {
                                 Text(TrackyVoice.confirmEstimateTitle(km: estimateKm))
                                     .font(VS.TextStyle.headline())
                                     .foregroundStyle(VS.Color.textPrimary)
-                                Text(TrackyVoice.confirmEstimateBody())
+                                Text(movesToOtherCar
+                                     ? "Moves to \(selectedVehicle?.nickname ?? "this car") and stays off \(pending.vehicleName)."
+                                     : TrackyVoice.confirmEstimateBody())
                                     .font(VS.TextStyle.footnote(.medium))
                                     .foregroundStyle(VS.Color.textTertiary)
                                     .fixedSize(horizontal: false, vertical: true)
@@ -141,6 +163,12 @@ struct TripConfirmSheet: View {
                 .padding(.bottom, 28)
             }
             .veloseetePage()
+            .onAppear {
+                guard vehicleId.isEmpty else { return }
+                vehicleId = store.vehicles.contains { $0.id == pending.vehicleId }
+                    ? pending.vehicleId
+                    : (store.currentVehicle?.id ?? "")
+            }
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     ModalCloseButton { dismiss() }
@@ -150,6 +178,59 @@ struct TripConfirmSheet: View {
         .veloseeteSheet()
     }
 
+    @ViewBuilder
+    private var vehiclePicker: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("WHICH CAR?")
+                .font(VS.TextStyle.label())
+                .foregroundStyle(VS.Color.textTertiary)
+            if store.vehicles.count > 1 {
+                ScrollView(.horizontal) {
+                    HStack(spacing: 8) {
+                        ForEach(store.vehicles) { vehicle in
+                            vehicleChip(vehicle)
+                        }
+                    }
+                }
+                .scrollIndicators(.hidden)
+            }
+            Text(store.vehicles.count > 1
+                 ? "Driving a rental or a friend’s car? Pick it so these km stay off your own car."
+                 : "Driving a rental? Add it in Garage and it shows up here. Archive it when you hand it back.")
+                .font(VS.TextStyle.footnote(.medium))
+                .foregroundStyle(VS.Color.textTertiary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private func vehicleChip(_ vehicle: Vehicle) -> some View {
+        let isSelected = vehicle.id == vehicleId
+        return Button {
+            guard !isSelected else { return }
+            UISelectionFeedbackGenerator().selectionChanged()
+            vehicleId = vehicle.id
+        } label: {
+            HStack(spacing: 7) {
+                VehicleMark(
+                    style: VehicleMarkStyle.resolve(vehicle.icon),
+                    size: 20,
+                    paint: VehiclePaintColor.resolve(vehicle.paintColor)
+                )
+                Text(vehicle.nickname)
+                    .font(VS.TextStyle.subheadline(.semibold))
+                    .foregroundStyle(isSelected ? VS.Color.navPill : VS.Color.textSecondary)
+                    .lineLimit(1)
+            }
+            .padding(.leading, 10)
+            .padding(.trailing, 14)
+            .padding(.vertical, 9)
+            .background(isSelected ? VS.Color.accent : VS.Color.chip, in: Capsule())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(vehicle.nickname)
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
+    }
+
     private func save() async {
         guard !isSaving else { return }
         isSaving = true
@@ -157,6 +238,10 @@ struct TripConfirmSheet: View {
         do {
             var saving = pending
             saving.role = role.rawValue
+            if let selectedVehicle {
+                saving.vehicleId = selectedVehicle.id
+                saving.vehicleName = selectedVehicle.nickname
+            }
             _ = try await store.saveTrip(saving, odometer: pending.suggestedOdometer, applyOdometer: false)
             recorder.markPendingSaved(id: pending.id)
             let next = recorder.pendingSaves
@@ -239,7 +324,7 @@ private struct PendingTripRouteMap: View {
                 }
             }
         }
-        .mapStyle(.standard(elevation: .realistic, pointsOfInterest: .excludingAll, showsTraffic: false))
+        .mapStyle(.standard(elevation: .flat, pointsOfInterest: .excludingAll, showsTraffic: false))
         .mapControlVisibility(.hidden)
         .preferredColorScheme(.dark)
         .accessibilityLabel("Recorded trip route")
@@ -470,3 +555,47 @@ struct SpeedMixView: View {
         )
     }
 }
+
+#if DEBUG
+/// Simulator-only — review sheet over the demo garage, so the car picker has cars.
+/// Launch with: `-TripReviewPreview`
+struct TripReviewPreview: View {
+    @StateObject private var store = DataStore.shared
+
+    private static let pending: PendingTripSave = {
+        let end = Date().addingTimeInterval(-20 * 60)
+        let route = (0..<40).map { i in
+            TripCoordinate(latitude: 25.20 + Double(i) * 0.0016, longitude: 55.27 + sin(Double(i) / 6) * 0.004)
+        }
+        return PendingTripSave(
+            id: UUID(),
+            vehicleId: "demo-coolray",
+            vehicleName: "Coolray",
+            startedAt: end.addingTimeInterval(-24 * 60),
+            endedAt: end,
+            distanceKm: 18.6,
+            durationSec: 24 * 60,
+            avgSpeedKmh: 46,
+            maxSpeedKmh: 92,
+            startCoordinate: route.first,
+            endCoordinate: route.last,
+            route: route,
+            source: "auto",
+            suggestedOdometer: 0,
+            speedBuckets: [30, 22, 12, 2, 0]
+        )
+    }()
+
+    init() {
+        DataStore.shared.seedProductShots()
+    }
+
+    var body: some View {
+        TripConfirmSheet(pending: Self.pending)
+            .environmentObject(store)
+            .environmentObject(TripRecordingService.shared)
+            .preferredColorScheme(.dark)
+            .tint(VS.Color.accent)
+    }
+}
+#endif

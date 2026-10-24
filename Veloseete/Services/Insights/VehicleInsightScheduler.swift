@@ -201,14 +201,14 @@ enum FuelInsightLogic {
         var fireDate: Date
     }
 
-    /// Multi-signal low-fuel detector.
+    /// Physical low-fuel detector: a litre ledger, not a guess from habit.
     ///
-    /// Combines:
-    /// - fill-to-fill km pattern (full tanks preferred)
-    /// - liters put in × measured L/100km → range budget
-    /// - tank capacity when known
-    /// - brochure L/100km as a soft prior when history is thin
-    /// - km actually driven since the last fill (odometer + trips)
+    /// The tank is full (capacity) at the last full-tank fill; every later fill
+    /// adds its litres, and every km driven burns the measured L/100km. What's
+    /// left is real fuel in the tank, so:
+    /// - topping up at half a tank no longer teaches us the tank is "half size"
+    /// - a 15 L fill-to-full doesn't shrink range to 15 L worth of km
+    /// - a partial top-up keeps the fuel that was already in the tank
     ///
     /// Calendar cadence alone never triggers a notification — without a km
     /// signal we refuse to cry wolf.
@@ -221,8 +221,8 @@ enum FuelInsightLogic {
         now: Date = Date(),
         calendar: Calendar = .current
     ) -> FuelPrediction? {
-        let sorted = logs.sorted { $0.timestamp < $1.timestamp }
-        guard sorted.count >= 2, let last = sorted.last else { return nil }
+        let sorted = logs.filter { $0.fuelVolume > 0 }.sorted { $0.timestamp < $1.timestamp }
+        guard let last = sorted.last else { return nil }
         guard let odometer = estimatedOdometer else {
             // No odometer picture at all → we cannot know the tank state.
             return nil
@@ -231,30 +231,33 @@ enum FuelInsightLogic {
         let kmSince = max(0, odometer - last.odometerReading)
         let daysSince = max(now.timeIntervalSince(last.timestamp) / 86_400, 0.01)
 
-        let pattern = fillPattern(from: sorted)
-        let efficiency = measuredLitersPer100km(from: sorted)
+        let measured = measuredEfficiency(from: sorted)
+        let efficiency = measured?.litersPer100km
             ?? brochureL100km
             ?? defaultEfficiencyFallback
-
-        // Range this fill should cover — prefers learned EWMA when available.
-        let budgetTuple = VehicleLearningModel.rangeBudgetKm(
-            state: learning,
-            lastFillLiters: last.fuelVolume,
-            isFullTank: last.isFullTank,
+        guard let tank = tankState(
+            logs: sorted,
+            kmSinceLastFill: kmSince,
             litersPer100km: efficiency,
-            patternTypicalRangeKm: pattern.typicalRangeKm,
-            patternSampleCount: pattern.sampleCount,
             tankCapacityLiters: tankCapacityLiters
-        )
-        let budget = RangeBudget(km: budgetTuple.km, confidence: budgetTuple.confidence)
-        guard budget.km > 30 else { return nil }
+        ) else { return nil }
 
-        let kmLeft = budget.km - kmSince
-        let fractionLeft = max(0, min(1, kmLeft / budget.km))
+        let fullRangeKm = tank.capacityLiters / efficiency * 100
+        guard fullRangeKm > 30 else { return nil }
+        let kmLeft = tank.litersLeft / efficiency * 100
+        let fractionLeft = tank.litersLeft / tank.capacityLiters
         let tankPercent = fractionLeft * 100
 
+        let confidence = tankConfidence(
+            capacityIsSpec: tank.capacityIsSpec,
+            anchoredOnFullTank: tank.anchoredOnFullTank,
+            measuredIntervals: measured?.intervals ?? 0,
+            hasBrochure: brochureL100km != nil
+        )
+
         // Pace: trust observed driving more as this tank ages.
-        let historicalPace = max(pattern.typicalDailyKm ?? (budget.km / max(pattern.typicalDays ?? 7, 1)), 5)
+        let pattern = fillPattern(from: sorted)
+        let historicalPace = max(pattern.typicalDailyKm ?? (fullRangeKm / max(pattern.typicalDays ?? 7, 1)), 5)
         let actualPace = kmSince / daysSince
         let paceConfidence = min(daysSince / 2.5, 1)
         let dailyKm = max(actualPace * paceConfidence + historicalPace * (1 - paceConfidence), 3)
@@ -269,7 +272,7 @@ enum FuelInsightLogic {
         let urgency = classifyUrgency(
             fractionLeft: fractionLeft,
             kmLeft: kmLeft,
-            confidence: budget.confidence
+            confidence: confidence
         )
 
         let fire = notificationFireDate(
@@ -285,13 +288,81 @@ enum FuelInsightLogic {
             daysRemaining: daysRemaining,
             kmRemaining: max(kmLeft, 0),
             tankPercentRemaining: tankPercent,
-            confidence: budget.confidence,
+            confidence: confidence,
             urgency: urgency,
             fireDate: fire
         )
     }
 
-    // MARK: - Pattern & budget
+    // MARK: - Tank ledger
+
+    struct TankState: Equatable {
+        var litersLeft: Double
+        var capacityLiters: Double
+        /// False when capacity was inferred from the biggest fill (a lower bound).
+        var capacityIsSpec: Bool
+        /// False when no full-tank fill exists, so the starting level is a guess.
+        var anchoredOnFullTank: Bool
+    }
+
+    /// Litres in the tank right now, replayed from the last full-tank fill.
+    static func tankState(
+        logs sorted: [FuelLog],
+        kmSinceLastFill: Double,
+        litersPer100km: Double,
+        tankCapacityLiters: Double?
+    ) -> TankState? {
+        guard !sorted.isEmpty, litersPer100km > 0 else { return nil }
+        let biggestFill = sorted.map(\.fuelVolume).max() ?? 0
+        let spec = tankCapacityLiters.flatMap { $0 > 5 ? $0 : nil }
+        // A fill bigger than the spec means the spec is off — never claim less room than we've seen poured in.
+        let capacity = max(spec ?? 0, biggestFill)
+        guard capacity > 5 else { return nil }
+
+        let anchorIndex = sorted.lastIndex(where: \.isFullTank)
+        let startIndex = anchorIndex ?? 0
+        // Without a full tank on record, the first fill's litres are all we can vouch for.
+        var liters = anchorIndex != nil ? capacity : min(sorted[startIndex].fuelVolume, capacity)
+        var previousOdo = sorted[startIndex].odometerReading
+
+        for log in sorted[(startIndex + 1)...] {
+            let driven = max(0, log.odometerReading - previousOdo)
+            liters = max(0, liters - driven * litersPer100km / 100)
+            liters = min(capacity, liters + log.fuelVolume)
+            previousOdo = log.odometerReading
+        }
+        liters = max(0, liters - max(0, kmSinceLastFill) * litersPer100km / 100)
+
+        return TankState(
+            litersLeft: liters,
+            capacityLiters: capacity,
+            capacityIsSpec: spec != nil,
+            anchoredOnFullTank: anchorIndex != nil
+        )
+    }
+
+    private static func tankConfidence(
+        capacityIsSpec: Bool,
+        anchoredOnFullTank: Bool,
+        measuredIntervals: Int,
+        hasBrochure: Bool
+    ) -> Double {
+        var confidence = capacityIsSpec ? 0.45 : 0.25
+        if anchoredOnFullTank { confidence += 0.2 }
+        if measuredIntervals >= 3 {
+            confidence += 0.25
+        } else if measuredIntervals >= 1 {
+            confidence += 0.15
+        } else if hasBrochure {
+            confidence += 0.05
+        }
+        // Inferred capacity is a lower bound (you may never fill from empty) —
+        // good enough for the in-app gauge, not for a push alert.
+        if !capacityIsSpec { confidence = min(confidence, 0.5) }
+        return min(confidence, 0.95)
+    }
+
+    // MARK: - Pattern
 
     private struct FillPattern {
         var typicalRangeKm: Double?
@@ -300,15 +371,12 @@ enum FuelInsightLogic {
         var sampleCount: Int
     }
 
-    private struct RangeBudget {
-        var km: Double
-        var confidence: Double
-    }
-
     private static let defaultEfficiencyFallback = 8.5
 
     /// Prefer full→full intervals; fall back to any fill-to-fill gaps.
+    /// Habit only sets the driving pace — it never decides how big the tank is.
     private static func fillPattern(from sorted: [FuelLog]) -> FillPattern {
+        guard sorted.count >= 2 else { return FillPattern(sampleCount: 0) }
         var fullKm: [Double] = []
         var fullDays: [Double] = []
         var anyKm: [Double] = []
@@ -352,7 +420,7 @@ enum FuelInsightLogic {
         )
     }
 
-    private static func measuredLitersPer100km(from sorted: [FuelLog]) -> Double? {
+    private static func measuredEfficiency(from sorted: [FuelLog]) -> (litersPer100km: Double, intervals: Int)? {
         // Distance-weighted over recent full-tank closed intervals.
         var distances: [Double] = []
         var fuels: [Double] = []
@@ -380,55 +448,10 @@ enum FuelInsightLogic {
         let totalKm = recent.reduce(0.0) { $0 + $1.0 }
         let totalFuel = recent.reduce(0.0) { $0 + $1.1 }
         guard totalKm > 80, totalFuel > 0 else { return nil }
-        return totalFuel / totalKm * 100
-    }
-
-    private static func rangeBudget(
-        lastFill: FuelLog,
-        pattern: FillPattern,
-        litersPer100km: Double,
-        tankCapacityLiters: Double?
-    ) -> RangeBudget {
-        let volumeRange = lastFill.fuelVolume / max(litersPer100km, 1) * 100
-        var candidates: [(km: Double, weight: Double)] = []
-        var confidence = 0.35
-
-        if let typical = pattern.typicalRangeKm, typical > 30 {
-            if lastFill.isFullTank {
-                candidates.append((typical, 1.0))
-                confidence = pattern.sampleCount >= 3 ? 0.85 : 0.65
-            } else {
-                // Partial: only claim the liters you actually put in.
-                candidates.append((min(typical, volumeRange), 1.0))
-                confidence = pattern.sampleCount >= 3 ? 0.7 : 0.55
-            }
-        } else {
-            candidates.append((volumeRange, 0.8))
-            confidence = 0.45
-        }
-
-        // Tank capacity caps a full fill's range (you can't go farther than a full tank).
-        if lastFill.isFullTank, let tank = tankCapacityLiters, tank > 5 {
-            let tankRange = tank / max(litersPer100km, 1) * 100
-            candidates.append((tankRange, 0.7))
-            confidence = max(confidence, 0.7)
-        } else if !lastFill.isFullTank, let tank = tankCapacityLiters, tank > 5 {
-            // Partial into unknown prior level — trust volume more than "typical tank".
-            let capped = min(volumeRange, tank / max(litersPer100km, 1) * 100)
-            candidates.append((capped, 1.0))
-        }
-
-        // Always consider the literal liters→km conversion.
-        candidates.append((volumeRange, lastFill.isFullTank ? 0.5 : 1.0))
-
-        let weighted = candidates.reduce(0.0) { $0 + $1.km * $1.weight }
-        let weightSum = candidates.reduce(0.0) { $0 + $1.weight }
-        let km = weightSum > 0 ? weighted / weightSum : volumeRange
-
-        // Fresh fill with almost no driving history on this car stays low-confidence.
-        if pattern.sampleCount < 2 { confidence = min(confidence, 0.5) }
-
-        return RangeBudget(km: max(km, 20), confidence: confidence)
+        let l100 = totalFuel / totalKm * 100
+        // Typos (missing digit, litres entered as cost) shouldn't redefine the car.
+        guard (2.5...30).contains(l100) else { return nil }
+        return (l100, recent.count)
     }
 
     private static func classifyUrgency(

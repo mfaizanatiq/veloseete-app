@@ -146,10 +146,13 @@ private struct DriveEfficiencyArcMeter: View {
             // Padded semicircle — cap so leftover panel height doesn't inflate it.
             let arcHeight = min(max(innerWidth * 0.46, 148), 188)
             let drawRect = CGRect(x: sideInset, y: 0, width: innerWidth, height: arcHeight)
-            let arc = DriveWavyArc(amplitude: amplitude, wavelength: wavelength)
-            let tip = arc.point(at: snapped, in: drawRect)
-            let start = arc.point(at: 0, in: drawRect)
-            let end = arc.point(at: 1, in: drawRect)
+            // Sample the wave once per pass — path, tip and both feet all read the same points.
+            let arc = DriveWavyArc(
+                points: DriveWavyArc.samplePoints(in: drawRect, amplitude: amplitude, wavelength: wavelength)
+            )
+            let tip = arc.point(at: snapped)
+            let start = arc.point(at: 0)
+            let end = arc.point(at: 1)
             let speedSize: CGFloat = 48
 
             ZStack(alignment: .top) {
@@ -184,6 +187,8 @@ private struct DriveEfficiencyArcMeter: View {
                         .animation(.spring(response: 0.45, dampingFraction: 0.82), value: snapped)
                 }
                 .frame(width: geo.size.width, height: arcHeight)
+                // One Metal pass for the glowing stroke + marker instead of re-shadowing every frame of the spring.
+                .drawingGroup()
 
                 VSIcon(
                     icon: .gasPump,
@@ -255,25 +260,20 @@ private struct DriveEfficiencyArcMeter: View {
 }
 
 /// Semicircle gauge with a soft sine along the stroke — same smoothness as the line bar.
+/// Points are sampled once by the caller, already in the gauge's coordinate space.
 private struct DriveWavyArc: Shape {
-    var amplitude: CGFloat
-    var wavelength: CGFloat
+    let points: [CGPoint]
 
     func path(in rect: CGRect) -> Path {
         var path = Path()
-        let points = samplePoints(in: rect)
         guard points.count > 1 else { return path }
-        path.move(to: points[0])
         // Fine polyline reads as a smooth curve when amplitude is gentle.
-        for point in points.dropFirst() {
-            path.addLine(to: point)
-        }
+        path.addLines(points)
         return path
     }
 
-    func point(at progress: Double, in rect: CGRect) -> CGPoint {
-        let points = samplePoints(in: rect)
-        guard points.count > 1 else { return CGPoint(x: rect.midX, y: rect.midY) }
+    func point(at progress: Double) -> CGPoint {
+        guard points.count > 1 else { return points.first ?? .zero }
         let t = min(max(progress, 0), 1) * Double(points.count - 1)
         let i = Int(t)
         let f = CGFloat(t - Double(i))
@@ -283,7 +283,7 @@ private struct DriveWavyArc: Shape {
         return CGPoint(x: a.x + (b.x - a.x) * f, y: a.y + (b.y - a.y) * f)
     }
 
-    private func samplePoints(in rect: CGRect) -> [CGPoint] {
+    static func samplePoints(in rect: CGRect, amplitude: CGFloat, wavelength: CGFloat) -> [CGPoint] {
         // Leave room at the sides so the stroke doesn’t clip under the end icons.
         let inset = rect.insetBy(dx: 10, dy: 10)
         let center = CGPoint(x: inset.midX, y: inset.maxY - 2)

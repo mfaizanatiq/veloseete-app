@@ -111,11 +111,13 @@ final class DataStore: ObservableObject {
         let serviceAnchors = serviceLogs
             .filter { $0.vehicleId == vehicleId && $0.timestamp <= date }
             .map { ($0.timestamp, $0.odometerReading, "Service entry") }
-        let anchor = (fuelAnchors + serviceAnchors).max { $0.0 < $1.0 }
+        let anchor = OdometerReconciliation.latestTrustedAnchor(fuelAnchors + serviceAnchors)
         let verifiedAt = anchor?.0 ?? vehicle.createdAt
         let verifiedKm = anchor?.1 ?? vehicle.currentOdometer
         let source = anchor?.2 ?? "Vehicle reading"
 
+        // A drive that was already rolling when the reading was taken only
+        // counts for the part after it — no double-counting the pump run.
         let confirmed = trips
             .filter {
                 $0.vehicleId == vehicleId
@@ -123,11 +125,30 @@ final class DataStore: ObservableObject {
                     && $0.endedAt > verifiedAt
                     && $0.endedAt <= date
             }
-            .reduce(0) { $0 + $1.distanceKm }
+            .reduce(0) {
+                $0 + OdometerReconciliation.kmAfter(
+                    verifiedAt,
+                    startedAt: $1.startedAt,
+                    endedAt: $1.endedAt,
+                    distanceKm: $1.distanceKm
+                )
+            }
 
         let pending = TripRecordingService.shared.pendingSaves
-            .filter { $0.vehicleId == vehicleId && $0.endedAt > verifiedAt && $0.endedAt <= date }
-            .reduce(0) { $0 + $1.distanceKm }
+            .filter {
+                $0.vehicleId == vehicleId
+                    && $0.tripRole == .driver
+                    && $0.endedAt > verifiedAt
+                    && $0.endedAt <= date
+            }
+            .reduce(0) {
+                $0 + OdometerReconciliation.kmAfter(
+                    verifiedAt,
+                    startedAt: $1.startedAt,
+                    endedAt: $1.endedAt,
+                    distanceKm: $1.distanceKm
+                )
+            }
 
         let learning = VehicleLearningStore.shared.state(for: vehicleId)
 

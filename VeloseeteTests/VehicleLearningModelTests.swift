@@ -239,8 +239,22 @@ final class VehicleLearningModelTests: XCTestCase {
             learning: learning
         )
         XCTAssertNotNil(pred)
-        // Budget ~450, kmSince = 110 → kmLeft ~340
-        XCTAssertEqual(pred!.kmRemaining ?? -1, 450 - 110, accuracy: 40)
+        // 50 L tank at the measured 38 L / 450 km; kmSince is the calibrated 110, not raw 100.
+        let fullRange = 50 / (38.0 / 450 * 100) * 100
+        XCTAssertEqual(pred!.kmRemaining ?? -1, fullRange - 110, accuracy: 1)
+    }
+
+    func testCalibratedScaleShrugsOffOneMissedTrip() {
+        var state = VehicleLearningState.default
+        state.gpsScale = 1.0
+        state.scaleSampleCount = 3
+        // Dash says 112 km over 100 GPS km — a short trip slipped past auto-detect.
+        let result = VehicleLearningModel.observeScale(
+            .init(previousDashKm: 10_000, newDashKm: 10_112, gpsTrackedKm: 100),
+            state: state
+        )
+        guard case .applied(_, let next) = result else { return XCTFail("expected applied") }
+        XCTAssertLessThanOrEqual(next.gpsScale, 1.0 + VehicleLearningModel.calibratedStepLimit + 1e-9)
     }
 
     // MARK: Helpers

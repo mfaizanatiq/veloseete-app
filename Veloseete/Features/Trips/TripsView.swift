@@ -139,12 +139,9 @@ struct TripsView: View {
     private func openTrip(id: String) {
         guard let trip = drives.trips.first(where: { $0.id == id }) else { return }
         UIImpactFeedbackGenerator(style: .light).impactOccurred()
-        withAnimation(.snappy(duration: 0.3)) {
-            selectedTripId = trip.id
-            if let region = drawerAwareRegion(for: trip, shiftForPitch: true) {
-                mapPosition = .camera(Self.pitchedCamera(for: region, overview: false))
-            }
-        }
+        // The sheet covers the map, so no camera flight underneath it — animating
+        // MapKit and the sheet together was what made opening a drive stutter.
+        selectedTripId = trip.id
         detailTrip = trip
     }
 
@@ -733,8 +730,8 @@ struct TripsView: View {
     }
 
     private var pulseOpacity: Double {
-        // Soft pulse without a Timer — driven by snapshot updates while recording.
-        let tick = Int((recorder.snapshot?.durationSec ?? 0) * 2)
+        // Soft pulse without a Timer — snapshots land once a second, so flip on whole seconds.
+        let tick = Int((recorder.snapshot?.durationSec ?? 0).rounded())
         return tick % 2 == 0 ? 1.0 : 0.45
     }
 
@@ -1086,10 +1083,6 @@ struct TripsView: View {
             RoundedRectangle(cornerRadius: 16, style: .continuous)
                 .stroke(VS.Color.accent.opacity(0.22), lineWidth: 1)
         )
-    }
-
-    private var routeStatusText: String {
-        TrackyVoice.routeStatus(accuracy: recorder.lastLocationAccuracy)
     }
 
     private func formatDuration(_ sec: Double) -> String {
@@ -2376,26 +2369,52 @@ struct TripDetailView: View {
     }
 
     private var routeMap: some View {
+        TripDetailRouteMap(trip: trip, region: routeRegion)
+            .equatable()
+    }
+
+}
+
+/// The detail hero map, built once per drive. Its own Equatable view so place
+/// lookups and store updates on the sheet never rebuild MapKit content.
+private struct TripDetailRouteMap: View, Equatable {
+    let tripId: String
+    let region: MKCoordinateRegion
+    let coordinates: [CLLocationCoordinate2D]
+    let start: CLLocationCoordinate2D?
+    let end: CLLocationCoordinate2D?
+
+    init(trip: Trip, region: MKCoordinateRegion) {
+        tripId = trip.id
+        self.region = region
+        coordinates = TripTrackingLogic.mapDisplayRoute(id: trip.id, points: trip.route, maximumPoints: 800)
+            .map { CLLocationCoordinate2D(latitude: $0.latitude, longitude: $0.longitude) }
+        start = (trip.startCoordinate ?? trip.route.first)
+            .map { CLLocationCoordinate2D(latitude: $0.latitude, longitude: $0.longitude) }
+        end = (trip.endCoordinate ?? trip.route.last)
+            .map { CLLocationCoordinate2D(latitude: $0.latitude, longitude: $0.longitude) }
+    }
+
+    static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.tripId == rhs.tripId && lhs.coordinates.count == rhs.coordinates.count
+    }
+
+    var body: some View {
         // Pinch to zoom only — panning would fight the page scroll.
-        Map(initialPosition: .region(routeRegion), interactionModes: [.zoom]) {
-            let displayRoute = TripTrackingLogic.mapDisplayRoute(id: trip.id, points: trip.route, maximumPoints: 800)
-            if displayRoute.count >= 2 {
-                MapPolyline(coordinates: displayRoute.map {
-                    CLLocationCoordinate2D(latitude: $0.latitude, longitude: $0.longitude)
-                })
-                .stroke(VS.Color.accent.opacity(0.22), lineWidth: 12)
-                MapPolyline(coordinates: displayRoute.map {
-                    CLLocationCoordinate2D(latitude: $0.latitude, longitude: $0.longitude)
-                })
-                .stroke(VS.Color.accent, style: StrokeStyle(lineWidth: 4, lineCap: .round, lineJoin: .round))
+        Map(initialPosition: .region(region), interactionModes: [.zoom]) {
+            if coordinates.count >= 2 {
+                MapPolyline(coordinates: coordinates)
+                    .stroke(VS.Color.accent.opacity(0.22), lineWidth: 12)
+                MapPolyline(coordinates: coordinates)
+                    .stroke(VS.Color.accent, style: StrokeStyle(lineWidth: 4, lineCap: .round, lineJoin: .round))
             }
-            if let start = trip.startCoordinate ?? trip.route.first {
-                Annotation("Start", coordinate: CLLocationCoordinate2D(latitude: start.latitude, longitude: start.longitude)) {
+            if let start {
+                Annotation("Start", coordinate: start) {
                     routeMarker(color: VS.Color.accent, icon: "play.fill")
                 }
             }
-            if let end = trip.endCoordinate ?? trip.route.last {
-                Annotation("Finish", coordinate: CLLocationCoordinate2D(latitude: end.latitude, longitude: end.longitude)) {
+            if let end {
+                Annotation("Finish", coordinate: end) {
                     routeMarker(color: Color.white, icon: "flag.fill")
                 }
             }
@@ -2405,8 +2424,9 @@ struct TripDetailView: View {
         .preferredColorScheme(.dark)
     }
 
+    // Flat: the hero is top-down, so 3D terrain cost GPU during the sheet slide without changing the look.
     private static let lockedMapStyle: MapStyle = .standard(
-        elevation: .realistic,
+        elevation: .flat,
         pointsOfInterest: .excludingAll,
         showsTraffic: false
     )
@@ -2419,7 +2439,6 @@ struct TripDetailView: View {
             .background(color, in: Circle())
             .overlay(Circle().stroke(Color.white.opacity(0.85), lineWidth: 2))
     }
-
 }
 
 // MARK: - My Drives data

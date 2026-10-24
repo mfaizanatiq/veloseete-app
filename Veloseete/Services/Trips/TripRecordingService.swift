@@ -143,7 +143,9 @@ final class TripRecordingService: NSObject, ObservableObject {
     /// Downsampled polyline for the Tracking map — idle/watching only.
     /// While recording we keep the full buffer privately and skip MapKit redraws.
     @Published private(set) var liveRoute: [TripCoordinate] = []
-    @Published private(set) var lastLocationAccuracy: Double?
+    /// Not published: it changes on every GPS fix and nothing on screen reads it,
+    /// so publishing it re-rendered the whole Trips tab once per fix.
+    private(set) var lastLocationAccuracy: Double?
     /// Latest usable fix for the tracking map camera (watching / idle follow only).
     @Published private(set) var followLatitude: Double?
     @Published private(set) var followLongitude: Double?

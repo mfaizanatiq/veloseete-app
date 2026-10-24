@@ -273,6 +273,30 @@ enum TripTrackingLogic {
 }
 
 enum OdometerReconciliation {
+    /// Latest dash reading that doesn't run backwards. A reading lower than an
+    /// earlier one is a typo (dashes only go up), so it can't become the anchor.
+    static func latestTrustedAnchor<Source>(
+        _ anchors: [(Date, Double, Source)]
+    ) -> (Date, Double, Source)? {
+        var trusted: (Date, Double, Source)?
+        for anchor in anchors.sorted(by: { $0.0 < $1.0 }) where anchor.1 > 0 {
+            // 1 km slack for rounding between a fill and a service on the same day.
+            if let current = trusted, anchor.1 < current.1 - 1 { continue }
+            trusted = anchor
+        }
+        return trusted
+    }
+
+    /// Share of a drive's distance covered after `anchor` (linear in time).
+    static func kmAfter(_ anchor: Date, startedAt: Date, endedAt: Date, distanceKm: Double) -> Double {
+        let distance = max(0, distanceKm)
+        guard startedAt < anchor else { return distance }
+        guard endedAt > anchor else { return 0 }
+        let total = endedAt.timeIntervalSince(startedAt)
+        guard total > 0 else { return distance }
+        return distance * endedAt.timeIntervalSince(anchor) / total
+    }
+
     static func estimated(verifiedKm: Double, trackedKm: Double, gpsScale: Double = 1.0) -> Double {
         VehicleLearningModel.estimatedKm(
             verifiedKm: verifiedKm,

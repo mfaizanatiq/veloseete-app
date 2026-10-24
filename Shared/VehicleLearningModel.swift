@@ -72,6 +72,11 @@ enum VehicleLearningModel {
         count >= 5 ? 0.20 : 0.35
     }
 
+    /// Once calibrated, one cycle can only nudge the scale this far. A short
+    /// missed trip reads as "GPS is 10% low" — real drift (new tyres) still
+    /// gets there over a few fills.
+    static let calibratedStepLimit: Double = 0.015
+
     // MARK: - Scale update
 
     struct ScaleObservation {
@@ -120,7 +125,12 @@ enum VehicleLearningModel {
 
         let a = alpha(forSampleCount: state.scaleSampleCount)
         let previousScale = clampScale(state.gpsScale)
-        let newScale = clampScale(a * observed + (1 - a) * previousScale)
+        let blended = a * observed + (1 - a) * previousScale
+        let newScale: Double = {
+            guard state.isCalibrated else { return clampScale(blended) }
+            let step = min(max(blended - previousScale, -calibratedStepLimit), calibratedStepLimit)
+            return clampScale(previousScale + step)
+        }()
         let residual = dashDelta - (gps * previousScale)
 
         var next = state

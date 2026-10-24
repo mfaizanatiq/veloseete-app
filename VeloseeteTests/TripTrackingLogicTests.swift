@@ -282,7 +282,7 @@ final class TripTrackingLogicTests: XCTestCase {
     }
 
     func testFuelPredictionFiresWhenTankActuallyLow() {
-        // Same history, but ~360 of the ~400 km tank burned — low, should notify.
+        // 45 L tank at 10 L/100 km = 450 km. 400 km burned → ~5 L / 50 km left.
         let logs = [
             fuelLog(id: "1", odometer: 10_000, liters: 40, full: true, daysAgo: 24),
             fuelLog(id: "2", odometer: 10_400, liters: 40, full: true, daysAgo: 14),
@@ -290,7 +290,7 @@ final class TripTrackingLogicTests: XCTestCase {
         ]
         let prediction = FuelInsightLogic.predictNextFill(
             logs: logs,
-            estimatedOdometer: 11_160,
+            estimatedOdometer: 11_200,
             tankCapacityLiters: 45,
             now: Date()
         )
@@ -308,12 +308,109 @@ final class TripTrackingLogicTests: XCTestCase {
         ]
         let prediction = FuelInsightLogic.predictNextFill(
             logs: logs,
-            estimatedOdometer: 11_200,
+            estimatedOdometer: 11_240,
             tankCapacityLiters: 45,
             now: Date()
         )
         XCTAssertEqual(prediction?.urgency, .empty)
         XCTAssertTrue(prediction?.shouldNotify ?? false)
+    }
+
+    func testHalfTankHabitDoesNotEmptyTheTank() {
+        // Driver tops up every ~300 km on a 60 L tank (8 L/100 km → 750 km range).
+        // Habit used to say "empty at 300 km"; physically half the tank is left.
+        let logs = [
+            fuelLog(id: "1", odometer: 10_000, liters: 55, full: true, daysAgo: 20),
+            fuelLog(id: "2", odometer: 10_300, liters: 24, full: true, daysAgo: 13),
+            fuelLog(id: "3", odometer: 10_600, liters: 24, full: true, daysAgo: 6)
+        ]
+        let prediction = FuelInsightLogic.predictNextFill(
+            logs: logs,
+            estimatedOdometer: 10_900,
+            tankCapacityLiters: 60,
+            now: Date()
+        )
+        XCTAssertEqual(prediction?.urgency, FuelInsightLogic.FuelUrgency.none)
+        XCTAssertFalse(prediction?.shouldNotify ?? true)
+        XCTAssertEqual(prediction?.kmRemaining ?? 0, 450, accuracy: 5)
+        XCTAssertEqual(prediction?.tankPercentRemaining ?? 0, 60, accuracy: 1)
+    }
+
+    func testSmallFillToFullStillMeansAFullTank() {
+        // Last fill was only 12 L but it topped the tank off — range is a full tank, not 12 L.
+        let logs = [
+            fuelLog(id: "1", odometer: 10_000, liters: 40, full: true, daysAgo: 20),
+            fuelLog(id: "2", odometer: 10_400, liters: 40, full: true, daysAgo: 10),
+            fuelLog(id: "3", odometer: 10_520, liters: 12, full: true, daysAgo: 1)
+        ]
+        let prediction = FuelInsightLogic.predictNextFill(
+            logs: logs,
+            estimatedOdometer: 10_520,
+            tankCapacityLiters: 45,
+            now: Date()
+        )
+        XCTAssertEqual(prediction?.tankPercentRemaining ?? 0, 100, accuracy: 0.5)
+        XCTAssertGreaterThan(prediction?.kmRemaining ?? 0, 400)
+    }
+
+    func testPartialTopUpKeepsFuelAlreadyInTank() {
+        // Full at 10_000, 150 km later add 10 L. Tank had ~30 L left, now ~40 L — not "10 L".
+        let logs = [
+            fuelLog(id: "1", odometer: 9_550, liters: 40, full: true, daysAgo: 20),
+            fuelLog(id: "2", odometer: 10_000, liters: 45, full: true, daysAgo: 10),
+            fuelLog(id: "3", odometer: 10_150, liters: 10, full: false, daysAgo: 1)
+        ]
+        let tank = FuelInsightLogic.tankState(
+            logs: logs,
+            kmSinceLastFill: 0,
+            litersPer100km: 10,
+            tankCapacityLiters: 45
+        )
+        XCTAssertEqual(tank?.litersLeft ?? 0, 45 - 15 + 10, accuracy: 0.01)
+        XCTAssertTrue(tank?.anchoredOnFullTank ?? false)
+    }
+
+    func testInferredCapacityNeverPushesAlerts() {
+        // No tank spec: capacity is only a lower bound from the biggest fill.
+        let logs = [
+            fuelLog(id: "1", odometer: 10_000, liters: 40, full: true, daysAgo: 24),
+            fuelLog(id: "2", odometer: 10_400, liters: 40, full: true, daysAgo: 14),
+            fuelLog(id: "3", odometer: 10_800, liters: 40, full: true, daysAgo: 4)
+        ]
+        let prediction = FuelInsightLogic.predictNextFill(
+            logs: logs,
+            estimatedOdometer: 11_190,
+            tankCapacityLiters: nil,
+            now: Date()
+        )
+        XCTAssertNotNil(prediction)
+        XCTAssertFalse(prediction?.shouldNotify ?? true)
+    }
+
+    func testOdometerAnchorSkipsReadingThatRunsBackwards() {
+        let now = Date()
+        let anchors: [(Date, Double, String)] = [
+            (now.addingTimeInterval(-86_400 * 3), 52_000, "Fuel entry"),
+            (now.addingTimeInterval(-86_400), 5_210, "Service entry") // missing digit
+        ]
+        let anchor = OdometerReconciliation.latestTrustedAnchor(anchors)
+        XCTAssertEqual(anchor?.1, 52_000)
+        XCTAssertEqual(anchor?.2, "Fuel entry")
+    }
+
+    func testDriveStraddlingFillOnlyCountsTheRestOfTheDrive() {
+        let fill = Date()
+        let km = OdometerReconciliation.kmAfter(
+            fill,
+            startedAt: fill.addingTimeInterval(-600),
+            endedAt: fill.addingTimeInterval(1_800),
+            distanceKm: 40
+        )
+        XCTAssertEqual(km, 30, accuracy: 0.001)
+        XCTAssertEqual(
+            OdometerReconciliation.kmAfter(fill, startedAt: fill.addingTimeInterval(60), endedAt: fill.addingTimeInterval(600), distanceKm: 12),
+            12
+        )
     }
 
     func testFuelPredictionIgnoresCalendarWithoutOdometer() {
