@@ -54,6 +54,17 @@ struct FillDetailSheet: View {
         )?.litersPer100km
     }
 
+    /// No measured tank closes here — a rough read from this fill's litres over the
+    /// km since the previous fill, once that's long enough to mean something.
+    private var fillToFillEstimate: Double? {
+        guard intervalEfficiency == nil,
+              let distance = distanceSincePrevious,
+              distance >= MetricsCalculator.minEstimateKm,
+              let l100 = EfficiencyFormat.litersPer100km(distanceKm: distance, fuelLiters: currentLog.fuelVolume),
+              MetricsCalculator.plausibleLitersPer100km.contains(l100) else { return nil }
+        return l100
+    }
+
     private var stationCoordinate: CLLocationCoordinate2D? {
         guard let lat = currentLog.stationLatitude,
               let lng = currentLog.stationLongitude,
@@ -70,6 +81,8 @@ struct FillDetailSheet: View {
 
                     if let efficiency = intervalEfficiency {
                         efficiencyCard(efficiency)
+                    } else if let estimate = fillToFillEstimate {
+                        efficiencyCard(estimate, isEstimate: true)
                     }
 
                     if currentLog.stationName != nil {
@@ -202,16 +215,21 @@ struct FillDetailSheet: View {
         .metricInset()
     }
 
-    private func efficiencyCard(_ efficiency: Double) -> some View {
+    private func efficiencyCard(_ efficiency: Double, isEstimate: Bool = false) -> some View {
         HStack(spacing: 12) {
             VSIcon(icon: .chartLine, size: 20, weight: .bold, tint: VS.Color.accent)
             VStack(alignment: .leading, spacing: 4) {
-                Text("THIS TANK")
+                Text(isEstimate ? "SINCE LAST FILL · ROUGH" : "THIS TANK")
                     .font(VS.TextStyle.caption2(.medium))
                     .foregroundStyle(VS.Color.textTertiary)
-                Text(EfficiencyFormat.format(efficiency, unit: efficiencyUnit.unit))
+                Text((isEstimate ? "~" : "") + EfficiencyFormat.format(efficiency, unit: efficiencyUnit.unit))
                     .font(VS.TextStyle.title2())
                     .foregroundStyle(VS.Color.textPrimary)
+                if isEstimate {
+                    Text("Tick Full tank on both fills for an exact number.")
+                        .font(VS.TextStyle.caption())
+                        .foregroundStyle(VS.Color.textTertiary)
+                }
             }
             Spacer()
             if let standard = store.manufacturerStandard, standard > 0 {

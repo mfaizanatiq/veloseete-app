@@ -1077,6 +1077,26 @@ final class DataStore: ObservableObject {
             ),
         ]
 
+        // `-ShotFuelsEarly`: a brand-new car with just two fills, the second partial.
+        if ProcessInfo.processInfo.arguments.contains("-ShotFuelsEarly") {
+            fuelLogs = [
+                FuelLog(
+                    id: "e1", vehicleId: coolray,
+                    timestamp: now.addingTimeInterval(-9 * 86_400),
+                    odometerReading: 41_900, fuelVolume: 42, pricePerUnit: 2.1,
+                    totalCost: 88.2, currency: "QAR", isFullTank: true,
+                    stationName: "WOQOD Al Waab"
+                ),
+                FuelLog(
+                    id: "e2", vehicleId: coolray,
+                    timestamp: now.addingTimeInterval(-2 * 86_400),
+                    odometerReading: 42_180, fuelVolume: 21, pricePerUnit: 2.1,
+                    totalCost: 44.1, currency: "QAR", isFullTank: false,
+                    stationName: "Shell Nuaija"
+                )
+            ]
+        }
+
         trips = [
             Trip(
                 id: "t1", vehicleId: coolray,

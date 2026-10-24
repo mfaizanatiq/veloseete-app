@@ -40,7 +40,8 @@ struct DashboardView: View {
                         manufacturerStandard: store.manufacturerStandard,
                         refuelCount: metrics.efficiencySampleCount,
                         distanceUnit: store.defaultDistanceUnit,
-                        efficiencyUnit: efficiencyUnit.unit
+                        efficiencyUnit: efficiencyUnit.unit,
+                        estimate: metrics.estimate
                     )
 
                     PrimaryCTAButton {
@@ -189,13 +190,25 @@ struct HeroCard: View {
     let refuelCount: Int
     let distanceUnit: String
     var efficiencyUnit: EfficiencyUnit = .litersPer100km
+    /// Present when the number is a fill-to-fill estimate, not a measured tank.
+    var estimate: FillSpanEstimate? = nil
 
     private var vibe: EfficiencyVibe {
-        DashboardCopy.vibe(efficiency: efficiency, standard: manufacturerStandard, refuelCount: refuelCount)
+        DashboardCopy.vibe(
+            efficiency: efficiency,
+            standard: manufacturerStandard,
+            refuelCount: refuelCount,
+            isEstimate: estimate != nil
+        )
     }
 
     private var status: (text: String, tone: EfficiencyVibe.Tone) {
-        DashboardCopy.status(efficiency: efficiency, standard: manufacturerStandard, sampleCount: refuelCount)
+        DashboardCopy.status(
+            efficiency: efficiency,
+            standard: manufacturerStandard,
+            sampleCount: refuelCount,
+            isEstimate: estimate != nil
+        )
     }
 
     var body: some View {
@@ -220,7 +233,7 @@ struct HeroCard: View {
 
             VStack(alignment: .leading, spacing: 6) {
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
-                    Text(EfficiencyFormat.displayNumber(efficiency, unit: efficiencyUnit))
+                    Text((estimate != nil ? "~" : "") + EfficiencyFormat.displayNumber(efficiency, unit: efficiencyUnit))
                         .font(VS.TextStyle.hero())
                         .foregroundStyle(VS.Color.navPill)
                         .contentTransition(.numericText())
@@ -243,7 +256,7 @@ struct HeroCard: View {
 
             EfficiencyUnitToggle(compact: true, onAccent: true)
 
-            if let efficiency, let manufacturerStandard, manufacturerStandard > 0 {
+            if let efficiency, estimate == nil, let manufacturerStandard, manufacturerStandard > 0 {
                 brochureGauge(currentL100: efficiency, standardL100: manufacturerStandard)
             } else if efficiency == nil {
                 Text(TrackyVoice.Soft.fuelsHeroHint)
@@ -258,9 +271,11 @@ struct HeroCard: View {
                 )
                 footerStat(
                     icon: .gasPump,
-                    text: refuelCount == 0
+                    text: estimate.map {
+                        "\($0.fills) fills · \(DistanceFormat.formatOdometer($0.distanceKm, unit: distanceUnit))"
+                    } ?? (refuelCount == 0
                         ? "No tanks yet"
-                        : "\(refuelCount) tank\(refuelCount == 1 ? "" : "s")"
+                        : "\(refuelCount) tank\(refuelCount == 1 ? "" : "s")")
                 )
                 Spacer(minLength: 0)
             }
@@ -373,7 +388,7 @@ struct MetricsRow: View {
             )
             bentoCard(
                 value: metrics.avgEfficiency.map {
-                    EfficiencyFormat.displayNumber($0, unit: efficiencyUnit)
+                    (metrics.isEstimate ? "~" : "") + EfficiencyFormat.displayNumber($0, unit: efficiencyUnit)
                 } ?? "—",
                 label: "Avg \(efficiencyUnit.shortLabel)",
                 icon: .gauge

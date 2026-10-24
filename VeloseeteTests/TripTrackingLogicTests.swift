@@ -189,15 +189,91 @@ final class TripTrackingLogicTests: XCTestCase {
         XCTAssertEqual(metrics.efficiencySampleCount, 1)
     }
 
-    func testDashboardDoesNotCalculateFromSingleOrUnclosedPartialFill() {
+    func testTwoFillsOver100KmGiveAnEarlyEstimate() {
+        // Full, then a partial 200 km later: no measured tank, but 15 L / 200 km ≈ 7.5.
         let logs = [
             fuelLog(id: "1", odometer: 10_000, liters: 40, full: true, daysAgo: 10),
             fuelLog(id: "2", odometer: 10_200, liters: 15, full: false, daysAgo: 2)
         ]
         let metrics = MetricsCalculator.compute(vehicle: testVehicle, logs: logs)
-        XCTAssertNil(metrics.current)
-        XCTAssertNil(metrics.avgEfficiency)
+        XCTAssertEqual(metrics.current ?? 0, 7.5, accuracy: 0.001)
+        XCTAssertEqual(metrics.avgEfficiency ?? 0, 7.5, accuracy: 0.001)
+        XCTAssertTrue(metrics.isEstimate)
+        XCTAssertEqual(metrics.estimate?.fills, 2)
+        XCTAssertEqual(metrics.efficiencySampleCount, 0)
+        // Cost-per-km stays on measured tanks only.
         XCTAssertEqual(metrics.totalDistance, 0)
+    }
+
+    func testTwoPartialFillsStillEstimate() {
+        let logs = [
+            fuelLog(id: "1", odometer: 10_000, liters: 20, full: false, daysAgo: 10),
+            fuelLog(id: "2", odometer: 10_300, liters: 24, full: false, daysAgo: 2)
+        ]
+        let metrics = MetricsCalculator.compute(vehicle: testVehicle, logs: logs)
+        XCTAssertEqual(metrics.current ?? 0, 8, accuracy: 0.001)
+        XCTAssertTrue(metrics.isEstimate)
+    }
+
+    func testShortGapIsTooNoisyToEstimate() {
+        let logs = [
+            fuelLog(id: "1", odometer: 10_000, liters: 40, full: true, daysAgo: 3),
+            fuelLog(id: "2", odometer: 10_060, liters: 5, full: false, daysAgo: 1)
+        ]
+        let metrics = MetricsCalculator.compute(vehicle: testVehicle, logs: logs)
+        XCTAssertNil(metrics.current)
+        XCTAssertFalse(metrics.isEstimate)
+    }
+
+    func testMeasuredTankWinsOverEstimate() {
+        let logs = [
+            fuelLog(id: "1", odometer: 10_000, liters: 40, full: true, daysAgo: 20),
+            fuelLog(id: "2", odometer: 10_500, liters: 35, full: true, daysAgo: 10),
+            fuelLog(id: "3", odometer: 10_700, liters: 30, full: false, daysAgo: 2)
+        ]
+        let metrics = MetricsCalculator.compute(vehicle: testVehicle, logs: logs)
+        XCTAssertEqual(metrics.current ?? 0, 7, accuracy: 0.001)
+        XCTAssertFalse(metrics.isEstimate)
+    }
+
+    func testOdometerTypoTankIsIgnored() {
+        // 35 L over 50 km = 70 L/100 — a missed digit, not a car.
+        let logs = [
+            fuelLog(id: "1", odometer: 10_000, liters: 40, full: true, daysAgo: 20),
+            fuelLog(id: "2", odometer: 10_050, liters: 35, full: true, daysAgo: 10),
+            fuelLog(id: "3", odometer: 10_550, liters: 35, full: true, daysAgo: 2)
+        ]
+        let metrics = MetricsCalculator.compute(vehicle: testVehicle, logs: logs)
+        XCTAssertEqual(metrics.efficiencySampleCount, 1)
+        XCTAssertEqual(metrics.current ?? 0, 7, accuracy: 0.001)
+    }
+
+    func testAverageSurvivesTheMonthBoundary() {
+        // Both fills last month; viewed on the 2nd of this month.
+        let reference = Calendar.current.date(from: DateComponents(year: 2026, month: 10, day: 2, hour: 12))!
+        let logs = [
+            fuelLog(id: "1", odometer: 10_000, liters: 40, full: true, daysAgo: 20, from: reference),
+            fuelLog(id: "2", odometer: 10_500, liters: 35, full: true, daysAgo: 10, from: reference)
+        ]
+        let metrics = MetricsCalculator.compute(vehicle: testVehicle, logs: logs, now: reference)
+        XCTAssertEqual(metrics.avgEfficiency ?? 0, 7, accuracy: 0.001)
+    }
+
+    func testGarageBadgesNeverMixTwoCarsOdometers() {
+        let logs = [
+            fuelLog(id: "a1", vehicleId: "a", odometer: 10_000, liters: 40, full: true, daysAgo: 20),
+            fuelLog(id: "b1", vehicleId: "b", odometer: 90_000, liters: 50, full: true, daysAgo: 15),
+            fuelLog(id: "a2", vehicleId: "a", odometer: 10_500, liters: 35, full: true, daysAgo: 10),
+            fuelLog(id: "b2", vehicleId: "b", odometer: 90_400, liters: 40, full: true, daysAgo: 5)
+        ]
+        let all = InsightGenerator.achievements(
+            trips: [], logs: logs, vehicleId: nil, unit: "km", manufacturerStandard: nil
+        )
+        // Old pairing subtracted car A's 10,000 from car B's 90,000 → an 80,000 km "stretch".
+        XCTAssertEqual(all.first { $0.id == "fill-stretch" }?.detail, "500 km between fills")
+        XCTAssertEqual(all.first { $0.id == "best-tank" }?.unlocked, true)
+        let highlights = InsightGenerator.personalHighlights(logs: logs, vehicleId: "a", unit: "km")
+        XCTAssertEqual(highlights.first { $0.id == "longest-run" }?.value, "500 km")
     }
 
     func testDashboardAggregatesPartialFillsBetweenFullTankAnchors() {
@@ -227,10 +303,16 @@ final class TripTrackingLogicTests: XCTestCase {
         XCTAssertEqual(DashboardCopy.spendTrend(0), "Holding steady")
     }
 
-    func testSpecComparisonRequiresTwoValidIntervals() {
+    func testOneMeasuredTankAlreadyComparesToBrochure() {
         let status = DashboardCopy.status(efficiency: 18.6, standard: 8, sampleCount: 1)
-        XCTAssertEqual(status.text, "One more full tank to lock it in")
+        XCTAssertEqual(status.tone, .watch)
+        XCTAssertEqual(DashboardCopy.vibe(efficiency: 18.6, standard: 8, refuelCount: 1).tone, .watch)
+    }
+
+    func testEstimateIsLabelledAsSuch() {
+        let status = DashboardCopy.status(efficiency: 7.5, standard: 8, sampleCount: 0, isEstimate: true)
         XCTAssertEqual(status.tone, .learning)
+        XCTAssertEqual(DashboardCopy.vibe(efficiency: 7.5, standard: 8, refuelCount: 0, isEstimate: true).label, "Early estimate")
     }
 
     func testRollingEfficiencyIsDistanceWeighted() {

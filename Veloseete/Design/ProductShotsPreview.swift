@@ -14,7 +14,7 @@ struct ProductShotsPreview: View {
         // Seed before first body render — Driver achievements crash on empty logs.
         DataStore.shared.seedProductShots()
         let args = ProcessInfo.processInfo.arguments
-        if args.contains("-ShotFuels") {
+        if args.contains("-ShotFuels") || args.contains("-ShotFuelsEarly") {
             _tab = State(initialValue: .fuel)
         } else if args.contains("-ShotDriver") {
             _tab = State(initialValue: .driver)

@@ -421,37 +421,12 @@ enum FuelInsightLogic {
     }
 
     private static func measuredEfficiency(from sorted: [FuelLog]) -> (litersPer100km: Double, intervals: Int)? {
-        // Distance-weighted over recent full-tank closed intervals.
-        var distances: [Double] = []
-        var fuels: [Double] = []
-        var anchor: FuelLog?
-        var fuelSince = 0.0
-
-        for log in sorted {
-            guard log.fuelVolume > 0 else { continue }
-            guard let current = anchor else {
-                if log.isFullTank { anchor = log }
-                continue
-            }
-            fuelSince += log.fuelVolume
-            guard log.isFullTank else { continue }
-            let distance = log.odometerReading - current.odometerReading
-            if distance > 40 {
-                distances.append(distance)
-                fuels.append(fuelSince)
-            }
-            anchor = log
-            fuelSince = 0
-        }
-
-        let recent = zip(distances, fuels).suffix(5)
-        let totalKm = recent.reduce(0.0) { $0 + $1.0 }
-        let totalFuel = recent.reduce(0.0) { $0 + $1.1 }
+        // Same measured tanks the Fuels tab shows — partials included, typos filtered.
+        let recent = MetricsCalculator.fullTankIntervals(in: sorted).suffix(5)
+        let totalKm = recent.reduce(0.0) { $0 + $1.distanceKm }
+        let totalFuel = recent.reduce(0.0) { $0 + $1.fuelLiters }
         guard totalKm > 80, totalFuel > 0 else { return nil }
-        let l100 = totalFuel / totalKm * 100
-        // Typos (missing digit, litres entered as cost) shouldn't redefine the car.
-        guard (2.5...30).contains(l100) else { return nil }
-        return (l100, recent.count)
+        return (totalFuel / totalKm * 100, recent.count)
     }
 
     private static func classifyUrgency(

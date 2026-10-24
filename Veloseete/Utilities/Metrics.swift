@@ -97,14 +97,35 @@ enum VolumeFormat {
 }
 
 struct EfficiencyMetrics {
+    /// Recent economy: last 3 measured tanks, or the early estimate.
     let current: Double?
     let monthlySpend: Double
     let spendChange: Double?
+    /// Lifetime economy, distance-weighted across every measured tank (or the estimate).
     let avgEfficiency: Double?
+    /// Km in tanks measured this month — drives cost-per-km.
     let totalDistance: Double
     let refuelCount: Int
+    /// Measured full→full tanks.
     let efficiencySampleCount: Int
     let recentLogs: [FuelLog]
+    /// Set when `current`/`avgEfficiency` come from the fill-span estimate.
+    var estimate: FillSpanEstimate? = nil
+
+    var isEstimate: Bool { estimate != nil }
+}
+
+/// Rough economy before any full→full tank exists: each fill is assumed to
+/// replace what was burned since the one before. Good over 100+ km, never exact.
+struct FillSpanEstimate: Equatable {
+    let distanceKm: Double
+    let fuelLiters: Double
+    /// Fills in the span, including the one it starts from.
+    let fills: Int
+
+    var litersPer100km: Double? {
+        EfficiencyFormat.litersPer100km(distanceKm: distanceKm, fuelLiters: fuelLiters)
+    }
 }
 
 /// One measured full-tank → full-tank stretch (partial fills between anchors count as fuel).
@@ -133,13 +154,11 @@ enum MetricsCalculator {
         let intervals = fullTankIntervals(in: vehicleLogs)
         // A rolling, distance-weighted result is less sensitive to one unusual fill
         // than comparing the brochure against only the latest interval.
-        let recentIntervals = intervals.suffix(3)
-        let recentDistance = recentIntervals.reduce(0) { $0 + $1.distanceKm }
-        let recentFuel = recentIntervals.reduce(0) { $0 + $1.fuelLiters }
-        let current = EfficiencyFormat.litersPer100km(
-            totalDistanceKm: recentDistance,
-            totalFuelLiters: recentFuel
-        )
+        let measuredCurrent = weightedLitersPer100km(intervals.suffix(3))
+        let measuredLifetime = weightedLitersPer100km(intervals[...])
+        // No measured tank yet → say something useful from two fills 100+ km apart.
+        let estimate = intervals.isEmpty ? fillSpanEstimate(in: vehicleLogs) : nil
+        let current = measuredCurrent ?? estimate?.litersPer100km
 
         let cal = Calendar.current
         let startOfMonth = cal.date(from: cal.dateComponents([.year, .month], from: now)) ?? now
@@ -157,11 +176,9 @@ enum MetricsCalculator {
         // This excludes the first fill (which has no measured distance) and all partial fills.
         let monthIntervals = intervals.filter { $0.endedAt >= startOfMonth }
         let totalDistance = monthIntervals.reduce(0) { $0 + $1.distanceKm }
-        let intervalFuel = monthIntervals.reduce(0) { $0 + $1.fuelLiters }
-        let avgEfficiency = EfficiencyFormat.litersPer100km(
-            totalDistanceKm: totalDistance,
-            totalFuelLiters: intervalFuel
-        )
+        // Lifetime, not this month: early in a month there's often no closed tank yet,
+        // and an average that blanks on the 1st reads as broken.
+        let avgEfficiency = measuredLifetime ?? estimate?.litersPer100km
 
         let recent = Array(vehicleLogs.reversed().prefix(5))
 
@@ -173,8 +190,36 @@ enum MetricsCalculator {
             totalDistance: totalDistance,
             refuelCount: monthLogs.count,
             efficiencySampleCount: intervals.count,
-            recentLogs: recent
+            recentLogs: recent,
+            estimate: estimate
         )
+    }
+
+    /// Below this, odometer rounding and pump top-off swamp the signal.
+    static let minEstimateKm: Double = 100
+    /// Outside this, the entry is a typo (missed digit, litres as cost), not a car.
+    static let plausibleLitersPer100km: ClosedRange<Double> = 2.5...30
+
+    private static func weightedLitersPer100km(_ intervals: ArraySlice<FullTankEfficiencyInterval>) -> Double? {
+        EfficiencyFormat.litersPer100km(
+            totalDistanceKm: intervals.reduce(0) { $0 + $1.distanceKm },
+            totalFuelLiters: intervals.reduce(0) { $0 + $1.fuelLiters }
+        )
+    }
+
+    /// Fill-to-fill estimate for logs sorted oldest first (one vehicle).
+    static func fillSpanEstimate(in logs: [FuelLog]) -> FillSpanEstimate? {
+        let fills = logs.filter { $0.fuelVolume > 0 }
+        guard fills.count >= 2, let end = fills.last else { return nil }
+        // Start from a full tank when there is one — a known level beats a guess.
+        let startIndex = fills.indices.dropLast().first { fills[$0].isFullTank } ?? fills.startIndex
+        let distance = end.odometerReading - fills[startIndex].odometerReading
+        let fuel = fills[(startIndex + 1)...].reduce(0) { $0 + $1.fuelVolume }
+        let estimate = FillSpanEstimate(distanceKm: distance, fuelLiters: fuel, fills: fills.count - startIndex)
+        guard distance >= minEstimateKm,
+              let l100 = estimate.litersPer100km,
+              plausibleLitersPer100km.contains(l100) else { return nil }
+        return estimate
     }
 
     /// Measured full-tank intervals for a vehicle (partial fills between anchors included in fuel).
@@ -201,7 +246,7 @@ enum MetricsCalculator {
             .min()
     }
 
-    private static func fullTankIntervals(in logs: [FuelLog]) -> [FullTankEfficiencyInterval] {
+    static func fullTankIntervals(in logs: [FuelLog]) -> [FullTankEfficiencyInterval] {
         guard logs.count >= 2 else { return [] }
         var result: [FullTankEfficiencyInterval] = []
         var anchor: FuelLog?
@@ -217,7 +262,9 @@ enum MetricsCalculator {
             fuelSinceAnchor += log.fuelVolume
             guard log.isFullTank else { continue }
             let distance = log.odometerReading - currentAnchor.odometerReading
-            if distance > 0 {
+            let plausible = EfficiencyFormat.litersPer100km(distanceKm: distance, fuelLiters: fuelSinceAnchor)
+                .map { plausibleLitersPer100km.contains($0) } ?? false
+            if distance > 0, plausible {
                 result.append(
                     FullTankEfficiencyInterval(
                         endedAt: log.timestamp,
@@ -243,9 +290,12 @@ struct EfficiencyVibe {
 }
 
 enum DashboardCopy {
-    static func vibe(efficiency: Double?, standard: Double?, refuelCount: Int) -> EfficiencyVibe {
-        guard let efficiency, refuelCount >= 2 else {
+    static func vibe(efficiency: Double?, standard: Double?, refuelCount: Int, isEstimate: Bool = false) -> EfficiencyVibe {
+        guard let efficiency, refuelCount >= 1 || isEstimate else {
             return EfficiencyVibe(label: "Getting to know your car", emoji: "👋", tone: .learning)
+        }
+        if isEstimate {
+            return EfficiencyVibe(label: "Early estimate", emoji: "🧪", tone: .learning)
         }
         guard let standard else {
             if efficiency < 7 { return EfficiencyVibe(label: "Running lean", emoji: "⚡", tone: .good) }
@@ -260,12 +310,17 @@ enum DashboardCopy {
         return EfficiencyVibe(label: "Needs some love", emoji: "🩺", tone: .watch)
     }
 
-    static func status(efficiency: Double?, standard: Double?, sampleCount: Int) -> (text: String, tone: EfficiencyVibe.Tone) {
+    static func status(
+        efficiency: Double?,
+        standard: Double?,
+        sampleCount: Int,
+        isEstimate: Bool = false
+    ) -> (text: String, tone: EfficiencyVibe.Tone) {
         guard let efficiency else {
             return ("Fill up so we can compare", .learning)
         }
-        guard sampleCount >= 2 else {
-            return ("One more full tank to lock it in", .learning)
+        if isEstimate || sampleCount == 0 {
+            return ("Rough read from your fills — tick Full tank to sharpen it", .learning)
         }
         guard let standard else { return ("No brochure spec on file", .learning) }
         let deviation = ((efficiency - standard) / standard) * 100
@@ -365,6 +420,25 @@ enum InsightGenerator {
         return max(tripKm, odoSpan)
     }
 
+    /// Measured full→full tanks for one car, or the whole garage car by car.
+    private static func tankIntervals(logs: [FuelLog], vehicleId: String?) -> [FullTankEfficiencyInterval] {
+        let ids = vehicleId.map { [$0] } ?? Array(Set(logs.map(\.vehicleId)))
+        return ids
+            .flatMap { MetricsCalculator.fullTankIntervals(vehicleId: $0, logs: logs) }
+            .sorted { $0.endedAt < $1.endedAt }
+    }
+
+    /// Km between consecutive fills of the same car, dated by the later fill.
+    private static func fillStretches(logs: [FuelLog], vehicleId: String?) -> [(date: Date, km: Double)] {
+        let ids = vehicleId.map { [$0] } ?? Array(Set(logs.map(\.vehicleId)))
+        return ids
+            .flatMap { id -> [(date: Date, km: Double)] in
+                let car = logs.filter { $0.vehicleId == id }.sorted { $0.timestamp < $1.timestamp }
+                return zip(car, car.dropFirst()).map { (date: $1.timestamp, km: $1.odometerReading - $0.odometerReading) }
+            }
+            .sorted { $0.date < $1.date }
+    }
+
     static func achievements(
         trips: [Trip],
         logs: [FuelLog],
@@ -390,23 +464,12 @@ enum InsightGenerator {
         let currencyCount = Set(vehicleLogs.map(\.currency)).count
         let gulfCurrencies = Set(vehicleLogs.map(\.currency)).intersection(["AED", "SAR", "QAR"])
 
-        var bestEfficiency: Double?
-        var longestFillStretch = 0.0
-        var efficiencyIntervals: [Double] = []
-        // indices.dropFirst() is safe when empty — `1..<0` fatals in Swift.
-        for index in vehicleLogs.indices.dropFirst() {
-            let previous = vehicleLogs[index - 1]
-            let current = vehicleLogs[index]
-            let stretch = current.odometerReading - previous.odometerReading
-            if stretch > longestFillStretch { longestFillStretch = stretch }
-            guard current.isFullTank, previous.isFullTank else { continue }
-            guard stretch > 0, current.fuelVolume > 0 else { continue }
-            let efficiency = (current.fuelVolume / stretch) * 100
-            efficiencyIntervals.append(efficiency)
-            if bestEfficiency == nil || efficiency < bestEfficiency! {
-                bestEfficiency = efficiency
-            }
-        }
+        // Same measured tanks as the Fuels tab (partials included), one car at a time.
+        let tanks = tankIntervals(logs: logs, vehicleId: vehicleId)
+        let efficiencyIntervals = tanks.compactMap(\.litersPer100km)
+        let bestEfficiency = efficiencyIntervals.min()
+        let stretches = fillStretches(logs: logs, vehicleId: vehicleId)
+        let longestFillStretch = stretches.map(\.km).max() ?? 0
 
         let activeMonths = Set(vehicleLogs.map {
             let comps = Calendar.current.dateComponents([.year, .month], from: $0.timestamp)
@@ -466,7 +529,8 @@ enum InsightGenerator {
                 acc += max(0, trip.distanceKm)
                 if acc >= target { return trip.startedAt }
             }
-            guard let origin = vehicleLogs.first?.odometerReading else { return nil }
+            // Odometers only add up within one car.
+            guard vehicleId != nil, let origin = vehicleLogs.first?.odometerReading else { return nil }
             for log in vehicleLogs {
                 if log.odometerReading - origin >= target { return log.timestamp }
             }
@@ -493,11 +557,7 @@ enum InsightGenerator {
         }
 
         func dateWhenFillStretch(_ target: Double) -> Date? {
-            for index in vehicleLogs.indices.dropFirst() {
-                let stretch = vehicleLogs[index].odometerReading - vehicleLogs[index - 1].odometerReading
-                if stretch >= target { return vehicleLogs[index].timestamp }
-            }
-            return nil
+            stretches.first { $0.km >= target }?.date
         }
 
         func dateWhenCurrencies(target: Int, allowed: Set<String>? = nil) -> Date? {
@@ -512,14 +572,9 @@ enum InsightGenerator {
         }
 
         func eachFullTankEfficiency(_ body: (Date, Double) -> Bool) -> Date? {
-            for index in vehicleLogs.indices.dropFirst() {
-                let previous = vehicleLogs[index - 1]
-                let current = vehicleLogs[index]
-                guard current.isFullTank, previous.isFullTank else { continue }
-                let stretch = current.odometerReading - previous.odometerReading
-                guard stretch > 0, current.fuelVolume > 0 else { continue }
-                let efficiency = (current.fuelVolume / stretch) * 100
-                if body(current.timestamp, efficiency) { return current.timestamp }
+            for tank in tanks {
+                guard let efficiency = tank.litersPer100km else { continue }
+                if body(tank.endedAt, efficiency) { return tank.endedAt }
             }
             return nil
         }
@@ -885,19 +940,7 @@ enum InsightGenerator {
 
         var highlights: [PersonalHighlight] = []
 
-        var bestEfficiency: Double?
-        for index in vehicleLogs.indices.dropFirst() {
-            let previous = vehicleLogs[index - 1]
-            let current = vehicleLogs[index]
-            guard current.isFullTank, previous.isFullTank else { continue }
-            let distance = current.odometerReading - previous.odometerReading
-            guard distance > 0, current.fuelVolume > 0 else { continue }
-            let efficiency = (current.fuelVolume / distance) * 100
-            if bestEfficiency == nil || efficiency < bestEfficiency! {
-                bestEfficiency = efficiency
-            }
-        }
-        if let bestEfficiency {
+        if let bestEfficiency = tankIntervals(logs: logs, vehicleId: vehicleId).compactMap(\.litersPer100km).min() {
             highlights.append(
                 PersonalHighlight(
                     id: "best-tank",
@@ -908,11 +951,7 @@ enum InsightGenerator {
             )
         }
 
-        var longestKm = 0.0
-        for index in vehicleLogs.indices.dropFirst() {
-            let distance = vehicleLogs[index].odometerReading - vehicleLogs[index - 1].odometerReading
-            if distance > longestKm { longestKm = distance }
-        }
+        let longestKm = fillStretches(logs: logs, vehicleId: vehicleId).map(\.km).max() ?? 0
         if longestKm > 0 {
             highlights.append(
                 PersonalHighlight(
@@ -1062,8 +1101,8 @@ enum InsightGenerator {
                     FunInsight(
                         kind: .celebrate,
                         emoji: "💧",
-                        title: "Greenest tank this month",
-                        message: "Last interval was \(Int(abs(diff).rounded()))% more efficient than your monthly average."
+                        title: "Greenest tank lately",
+                        message: "Your last tanks ran \(Int(abs(diff).rounded()))% more efficient than your overall average."
                     )
                 )
             }
