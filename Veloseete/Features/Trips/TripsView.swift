@@ -269,18 +269,15 @@ struct TripsView: View {
                     Spacer(minLength: 0)
                         .allowsHitTesting(false)
 
-                    // Wide mode: profile sits at the top of the nav rail.
-                    if !isWide {
-                        Button {
-                            UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                            onProfile()
-                        } label: {
-                            ProfileAvatarView(image: avatarStore.image, size: 40)
-                                .overlay(Circle().stroke(VS.Color.accent.opacity(0.24), lineWidth: 1))
-                        }
-                        .buttonStyle(ScaleButtonStyle())
-                        .accessibilityLabel("Open profile")
+                    Button {
+                        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                        onProfile()
+                    } label: {
+                        ProfileAvatarView(image: avatarStore.image, size: 40)
+                            .overlay(Circle().stroke(VS.Color.accent.opacity(0.24), lineWidth: 1))
                     }
+                    .buttonStyle(ScaleButtonStyle())
+                    .accessibilityLabel("Open profile")
                 }
                 .padding(.leading, VS.Spacing.frameGutter + 6)
                 .padding(.trailing, 16)

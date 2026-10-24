@@ -85,8 +85,6 @@ enum VS {
         static let wideContentWidth: CGFloat = 1_000
         /// Trips side panel width in wide mode.
         static let sidePanelWidth: CGFloat = 400
-        /// Room the right-side nav rail takes, including its gutter.
-        static let railInset: CGFloat = 84
 
         static func isWide(_ size: CGSize) -> Bool { size.width >= wideMinWidth }
 

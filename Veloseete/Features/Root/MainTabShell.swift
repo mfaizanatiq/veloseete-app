@@ -41,8 +41,14 @@ struct MainTabShell: View {
 
     private var isWide: Bool { VS.Layout.isWide(windowSize) }
 
+    static var windowSafeInsets: UIEdgeInsets {
+        let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+        let window = scenes.flatMap(\.windows).first(where: \.isKeyWindow) ?? scenes.first?.windows.first
+        return window?.safeAreaInsets ?? .zero
+    }
+
     var body: some View {
-        ZStack(alignment: isWide ? .trailing : .bottom) {
+        ZStack(alignment: isWide ? .bottomTrailing : .bottom) {
             Group {
                 switch tab {
                 case .trips:
@@ -62,15 +68,17 @@ struct MainTabShell: View {
             }
             // Trips is a full-bleed map; every other tab is a centred column.
             .tabContentWidth(fullBleed: tab == .trips, twoColumn: isWide && tab != .details)
-            // Wide mode: the rail floats over the Trips map, other tabs make room for it
-            // and get the same breathing room on the leading edge.
-            .padding(.trailing, isWide && tab != .trips ? VS.Layout.railInset : 0)
-            .padding(.leading, isWide && tab != .trips ? VS.Spacing.frameGutter : 0)
+            // Wide mode: the rail lives in the status strip, so pages only add the
+            // usual gutter on each side.
+            .padding(.horizontal, isWide && tab != .trips ? VS.Spacing.frameGutter : 0)
             .coordinateSpace(name: "bottomNavScroll")
 
             if isWide {
-                NavRail(active: $tab, onProfile: { showProfile = true })
-                    .padding(.trailing, VS.Spacing.frameGutter)
+                let spot = NavRail.placement(in: Self.windowSafeInsets)
+                NavRail(active: $tab)
+                    .padding(.trailing, spot.trailing)
+                    .padding(.bottom, spot.bottom)
+                    .ignoresSafeArea(.container, edges: .trailing)
             } else {
                 BottomNavBar(active: $tab)
             }
@@ -131,7 +139,6 @@ struct MainTabShell: View {
 /// the profile avatar supplied by `MainTabShell`, so local actions never collide.
 struct MainTabHeader<Accessory: View>: View {
     @EnvironmentObject private var avatarStore: ProfileAvatarStore
-    @Environment(\.isWideLayout) private var isWideLayout
     let title: String
     let subtitle: String?
     let onProfile: () -> Void
@@ -164,18 +171,15 @@ struct MainTabHeader<Accessory: View>: View {
             }
             Spacer(minLength: 8)
             accessory
-            // Wide mode: profile lives at the top of the nav rail instead.
-            if !isWideLayout {
-                Button {
-                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                    onProfile()
-                } label: {
-                    ProfileAvatarView(image: avatarStore.image, size: 40)
-                        .overlay(Circle().stroke(VS.Color.accent.opacity(0.24), lineWidth: 1))
-                }
-                .buttonStyle(ScaleButtonStyle())
-                .accessibilityLabel("Open profile")
+            Button {
+                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                onProfile()
+            } label: {
+                ProfileAvatarView(image: avatarStore.image, size: 40)
+                    .overlay(Circle().stroke(VS.Color.accent.opacity(0.24), lineWidth: 1))
             }
+            .buttonStyle(ScaleButtonStyle())
+            .accessibilityLabel("Open profile")
         }
         .frame(minHeight: 52, alignment: .top)
         .padding(.top, VS.Spacing.xs)
@@ -285,31 +289,14 @@ struct BottomNavBar: View {
     }
 }
 
-/// Wide-mode navigation (iPhone Duo unfolded): the same Veloseete pill and lime
-/// bubbles as `BottomNavBar`, stacked on the right edge within thumb reach.
+/// Wide-mode navigation (iPhone Duo unfolded). Sits where iOS puts its own tab bar
+/// on this screen: a slim vertical pill in the right-hand status strip, pinned to
+/// the bottom. Same Veloseete pill and lime bubbles as `BottomNavBar`.
 struct NavRail: View {
     @Binding var active: AppTab
-    var onProfile: () -> Void = {}
-    @EnvironmentObject private var avatarStore: ProfileAvatarStore
 
     var body: some View {
-        VStack(spacing: 8) {
-            Button {
-                UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                onProfile()
-            } label: {
-                ProfileAvatarView(image: avatarStore.image, size: 40)
-                    .overlay(Circle().stroke(VS.Color.accent.opacity(0.24), lineWidth: 1))
-                    .frame(width: 52, height: 52)
-            }
-            .buttonStyle(ScaleButtonStyle())
-            .accessibilityLabel("Open profile")
-
-            Capsule()
-                .fill(VS.Color.hairline)
-                .frame(width: 28, height: 1)
-                .padding(.vertical, 2)
-
+        VStack(spacing: 4) {
             ForEach(AppTab.allCases, id: \.self) { item in
                 Button {
                     UIImpactFeedbackGenerator(style: .light).impactOccurred()
@@ -320,11 +307,12 @@ struct NavRail: View {
                     NavIconBubble(
                         icon: item.icon,
                         isActive: active == item,
-                        iconSize: 22,
-                        circleSize: 44,
+                        iconSize: 18,
+                        circleSize: 36,
                         activeTint: VS.Color.navPill
                     )
-                    .frame(width: 52, height: 52)
+                    // 44 pt keeps Apple's minimum tap target.
+                    .frame(width: 44, height: 44)
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
@@ -332,12 +320,19 @@ struct NavRail: View {
                 .accessibilityAddTraits(active == item ? .isSelected : [])
             }
         }
-        .padding(8)
+        .padding(4)
         .background(
             Capsule()
                 .fill(VS.Color.navPill)
-                .shadow(color: .black.opacity(0.4), radius: 16, y: 4)
+                .shadow(color: .black.opacity(0.4), radius: 12, y: 4)
         )
+    }
+
+    static let width: CGFloat = 52
+
+    /// Centre the rail in the right-hand safe-area strip, pinned near the bottom.
+    static func placement(in window: UIEdgeInsets) -> (trailing: CGFloat, bottom: CGFloat) {
+        (max(6, (window.right - width) / 2), max(window.bottom, 12))
     }
 }
 

@@ -51,13 +51,15 @@ struct ProductShotsPreview: View {
             }
             // Same width rule as MainTabShell, so shots match the real app.
             .tabContentWidth(fullBleed: tab == .trips, twoColumn: isWide && tab != .details)
-            .padding(.trailing, isWide && tab != .trips ? VS.Layout.railInset : 0)
-            .padding(.leading, isWide && tab != .trips ? VS.Spacing.frameGutter : 0)
+            .padding(.horizontal, isWide && tab != .trips ? VS.Spacing.frameGutter : 0)
 
             if isWide {
+                let spot = NavRail.placement(in: MainTabShell.windowSafeInsets)
                 NavRail(active: $tab)
-                    .padding(.trailing, VS.Spacing.frameGutter)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .trailing)
+                    .padding(.trailing, spot.trailing)
+                    .padding(.bottom, spot.bottom)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
+                    .ignoresSafeArea(.container, edges: .trailing)
             } else {
                 BottomNavBar(active: $tab)
                     .allowsHitTesting(false)
