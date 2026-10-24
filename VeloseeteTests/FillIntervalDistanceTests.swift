@@ -132,3 +132,32 @@ final class ServiceScheduleTests: XCTestCase {
         XCTAssertNil(ServiceSchedule.suggestedInterval(for: "Other"))
     }
 }
+
+/// Same home as ServiceScheduleTests: new files need an XcodeGen run.
+@MainActor
+final class SplashPolicyTests: XCTestCase {
+    func testFullOnFirstLaunchAndAfterAnUpdate() {
+        XCTAssertEqual(SplashCoordinator.mode(lastFullVersion: nil, currentVersion: "1.4 (37)"), .full)
+        XCTAssertEqual(SplashCoordinator.mode(lastFullVersion: "1.4 (36)", currentVersion: "1.4 (37)"), .full)
+        XCTAssertEqual(SplashCoordinator.mode(lastFullVersion: "1.4 (37)", currentVersion: "1.4 (37)"), .quick)
+    }
+
+    func testFullSplashIsRememberedSoTheNextLaunchIsQuick() {
+        let defaults = UserDefaults(suiteName: "splash-test-\(UUID().uuidString)")!
+        XCTAssertEqual(SplashCoordinator(defaults: defaults).mode, .full)
+        XCTAssertEqual(SplashCoordinator(defaults: defaults).mode, .quick)
+    }
+
+    func testSkipHidesTheSplash() {
+        let defaults = UserDefaults(suiteName: "splash-test-\(UUID().uuidString)")!
+        let splash = SplashCoordinator(defaults: defaults)
+        splash.skip()
+        XCTAssertEqual(splash.mode, .skip)
+        XCTAssertFalse(splash.isShowing)
+    }
+
+    func testOwnLinksAreRecognised() {
+        XCTAssertTrue(VeloseeteLink.isOwn(VeloseeteLink.drive.url))
+        XCTAssertFalse(VeloseeteLink.isOwn(URL(string: "com.googleusercontent.apps.123:/oauth")!))
+    }
+}

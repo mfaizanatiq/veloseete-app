@@ -100,6 +100,7 @@ struct FuelPulseWidget: Widget {
         ) { entry in
             FuelPulseWidgetView(entry: entry)
                 .containerBackground(for: .widget) { VeloseeteWidgetStyle.background }
+                .widgetURL(VeloseeteLink.fuel.url)
         }
         .configurationDisplayName("Fuel Pulse")
         .description("Last fill, days since pump, efficiency, and this month's spend.")
@@ -297,6 +298,7 @@ struct LiveDriveWidget: Widget {
         ) { entry in
             LiveDriveWidgetView(entry: entry)
                 .containerBackground(for: .widget) { VeloseeteWidgetStyle.background }
+                .widgetURL(VeloseeteLink.drive.url)
         }
         .configurationDisplayName("Live Drive")
         .description("Live trip distance, speed, and duration while Veloseete is tracking.")
@@ -458,6 +460,7 @@ struct ReviewQueueWidget: Widget {
         ) { entry in
             ReviewQueueWidgetView(entry: entry)
                 .containerBackground(for: .widget) { VeloseeteWidgetStyle.background }
+                .widgetURL(VeloseeteLink.review.url)
         }
         .configurationDisplayName("Drive Review")
         .description("How many trips are waiting for your confirmation in My Drives.")

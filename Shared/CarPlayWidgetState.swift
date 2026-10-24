@@ -364,3 +364,19 @@ enum CarPlayWidgetStateStore {
         }
     }
 }
+
+/// The app's own deep links. Widgets and the Live Activity attach one so a tap
+/// is recognised as "opened from something", which skips the launch splash.
+enum VeloseeteLink {
+    static let scheme = "veloseete"
+
+    case drive, fuel, review, home
+
+    var url: URL {
+        URL(string: "\(Self.scheme)://\(self)")!
+    }
+
+    static func isOwn(_ url: URL) -> Bool {
+        url.scheme == scheme
+    }
+}

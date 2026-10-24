@@ -43,6 +43,7 @@ struct TripLiveActivityWidget: Widget {
             TripActivityContent(context: context)
                 .activityBackgroundTint(TripActivityStyle.background)
                 .activitySystemActionForegroundColor(TripActivityStyle.mood(context.state.mood))
+                .widgetURL(VeloseeteLink.drive.url)
         } dynamicIsland: { context in
             DynamicIsland {
                 DynamicIslandExpandedRegion(.leading) {
@@ -115,6 +116,7 @@ struct TripLiveActivityWidget: Widget {
                     .foregroundStyle(TripActivityStyle.mood(context.state.mood))
             }
             .keylineTint(TripActivityStyle.mood(context.state.mood))
+            .widgetURL(VeloseeteLink.drive.url)
         }
     }
 }

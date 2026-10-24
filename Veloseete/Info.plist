@@ -30,6 +30,16 @@
 				<string>com.googleusercontent.apps.1090690719538-92risgqg4vsdan80orit4k3l16br8lou</string>
 			</array>
 		</dict>
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Viewer</string>
+			<key>CFBundleURLName</key>
+			<string>com.veloseete.ios.links</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>veloseete</string>
+			</array>
+		</dict>
 	</array>
 	<key>CFBundleVersion</key>
 	<string>$(CURRENT_PROJECT_VERSION)</string>
@@ -155,7 +165,10 @@
 		<string>location</string>
 	</array>
 	<key>UILaunchScreen</key>
-	<dict/>
+	<dict>
+		<key>UIColorName</key>
+		<string>LaunchBackground</string>
+	</dict>
 	<key>UIRequiredDeviceCapabilities</key>
 	<array>
 		<string>armv7</string>

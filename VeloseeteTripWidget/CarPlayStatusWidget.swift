@@ -37,6 +37,7 @@ struct CarPlayStatusWidget: Widget {
                 .containerBackground(for: .widget) {
                     Color(red: 0.035, green: 0.045, blue: 0.038)
                 }
+                .widgetURL(VeloseeteLink.home.url)
         }
         .configurationDisplayName("Driving Footprint")
         .description("Your current car, driving footprint, efficiency, and monthly spend.")

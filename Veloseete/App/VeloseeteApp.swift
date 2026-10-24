@@ -21,6 +21,16 @@ final class VeloseeteAppDelegate: NSObject, UIApplicationDelegate, UNUserNotific
         GIDSignIn.sharedInstance.handle(url)
     }
 
+    /// Tapping a fuel/service/drive reminder lands straight in the app — no splash.
+    func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        didReceive response: UNNotificationResponse,
+        withCompletionHandler completionHandler: @escaping () -> Void
+    ) {
+        Task { @MainActor in SplashCoordinator.shared.skip() }
+        completionHandler()
+    }
+
     func userNotificationCenter(
         _ center: UNUserNotificationCenter,
         willPresent notification: UNNotification,
@@ -41,7 +51,7 @@ struct VeloseeteApp: App {
     @StateObject private var profileAvatarStore = ProfileAvatarStore.shared
     @StateObject private var vehiclePhotoStore = VehiclePhotoStore.shared
     private let tripRecorder = TripRecordingService.shared
-    @State private var isShowingSplash = true
+    @StateObject private var splash = SplashCoordinator.shared
 
     init() {
         FirebaseBootstrap.configure()
@@ -91,11 +101,9 @@ struct VeloseeteApp: App {
                 VeloseeteBackground()
                 RootView()
 
-                if isShowingSplash {
-                    SplashView {
-                        withAnimation(.easeOut(duration: 0.35)) {
-                            isShowingSplash = false
-                        }
+                if splash.isShowing, splash.mode != .skip {
+                    SplashView(mode: splash.mode, isAppReady: isAppReady) {
+                        splash.finish()
                     }
                     .transition(.opacity)
                     .zIndex(10)
@@ -112,6 +120,11 @@ struct VeloseeteApp: App {
             .tint(VS.Color.accent)
             .toggleStyle(.veloseete)
             .onOpenURL { url in
+                // Live Activity / widget taps carry a veloseete:// link — skip the greeting.
+                if VeloseeteLink.isOwn(url) {
+                    splash.skip()
+                    return
+                }
                 GIDSignIn.sharedInstance.handle(url)
             }
             .task(id: authService.userId) {
@@ -159,6 +172,11 @@ struct VeloseeteApp: App {
             .onChange(of: tripPermissionsStore.hasCompletedOnboarding) { _, _ in
                 syncTripRecorderVehicle()
             }
+    }
+
+    /// What RootView needs to paint something real: auth settled, and data loaded when signed in.
+    private var isAppReady: Bool {
+        !authService.isCheckingAuth && (!authService.isAuthenticated || dataStore.isLoaded)
     }
 
     private func syncTripRecorderVehicle() {
