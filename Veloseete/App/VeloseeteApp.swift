@@ -79,6 +79,7 @@ struct VeloseeteApp: App {
                 || ProcessInfo.processInfo.arguments.contains("-ShotService")
                 || ProcessInfo.processInfo.arguments.contains("-ShotFuelsEarly")
                 || ProcessInfo.processInfo.arguments.contains("-ShotTrips")
+                || ProcessInfo.processInfo.arguments.contains("-ShotSheet")
                 || ProcessInfo.processInfo.arguments.contains("-ProductShotsPreview")
             {
                 ProductShotsPreview()

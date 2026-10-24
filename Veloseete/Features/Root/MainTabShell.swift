@@ -41,12 +41,6 @@ struct MainTabShell: View {
 
     private var isWide: Bool { VS.Layout.isWide(windowSize) }
 
-    static var windowSafeInsets: UIEdgeInsets {
-        let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
-        let window = scenes.flatMap(\.windows).first(where: \.isKeyWindow) ?? scenes.first?.windows.first
-        return window?.safeAreaInsets ?? .zero
-    }
-
     var body: some View {
         ZStack(alignment: isWide ? .bottomTrailing : .bottom) {
             Group {
@@ -74,11 +68,7 @@ struct MainTabShell: View {
             .coordinateSpace(name: "bottomNavScroll")
 
             if isWide {
-                let spot = NavRail.placement(in: Self.windowSafeInsets)
-                NavRail(active: $tab)
-                    .padding(.trailing, spot.trailing)
-                    .padding(.bottom, spot.bottom)
-                    .ignoresSafeArea(.container, edges: .trailing)
+                NavRailLayer(active: $tab)
             } else {
                 BottomNavBar(active: $tab)
             }
@@ -212,7 +202,9 @@ struct BottomNavBar: View {
     private var outerPadding: CGFloat { isCompact ? 6 : 10 }
     private var horizontalInset: CGFloat { isCompact ? 28 : 16 }
     /// How far the pill dips into the home-indicator region (same on every tab).
-    private var homeIndicatorDip: CGFloat { isCompact ? 14 : 18 }
+    /// 13 leaves the pill 21 pt off the bottom on Face ID iPhones — where iOS's
+    /// own floating tab bar sits.
+    private var homeIndicatorDip: CGFloat { isCompact ? 9 : 13 }
 
     var body: some View {
         // Narrow screens (iPhone Duo outer, SE) drop the active label rather than
@@ -329,10 +321,39 @@ struct NavRail: View {
     }
 
     static let width: CGFloat = 52
+    /// 5 × 44 pt targets + 4 × 4 pt gaps + 2 × 4 pt padding.
+    static var height: CGFloat { CGFloat(AppTab.allCases.count) * 44 + CGFloat(AppTab.allCases.count - 1) * 4 + 8 }
+}
 
-    /// Centre the rail in the right-hand safe-area strip, pinned near the bottom.
-    static func placement(in window: UIEdgeInsets) -> (trailing: CGFloat, bottom: CGFloat) {
-        (max(6, (window.right - width) / 2), max(window.bottom, 12))
+/// Places the rail in full-window coordinates — centred in the right-hand status
+/// strip, pinned to the bottom — with `.position`, so the touch targets sit exactly
+/// where the rail is drawn. (Pushing it into the strip with a safe-area override
+/// drew it in one place and hit-tested it in another on the Duo's inner screen.)
+struct NavRailLayer: View {
+    @Binding var active: AppTab
+
+    var body: some View {
+        GeometryReader { proxy in
+            // Inside an ignoresSafeArea reader the proxy reports zero insets, so read
+            // the window's: right = the status strip, bottom = home-indicator zone.
+            let insets = Self.windowInsets
+            let full = proxy.size
+            let trailingGap = max(6, (insets.right - NavRail.width) / 2)
+            // Same lift iOS gives its own tab bar here (~28 pt off the bottom edge).
+            let bottomGap = max(insets.bottom, 28)
+            NavRail(active: $active)
+                .position(
+                    x: full.width - trailingGap - NavRail.width / 2,
+                    y: full.height - bottomGap - NavRail.height / 2
+                )
+        }
+        .ignoresSafeArea()
+    }
+
+    private static var windowInsets: UIEdgeInsets {
+        let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+        let window = scenes.flatMap(\.windows).first(where: \.isKeyWindow) ?? scenes.first?.windows.first
+        return window?.safeAreaInsets ?? .zero
     }
 }
 

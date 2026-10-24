@@ -9,6 +9,8 @@ struct ProductShotsPreview: View {
     @StateObject private var avatarStore = ProfileAvatarStore.shared
     @StateObject private var vehiclePhotos = VehiclePhotoStore.shared
     @State private var tab: AppTab
+    /// `-ShotSheet`: open Add fill on launch, to check sheet sizing per screen.
+    @State private var showSheet = ProcessInfo.processInfo.arguments.contains("-ShotSheet")
     @Environment(\.windowSize) private var windowSize
 
     private var isWide: Bool { VS.Layout.isWide(windowSize) }
@@ -54,17 +56,14 @@ struct ProductShotsPreview: View {
             .padding(.horizontal, isWide && tab != .trips ? VS.Spacing.frameGutter : 0)
 
             if isWide {
-                let spot = NavRail.placement(in: MainTabShell.windowSafeInsets)
-                NavRail(active: $tab)
-                    .padding(.trailing, spot.trailing)
-                    .padding(.bottom, spot.bottom)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
-                    .ignoresSafeArea(.container, edges: .trailing)
+                NavRailLayer(active: $tab)
             } else {
+                // Tappable, so the demo build can be driven tab to tab like the real app.
                 BottomNavBar(active: $tab)
-                    .allowsHitTesting(false)
             }
         }
+        // Same as MainTabShell: measure the bottom bar from the physical edge.
+        .ignoresSafeArea(.container, edges: .bottom)
         .environmentObject(store)
         .environmentObject(navChrome)
         .environmentObject(avatarStore)
@@ -74,6 +73,12 @@ struct ProductShotsPreview: View {
         .environmentObject(TripRecordingService.shared)
         .preferredColorScheme(.dark)
         .tint(VS.Color.accent)
+        .sheet(isPresented: $showSheet) {
+            if let vehicle = store.currentVehicle {
+                RefuelSheetView(vehicleId: vehicle.id)
+                    .environmentObject(store)
+            }
+        }
         .onAppear {
             store.seedProductShots()
             avatarStore.load(userId: "portfolio-demo")

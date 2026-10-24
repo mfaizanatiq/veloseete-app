@@ -353,6 +353,8 @@ extension View {
     /// `allowsWide`: the sheet has its own wide layout (e.g. drive details), so skip the column cap.
     func veloseeteSheet(allowsWide: Bool = false) -> some View {
         readableWidth(allowsWide ? .infinity : VS.Layout.readableWidth)
+            // Wide screens (Duo unfolded) open sheets centred, iOS-style; phones unchanged.
+            .modifier(CenteredSheetSizing(large: allowsWide))
             .presentationBackground(Color(hex: 0x0B0E0B))
             .presentationCornerRadius(VS.Radius.sheet)
             .presentationDragIndicator(.visible)
@@ -551,5 +553,23 @@ extension EnvironmentValues {
     /// True when the window is in wide mode — the nav rail owns the profile button.
     var isWideLayout: Bool {
         VS.Layout.isWide(windowSize)
+    }
+}
+
+/// Form-sized (or page-sized for rich sheets like drive details) centred sheets.
+/// Only affects regular-width screens; compact iPhones keep full-width sheets.
+private struct CenteredSheetSizing: ViewModifier {
+    let large: Bool
+
+    func body(content: Content) -> some View {
+        if #available(iOS 18.0, *) {
+            if large {
+                content.presentationSizing(.page)
+            } else {
+                content.presentationSizing(.form)
+            }
+        } else {
+            content
+        }
     }
 }
