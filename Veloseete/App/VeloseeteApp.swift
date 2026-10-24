@@ -110,6 +110,7 @@ struct VeloseeteApp: App {
                     .zIndex(10)
                 }
             }
+            .tracksWindowSize()
             .environmentObject(authService)
             .environmentObject(dataStore)
             .environmentObject(tripPermissions)

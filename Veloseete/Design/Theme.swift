@@ -71,6 +71,22 @@ enum VS {
         static let gutter: CGFloat = 12
     }
 
+    /// Screen-shape rules: one phone-width column, wherever the window is wider.
+    enum Layout {
+        /// Pages and sheets stop growing here (iPhone Duo inner screen, larger windows)
+        /// and centre — Veloseete reads as a phone-width column of floating cards.
+        static let readableWidth: CGFloat = 600
+        /// Floating panels over the Trips map stay this wide at most.
+        static let floatingPanelWidth: CGFloat = 560
+
+        /// Current key-window size — a fallback before the root has measured.
+        static var keyWindowSize: CGSize {
+            let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+            let window = scenes.flatMap(\.windows).first(where: \.isKeyWindow) ?? scenes.first?.windows.first
+            return window?.bounds.size ?? CGSize(width: 402, height: 874)
+        }
+    }
+
     /// The type scale lives in `Shared/TextStyle.swift` so widgets use it too.
     typealias TextStyle = VSTextStyle
 }
@@ -291,6 +307,17 @@ extension View {
         background { VeloseeteBackground() }
     }
 
+    /// Cap to a phone-width column and centre it; no-op on regular iPhones.
+    func readableWidth(_ width: CGFloat = VS.Layout.readableWidth) -> some View {
+        frame(maxWidth: width).frame(maxWidth: .infinity)
+    }
+
+    /// Measures the window once at the root and shares it as `\.windowSize`, so
+    /// layouts follow fold / unfold instead of a size read once at launch.
+    func tracksWindowSize() -> some View {
+        modifier(WindowSizeReader())
+    }
+
     /// Float a surface inside the frame scrim (narrow gutter on all sides).
     func floatingInFrame(
         radius: CGFloat = VS.Radius.panel,
@@ -301,7 +328,8 @@ extension View {
 
     /// Standard presentation chrome shared by all sheets and modals.
     func veloseeteSheet() -> some View {
-        presentationBackground(Color(hex: 0x0B0E0B))
+        readableWidth()
+            .presentationBackground(Color(hex: 0x0B0E0B))
             .presentationCornerRadius(VS.Radius.sheet)
             .presentationDragIndicator(.visible)
     }
@@ -315,8 +343,10 @@ private struct FloatingInFrame: ViewModifier {
     func body(content: Content) -> some View {
         content
             .clipShape(RoundedRectangle(cornerRadius: radius, style: .continuous))
+            .frame(maxWidth: VS.Layout.floatingPanelWidth)
             .padding(.horizontal, VS.Spacing.frameGutter)
             .padding(.bottom, bottomClearance)
+            .frame(maxWidth: .infinity)
     }
 }
 
@@ -400,5 +430,34 @@ struct ModalBackButton: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel("Back to \(title)")
+    }
+}
+
+private struct WindowSizeKey: EnvironmentKey {
+    static var defaultValue: CGSize { VS.Layout.keyWindowSize }
+}
+
+extension EnvironmentValues {
+    /// Full window size (safe areas included) — use instead of `UIScreen.main.bounds`.
+    var windowSize: CGSize {
+        get { self[WindowSizeKey.self] }
+        set { self[WindowSizeKey.self] = newValue }
+    }
+}
+
+private struct WindowSizeReader: ViewModifier {
+    @State private var size = VS.Layout.keyWindowSize
+
+    func body(content: Content) -> some View {
+        content
+            .environment(\.windowSize, size)
+            .background {
+                GeometryReader { proxy in
+                    Color.clear
+                        .onAppear { size = proxy.size }
+                        .onChange(of: proxy.size) { _, newSize in size = newSize }
+                }
+                .ignoresSafeArea()
+            }
     }
 }

@@ -36,6 +36,8 @@ struct TripsView: View {
     @EnvironmentObject private var store: DataStore
     @EnvironmentObject private var tripPermissions: TripPermissionsManager
     @EnvironmentObject private var recorder: TripRecordingService
+    /// Live window size — follows fold / unfold, unlike `UIScreen.main`.
+    @Environment(\.windowSize) private var windowSize
     @State private var sort: DriveSort = .recent
     @State private var selectedVehicleId: String? = nil
     @State private var selectedTripId: String? = nil
@@ -412,7 +414,7 @@ struct TripsView: View {
         switch recorder.phase {
         // ~60% of the screen — room for HUD without swallowing the map.
         case .recording:
-            return UIScreen.main.bounds.height * 0.60 + errorExtra
+            return windowSize.height * 0.60 + errorExtra
         case .confirming: return 320 + railExtra
         default: return 276 + railExtra
         }
@@ -1001,24 +1003,24 @@ struct TripsView: View {
 
     /// Collapsed sheet — keeps mode picker + bottom nav fully on screen.
     private var driveDrawerCollapsedHeight: CGFloat {
-        min(300, UIScreen.main.bounds.height * 0.36)
+        min(300, windowSize.height * 0.36)
     }
 
     /// Largest sheet that never covers top chrome or the floating bottom nav.
     private var driveDrawerMaxHeight: CGFloat {
-        let screen = UIScreen.main.bounds.height
+        let screen = windowSize.height
         let reservedTop: CGFloat = 132
         let reservedBottom = VS.Spacing.frameGutter + 78 + 12
         return max(driveDrawerCollapsedHeight, screen - reservedTop - reservedBottom)
     }
 
     private var driveDrawerExpandedHeight: CGFloat {
-        max(driveDrawerCollapsedHeight, min(driveDrawerMaxHeight, UIScreen.main.bounds.height * 0.56))
+        max(driveDrawerCollapsedHeight, min(driveDrawerMaxHeight, windowSize.height * 0.56))
     }
 
     /// Empty state is fixed-height (nothing to scroll) but needs room for its CTA.
     private var driveDrawerEmptyHeight: CGFloat {
-        max(driveDrawerCollapsedHeight, min(driveDrawerMaxHeight, UIScreen.main.bounds.height * 0.48))
+        max(driveDrawerCollapsedHeight, min(driveDrawerMaxHeight, windowSize.height * 0.48))
     }
 
     private var panelBackground: some View {
@@ -1207,7 +1209,7 @@ struct TripsView: View {
         shiftForPitch: Bool = true
     ) -> MKCoordinateRegion {
         let base = region(for: coordinates)
-        let viewportHeight = max(UIScreen.main.bounds.height, 1)
+        let viewportHeight = max(windowSize.height, 1)
         let usableHeight = max(180, viewportHeight - mapTopObstruction - mapBottomObstruction)
         let mapCanvasHeight = viewportHeight + mapTopObstruction + mapBottomObstruction
         let fittedLatitudeDelta = base.span.latitudeDelta * mapCanvasHeight / usableHeight

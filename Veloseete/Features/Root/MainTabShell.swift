@@ -57,6 +57,8 @@ struct MainTabShell: View {
                     DriverProfileView(onProfile: { showProfile = true })
                 }
             }
+            // Trips is a full-bleed map; every other tab is a phone-width column.
+            .frame(maxWidth: tab == .trips ? .infinity : VS.Layout.readableWidth)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .coordinateSpace(name: "bottomNavScroll")
 
@@ -194,6 +196,19 @@ struct BottomNavBar: View {
     private var homeIndicatorDip: CGFloat { isCompact ? 14 : 18 }
 
     var body: some View {
+        // Narrow screens (iPhone Duo outer, SE) drop the active label rather than
+        // truncate it to "Ser…" — the lime bubble still marks the tab.
+        ViewThatFits(in: .horizontal) {
+            bar(showsLabel: true)
+            bar(showsLabel: false)
+        }
+        .padding(.horizontal, horizontalInset)
+        // Parent shell always ignores the bottom safe area, so pad from the
+        // physical bottom using the window inset — identical on Drives + others.
+        .padding(.bottom, max(Self.homeIndicatorInset - homeIndicatorDip, 6))
+    }
+
+    private func bar(showsLabel: Bool) -> some View {
         HStack(spacing: 0) {
             ForEach(Array(AppTab.allCases.enumerated()), id: \.element) { index, item in
                 Button {
@@ -211,21 +226,24 @@ struct BottomNavBar: View {
                             activeTint: outerPill
                         )
 
-                        if active == item && !isCompact {
+                        if active == item && !isCompact && showsLabel {
                             Text(item.label)
                                 .font(VS.TextStyle.subheadline(.semibold))
                                 .foregroundStyle(.white)
                                 .lineLimit(1)
+                                .fixedSize()
                                 .transition(.opacity.combined(with: .move(edge: .trailing)))
                         }
                     }
-                    .padding(.horizontal, active == item && !isCompact ? 10 : (isCompact ? 4 : 6))
+                    .padding(.horizontal, active == item && !isCompact && showsLabel ? 10 : (isCompact ? 4 : 6))
                     .frame(minHeight: itemMinHeight)
                     .background(
                         Capsule().fill(active == item ? selectedPill : .clear)
                     )
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel(item.label)
+                .accessibilityAddTraits(active == item ? .isSelected : [])
 
                 if index < AppTab.allCases.count - 1 {
                     Spacer(minLength: isCompact ? 6 : 4)
@@ -239,10 +257,6 @@ struct BottomNavBar: View {
                 .fill(outerPill)
                 .shadow(color: .black.opacity(0.4), radius: isCompact ? 12 : 16, y: 4)
         )
-        .padding(.horizontal, horizontalInset)
-        // Parent shell always ignores the bottom safe area, so pad from the
-        // physical bottom using the window inset — identical on Drives + others.
-        .padding(.bottom, max(Self.homeIndicatorInset - homeIndicatorDip, 6))
     }
 
     /// Stable home-indicator height from the key window (not affected by tab layout).

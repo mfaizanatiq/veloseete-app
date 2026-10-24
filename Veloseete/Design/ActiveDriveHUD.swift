@@ -126,6 +126,9 @@ private struct DriveEfficiencyArcMeter: View {
     private let wavelength: CGFloat = 48
     private let amplitude: CGFloat = 4.0
 
+    /// Measured panel width — the gauge's height follows it (fold / unfold safe).
+    @State private var measuredWidth: CGFloat = 314
+
     private var level: Double { min(max(fillLevel, 0), 1) }
     private var snapped: Double { (level * 20).rounded() / 20 }
 
@@ -235,7 +238,8 @@ private struct DriveEfficiencyArcMeter: View {
             }
         }
         .frame(maxWidth: .infinity)
-        .frame(height: min(max((UIScreen.main.bounds.width - 88) * 0.46, 148), 188) + iconDrop + 6)
+        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { measuredWidth = $0 }
+        .frame(height: min(max((measuredWidth - sideInset * 2) * 0.46, 148), 188) + iconDrop + 6)
         .accessibilityElement(children: .combine)
         .accessibilityLabel("Efficiency reserve \(Int(snapped * 100)) percent, \(Int(speedKmh)) kilometers per hour")
     }

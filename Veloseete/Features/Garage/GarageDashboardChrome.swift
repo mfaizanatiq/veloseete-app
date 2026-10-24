@@ -132,8 +132,8 @@ private struct GarageShowroomLayout {
     }
 
     /// Visible height left for Garage after header / segment / tab / safe areas.
-    static func viewportBudget(containerWidth: CGFloat) -> CGFloat {
-        let screen = UIScreen.main.bounds.height
+    static func viewportBudget(containerWidth: CGFloat, windowHeight: CGFloat) -> CGFloat {
+        let screen = windowHeight
         let safe = keyWindowSafeInsets
         // Header ~88, segment+gap ~70, page dots ~22, floating tab clearance ~110, vertical padding ~20.
         let reserved = safe.top + safe.bottom + 88 + 70 + 22 + 110 + 20
@@ -161,7 +161,8 @@ struct GarageHeroCarousel: View {
     var onEditVehicle: (Vehicle) -> Void
     var onRestoreVehicle: (Vehicle) -> Void
 
-    @State private var containerWidth: CGFloat = UIScreen.main.bounds.width - 40
+    @Environment(\.windowSize) private var windowSize
+    @State private var containerWidth: CGFloat = VS.Layout.keyWindowSize.width - 40
     @State private var activeSnack: GarageActiveCarSnack?
     @State private var snackDismissTask: Task<Void, Never>?
 
@@ -175,7 +176,7 @@ struct GarageHeroCarousel: View {
     private var layout: GarageShowroomLayout {
         GarageShowroomLayout(
             containerWidth: containerWidth,
-            viewportHeight: GarageShowroomLayout.viewportBudget(containerWidth: containerWidth)
+            viewportHeight: GarageShowroomLayout.viewportBudget(containerWidth: containerWidth, windowHeight: windowSize.height)
         )
     }
 
