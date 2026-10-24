@@ -382,6 +382,17 @@ struct MetricsRow: View {
     }
 
     private func bentoCard(value: String, label: String, icon: VSIconName) -> some View {
+        BentoStatTile(value: value, label: label, icon: icon)
+    }
+}
+
+/// Square stat tile shared by the Fuels and Service tabs.
+struct BentoStatTile: View {
+    let value: String
+    let label: String
+    let icon: VSIconName
+
+    var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
                 Spacer(minLength: 0)

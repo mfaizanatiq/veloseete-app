@@ -1500,8 +1500,15 @@ struct ServiceListView: View {
     @State private var showEditor = false
     @State private var typeFilter: String?
 
+    private var vehicle: Vehicle? { store.currentVehicle }
+
     private var logs: [ServiceLog] {
-        store.serviceLogs.filter { $0.vehicleId == store.currentVehicle?.id }.sorted { $0.timestamp > $1.timestamp }
+        store.serviceLogs.filter { $0.vehicleId == vehicle?.id }.sorted { $0.timestamp > $1.timestamp }
+    }
+
+    /// Live dash estimate — the same number the Trips tab shows.
+    private var currentKm: Double {
+        vehicle.flatMap { store.odometerEstimate(vehicleId: $0.id)?.estimatedKm } ?? vehicle?.currentOdometer ?? 0
     }
 
     private var filterTypes: [String] {
@@ -1516,70 +1523,61 @@ struct ServiceListView: View {
         return logs.filter { $0.serviceType == typeFilter }
     }
 
+    private var currency: String { vehicle?.currency ?? "QAR" }
+
+    private func spent(since start: Date?) -> Double {
+        logs
+            .filter { log in log.currency == currency && (start.map { log.timestamp >= $0 } ?? true) }
+            .reduce(0) { $0 + ($1.cost ?? 0) }
+    }
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: VS.Spacing.floatStack) {
-                MainTabHeader("Service", subtitle: store.currentVehicle?.nickname ?? TrackyVoice.Soft.serviceSubtitle, onProfile: onProfile)
+                MainTabHeader(
+                    "Service",
+                    subtitle: vehicle.map { "\($0.nickname) · care & costs" } ?? TrackyVoice.Soft.serviceSubtitle,
+                    onProfile: onProfile
+                )
 
-                serviceTrendCard
+                summaryChip
+
+                if vehicle != nil {
+                    ServiceHeroCard(
+                        logs: logs,
+                        currentKm: currentKm,
+                        unit: store.defaultDistanceUnit
+                    )
+                }
 
                 PrimaryCTAButton(title: TrackyVoice.Soft.logServiceCTA, icon: .wrench) {
-                    editingLog = nil; showEditor = true
+                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                    editingLog = nil
+                    showEditor = true
                 }
 
-                VSSection(title: "History") {
-                    if logs.isEmpty {
-                        Button { showEditor = true } label: {
-                            VStack(spacing: 14) {
-                                VSIcon(icon: .wrench, size: 34, weight: .regular, tint: VS.Color.accent)
-                                Text(TrackyVoice.Soft.emptyServiceTitle)
-                                    .font(VS.TextStyle.headline(.semibold))
-                                    .foregroundStyle(VS.Color.textPrimary)
-                                Text(TrackyVoice.Soft.emptyServiceBody)
-                                    .font(VS.TextStyle.footnote())
-                                    .foregroundStyle(VS.Color.textSecondary)
-                                    .multilineTextAlignment(.center)
-                            }
-                            .frame(maxWidth: .infinity)
-                            .padding(VS.Spacing.card)
-                            .glassCard(elevated: true)
-                        }
-                        .buttonStyle(.plain)
-                    } else {
-                        VStack(alignment: .leading, spacing: VS.Spacing.stack) {
-                            historyFilterChips
-
-                            if visibleLogs.isEmpty {
-                                Text(TrackyVoice.Soft.emptyServiceFilter(typeFilter ?? TrackyVoice.Soft.serviceFilterAll))
-                                    .font(VS.TextStyle.footnote())
-                                    .foregroundStyle(VS.Color.textSecondary)
-                                    .multilineTextAlignment(.center)
-                                    .frame(maxWidth: .infinity)
-                                    .padding(VS.Spacing.card)
-                                    .glassCard(elevated: true)
-                            } else {
-                                VStack(spacing: 0) {
-                                    ForEach(visibleLogs) { log in
-                                        Button {
-                                            editingLog = log
-                                            showEditor = true
-                                        } label: {
-                                            serviceRow(log)
-                                        }
-                                        .buttonStyle(.plain)
-
-                                        if log.id != visibleLogs.last?.id {
-                                            Divider().overlay(VS.Color.divider)
-                                        }
-                                    }
-                                }
-                                .padding(VS.Spacing.card)
-                                .glassCard(elevated: true)
-                            }
-                        }
+                if !logs.isEmpty {
+                    HStack(spacing: VS.Spacing.gutter) {
+                        BentoStatTile(
+                            value: CurrencyFormat.format(spent(since: Calendar.current.dateInterval(of: .year, for: Date())?.start), currency: currency),
+                            label: "Spent this year",
+                            icon: .wrench
+                        )
+                        BentoStatTile(
+                            value: logs.first.map {
+                                DistanceFormat.formatOdometer(max(0, currentKm - $0.odometerReading), unit: store.defaultDistanceUnit)
+                            } ?? "—",
+                            label: "Since last service",
+                            icon: .roadHorizon
+                        )
                     }
                 }
-            }.padding(.horizontal, VS.Spacing.pageInset).padding(.bottom, 110).tracksBottomNavScroll()
+
+                historySection
+            }
+            .padding(.horizontal, VS.Spacing.pageInset)
+            .padding(.bottom, 110)
+            .tracksBottomNavScroll()
         }
         .veloseetePage()
         .sheet(isPresented: $showEditor) { ServiceEditorSheet(log: editingLog) }
@@ -1589,6 +1587,86 @@ struct ServiceListView: View {
         .onChange(of: filterTypes) { _, types in
             if let typeFilter, !types.contains(typeFilter) {
                 self.typeFilter = nil
+            }
+        }
+    }
+
+    private var summaryChip: some View {
+        HStack(spacing: 8) {
+            VSIcon(icon: .wrench, size: 12, weight: .bold, tint: VS.Color.textTertiary)
+            Text(logs.isEmpty
+                 ? "No services logged yet"
+                 : "\(logs.count) service\(logs.count == 1 ? "" : "s") · \(CurrencyFormat.format(spent(since: nil), currency: currency)) all time")
+                .font(VS.TextStyle.caption2(.medium))
+            Spacer()
+            Text(DistanceFormat.formatOdometer(currentKm, unit: store.defaultDistanceUnit))
+                .font(VS.TextStyle.caption2(.semibold))
+        }
+        .foregroundStyle(VS.Color.textTertiary)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+        .glassCard(elevated: true)
+    }
+
+    private var historySection: some View {
+        VStack(alignment: .leading, spacing: VS.Spacing.stack) {
+            VSSectionHeader(title: "History")
+
+            if logs.isEmpty {
+                Button { showEditor = true } label: {
+                    VStack(spacing: 14) {
+                        FluentEmojiView(emoji: "🔧", size: 48)
+                        Text(TrackyVoice.Soft.emptyServiceTitle)
+                            .font(VS.TextStyle.headline(.semibold))
+                            .foregroundStyle(VS.Color.textPrimary)
+                        Text(TrackyVoice.Soft.emptyServiceBody)
+                            .font(VS.TextStyle.footnote())
+                            .foregroundStyle(VS.Color.textSecondary)
+                            .multilineTextAlignment(.center)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(VS.Spacing.card)
+                    .glassCard(elevated: true)
+                }
+                .buttonStyle(.plain)
+            } else {
+                if filterTypes.count > 1 {
+                    historyFilterChips
+                }
+
+                if visibleLogs.isEmpty {
+                    Text(TrackyVoice.Soft.emptyServiceFilter(typeFilter ?? TrackyVoice.Soft.serviceFilterAll))
+                        .font(VS.TextStyle.footnote())
+                        .foregroundStyle(VS.Color.textSecondary)
+                        .multilineTextAlignment(.center)
+                        .frame(maxWidth: .infinity)
+                        .padding(VS.Spacing.card)
+                        .glassCard(elevated: true)
+                } else {
+                    VStack(spacing: 0) {
+                        ForEach(visibleLogs) { log in
+                            Button {
+                                UISelectionFeedbackGenerator().selectionChanged()
+                                editingLog = log
+                                showEditor = true
+                            } label: {
+                                HStack(spacing: 10) {
+                                    serviceRow(log)
+                                    Image(systemName: "chevron.right")
+                                        .font(.system(size: 12, weight: .semibold))
+                                        .foregroundStyle(VS.Color.textTertiary)
+                                }
+                            }
+                            .buttonStyle(.plain)
+
+                            if log.id != visibleLogs.last?.id {
+                                Divider().overlay(VS.Color.divider)
+                            }
+                        }
+                    }
+                    .padding(VS.Spacing.card)
+                    .glassCard(elevated: true)
+                }
             }
         }
     }
@@ -1612,83 +1690,168 @@ struct ServiceListView: View {
         }
     }
 
-    private var serviceTrendCard: some View {
-        let latest = logs.first
-        return VStack(alignment: .leading, spacing: 14) {
-            Label("Service trend", systemImage: "chart.line.uptrend.xyaxis").font(VS.TextStyle.title3(.semibold)).foregroundStyle(VS.Color.textPrimary)
-            serviceFact("Current odometer", store.currentVehicle.map { DistanceFormat.formatOdometer($0.currentOdometer, unit: store.defaultDistanceUnit) } ?? "—")
-            serviceFact("Last service", latest.map { "\($0.serviceType) · \($0.timestamp.formatted(date: .abbreviated, time: .omitted))" } ?? "No records yet")
-            if let latest { serviceDueRow(latest) }
-        }.padding(VS.Spacing.card).glassCard(elevated: true)
-    }
-
-    private func serviceFact(_ label: String, _ value: String) -> some View {
-        HStack { Text(label).font(VS.TextStyle.caption()).foregroundStyle(VS.Color.textTertiary); Spacer(); Text(value).font(VS.TextStyle.footnote(.semibold)).foregroundStyle(VS.Color.textPrimary) }
-        .padding(13).metricInset()
-    }
-
-    @ViewBuilder private func serviceDueRow(_ log: ServiceLog) -> some View {
-        if let date = log.nextServiceDate {
-            let days = Calendar.current.dateComponents([.day], from: Date(), to: date).day ?? 0
-            serviceStatus(label: "Next service", value: days < 0 ? "Overdue by \(-days) days" : "Due in \(days) days", warning: days <= 7)
-        } else if let next = log.nextServiceOdometer, let current = store.currentVehicle?.currentOdometer {
-            let remaining = Int(next - current)
-            serviceStatus(label: "Next service", value: remaining < 0 ? "Overdue by \(-remaining) km" : "\(remaining) km remaining", warning: remaining <= 500)
-        }
-    }
-
-    private func serviceStatus(label: String, value: String, warning: Bool) -> some View {
-        HStack { Text(label); Spacer(); Text(value).fontWeight(.semibold) }
-            .font(VS.TextStyle.caption()).foregroundStyle(warning ? VS.Color.warning : VS.Color.accent)
-            .padding(13).background((warning ? VS.Color.warning : VS.Color.accent).opacity(0.09), in: RoundedRectangle(cornerRadius: VS.Radius.metric))
-    }
-
+    /// Same rhythm as a fill row: what, when · where on the dash, detail line, cost.
     private func serviceRow(_ log: ServiceLog) -> some View {
         let unit = store.defaultDistanceUnit
-        let currentKm = store.currentVehicle.flatMap { store.odometerEstimate(vehicleId: $0.id)?.estimatedKm }
-            ?? store.currentVehicle?.currentOdometer
-        let kmSince: Int? = {
-            guard let currentKm else { return nil }
-            return max(0, Int((currentKm - log.odometerReading).rounded()))
-        }()
+        let detail = [log.brand, log.description]
+            .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+            .joined(separator: " · ")
 
-        return HStack(alignment: .top, spacing: 12) {
-            VSIcon(icon: .wrench, size: 18, weight: .regular, tint: VS.Color.accent)
-                .frame(width: 36, height: 36)
-                .background(VS.Color.accent.opacity(0.1), in: Circle())
+        return HStack {
             VStack(alignment: .leading, spacing: 4) {
                 Text(log.serviceType)
-                    .font(VS.TextStyle.headline(.semibold))
+                    .font(VS.TextStyle.subheadline(.semibold))
                     .foregroundStyle(VS.Color.textPrimary)
-                if let brand = log.brand, !brand.isEmpty {
-                    Text(brand)
-                        .font(VS.TextStyle.caption(.semibold))
-                        .foregroundStyle(VS.Color.accent)
-                }
                 Text("\(log.timestamp.formatted(date: .abbreviated, time: .omitted)) · \(DistanceFormat.formatOdometer(log.odometerReading, unit: unit))")
-                    .font(VS.TextStyle.caption2())
+                    .font(VS.TextStyle.caption())
                     .foregroundStyle(VS.Color.textTertiary)
-                if let kmSince {
-                    Text("\(DistanceFormat.formatDistance(Double(kmSince), unit: unit)) since this service")
+                if !detail.isEmpty {
+                    Text(detail)
                         .font(VS.TextStyle.caption2(.medium))
-                        .foregroundStyle(VS.Color.textSecondary)
-                }
-                if let description = log.description {
-                    Text(description)
-                        .font(VS.TextStyle.caption2())
-                        .foregroundStyle(VS.Color.textSecondary)
-                        .lineLimit(2)
+                        .foregroundStyle(VS.Color.accentSecondary)
+                        .lineLimit(1)
                 }
             }
             Spacer()
             if let cost = log.cost {
                 Text(CurrencyFormat.format(cost, currency: log.currency))
-                    .font(VS.TextStyle.footnote(.semibold))
+                    .font(VS.TextStyle.headline(.semibold))
                     .foregroundStyle(VS.Color.textPrimary)
             }
         }
         .padding(.vertical, 10)
+        .accessibilityElement(children: .combine)
     }
+}
+
+/// Lime hero for the Service tab — what's due next, in one number, like the Fuels hero.
+struct ServiceHeroCard: View {
+    let logs: [ServiceLog]
+    let currentKm: Double
+    let unit: String
+
+    private var nextUp: ServiceSchedule.NextUp? {
+        ServiceSchedule.nextUp(logs: logs, currentKm: currentKm)
+    }
+
+    private var statusLabel: String {
+        guard let nextUp else { return logs.isEmpty ? "Start a log" : "No reminder" }
+        switch nextUp.status {
+        case .onTrack: return "On track"
+        case .dueSoon: return "Due soon"
+        case .overdue: return "Overdue"
+        }
+    }
+
+    /// Big number + its unit, and the sentence under it.
+    private var headline: (value: String, unit: String, caption: String) {
+        if let nextUp {
+            let type = nextUp.log.serviceType
+            if let kmLeft = nextUp.kmLeft {
+                let shown = unit == "mi" ? abs(kmLeft) * 0.621371 : abs(kmLeft)
+                let unitLabel = unit == "mi" ? "mi" : "km"
+                return kmLeft >= 0
+                    ? (shown.formatted(.number.precision(.fractionLength(0))), "\(unitLabel) left", "until \(type)")
+                    : (shown.formatted(.number.precision(.fractionLength(0))), "\(unitLabel) over", "\(type) is overdue")
+            }
+            let days = nextUp.daysLeft ?? 0
+            return days >= 0
+                ? ("\(days)", days == 1 ? "day left" : "days left", "until \(type)")
+                : ("\(-days)", -days == 1 ? "day over" : "days over", "\(type) is overdue")
+        }
+        if let latest = logs.first {
+            let since = max(0, currentKm - latest.odometerReading)
+            let shown = unit == "mi" ? since * 0.621371 : since
+            return (shown.formatted(.number.precision(.fractionLength(0))), unit == "mi" ? "mi" : "km", "since \(latest.serviceType) · add a reminder to track it")
+        }
+        return ("—", "", TrackyVoice.Soft.emptyServiceBody)
+    }
+
+    var body: some View {
+        let head = headline
+        // Compact on purpose: the header already names the car and History lists the
+        // last service, so the card only answers "what's next, and how close is it".
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(alignment: .center) {
+                Text(nextUp == nil ? "SERVICE" : "NEXT UP")
+                    .font(VS.TextStyle.label())
+                    .foregroundStyle(VS.Color.navPill.opacity(0.6))
+                Spacer(minLength: 12)
+                Text(statusLabel)
+                    .font(VS.TextStyle.caption(.semibold))
+                    .foregroundStyle(VS.Color.navPill)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 7)
+                    .background(nextUp?.status == .overdue ? VS.Color.navPill.opacity(0.12) : .clear, in: Capsule())
+                    .overlay(Capsule().strokeBorder(VS.Color.navPill.opacity(0.35), lineWidth: 1.5))
+            }
+
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Text(head.value)
+                        .font(VS.TextStyle.display())
+                        .foregroundStyle(VS.Color.navPill)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.6)
+                    Text(head.unit)
+                        .font(VS.TextStyle.title3())
+                        .foregroundStyle(VS.Color.navPill.opacity(0.65))
+                }
+                Text(head.caption)
+                    .font(VS.TextStyle.callout(.medium))
+                    .foregroundStyle(VS.Color.navPill.opacity(0.75))
+            }
+            .accessibilityElement(children: .combine)
+
+            if let nextUp {
+                progressBar(nextUp)
+            }
+        }
+        .padding(VS.Spacing.card)
+        .background(
+            RoundedRectangle(cornerRadius: VS.Radius.card, style: .continuous)
+                .fill(VS.Color.accent)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: VS.Radius.card, style: .continuous))
+    }
+
+    /// Last service → reminder, filled by how far along the car is.
+    private func progressBar(_ nextUp: ServiceSchedule.NextUp) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            GeometryReader { geo in
+                ZStack(alignment: .leading) {
+                    Capsule()
+                        .fill(VS.Color.navPill.opacity(0.18))
+                    Capsule()
+                        .fill(VS.Color.navPill.opacity(nextUp.status == .onTrack ? 0.55 : 0.9))
+                        .frame(width: max(10, geo.size.width * nextUp.progress))
+                }
+            }
+            .frame(height: 10)
+
+            HStack {
+                Text("Last \(DistanceFormat.formatOdometer(nextUp.log.odometerReading, unit: unit))")
+                    .font(VS.TextStyle.caption2(.semibold))
+                    .foregroundStyle(VS.Color.navPill)
+                Spacer()
+                Text(dueLabel(nextUp))
+                    .font(VS.TextStyle.caption2(.medium))
+                    .foregroundStyle(VS.Color.navPill.opacity(0.55))
+            }
+        }
+    }
+
+    private func dueLabel(_ nextUp: ServiceSchedule.NextUp) -> String {
+        if let next = nextUp.log.nextServiceOdometer {
+            return "Due \(DistanceFormat.formatOdometer(next, unit: unit))"
+        }
+        if let date = nextUp.log.nextServiceDate {
+            return "Due \(date.formatted(date: .abbreviated, time: .omitted))"
+        }
+        return ""
+    }
+
 }
 
 struct ServiceEditorSheet: View {
@@ -1710,6 +1873,9 @@ struct ServiceEditorSheet: View {
     @State private var saving = false
     @State private var errorMessage: String?
     @State private var showDeleteConfirmation = false
+    /// Last reminder we prefilled; once the driver edits it, we stop overwriting.
+    @State private var suggestedOdometer: String?
+    @State private var suggestedDate: Date?
 
     private let types = ServiceLog.knownTypes
 
@@ -1841,7 +2007,13 @@ struct ServiceEditorSheet: View {
                 .padding(20)
                 .background(VS.Color.bgPrimary.opacity(0.96))
             }
-            .onAppear { populate() }
+            .onAppear {
+                populate()
+                applySuggestedReminder()
+            }
+            .onChange(of: serviceType) { _, _ in applySuggestedReminder() }
+            .onChange(of: odometer) { _, _ in applySuggestedReminder() }
+            .onChange(of: serviceDate) { _, _ in applySuggestedReminder() }
             .alert("Delete service entry?", isPresented: $showDeleteConfirmation) {
                 Button("Delete", role: .destructive) { Task { await delete() } }
                 Button("Cancel", role: .cancel) {}
@@ -1856,24 +2028,10 @@ struct ServiceEditorSheet: View {
     private var typeSection: some View {
         VStack(alignment: .leading, spacing: 10) {
             fieldLabel("Service type")
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 8) {
-                    ForEach(types, id: \.self) { type in
-                        let selected = serviceType == type
-                        Button {
-                            UISelectionFeedbackGenerator().selectionChanged()
-                            serviceType = type
-                        } label: {
-                            Text(type)
-                                .font(VS.TextStyle.footnote(.semibold))
-                                .padding(.horizontal, 14)
-                                .padding(.vertical, 10)
-                                .background(Capsule().fill(selected ? VS.Color.accent : VS.Color.chip))
-                                .foregroundStyle(selected ? VS.Color.navPill : VS.Color.textSecondary)
-                        }
-                        .buttonStyle(.plain)
-                    }
-                }
+            // Wraps so every common service is visible at once — no hunting sideways.
+            FlowChipWrap(items: types, selected: serviceType) { type in
+                UISelectionFeedbackGenerator().selectionChanged()
+                serviceType = type
             }
 
             if isOtherType {
@@ -1911,6 +2069,12 @@ struct ServiceEditorSheet: View {
     private var reminderSection: some View {
         VStack(alignment: .leading, spacing: 14) {
             fieldLabel("Next reminder")
+            if let hint = intervalHint {
+                Text(hint)
+                    .font(VS.TextStyle.caption())
+                    .foregroundStyle(VS.Color.textTertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
             numberField(
                 label: "Next odometer",
                 placeholder: "Optional",
@@ -1937,6 +2101,47 @@ struct ServiceEditorSheet: View {
                 .padding(14)
                 .glassCard(elevated: true)
                 .foregroundStyle(VS.Color.textPrimary)
+            }
+        }
+    }
+
+    private var intervalHint: String? {
+        guard let interval = ServiceSchedule.suggestedInterval(for: serviceType) else { return nil }
+        let parts = [
+            interval.km.map { DistanceFormat.formatOdometer($0, unit: "km") },
+            interval.months.map { $0 % 12 == 0 ? "\($0 / 12) year\($0 == 12 ? "" : "s")" : "\($0) months" }
+        ].compactMap { $0 }
+        return "Typical for \(serviceType.lowercased()): every \(parts.joined(separator: " or ")). Your manual wins."
+    }
+
+    /// Prefill the next reminder from the type's usual interval — new entries only,
+    /// and never over a value the driver typed themselves.
+    private func applySuggestedReminder() {
+        guard log == nil else { return }
+        let interval = ServiceSchedule.suggestedInterval(for: serviceType)
+
+        let odometerIsOurs = nextOdometer.isEmpty || nextOdometer == suggestedOdometer
+        if odometerIsOurs {
+            if let km = interval?.km, let odo = Double(odometer), odo > 0 {
+                let value = String(format: "%.0f", odo + km)
+                nextOdometer = value
+                suggestedOdometer = value
+            } else {
+                nextOdometer = ""
+                suggestedOdometer = nil
+            }
+        }
+
+        let dateIsOurs = !hasNextDate || nextDate == suggestedDate
+        if dateIsOurs {
+            if let months = interval?.months,
+               let due = Calendar.current.date(byAdding: .month, value: months, to: serviceDate) {
+                hasNextDate = true
+                nextDate = due
+                suggestedDate = due
+            } else {
+                hasNextDate = false
+                suggestedDate = nil
             }
         }
     }
@@ -2073,52 +2278,76 @@ private enum TireBrandCatalog {
     }
 }
 
-/// Simple wrapping chip row without a third-party flow layout.
+/// Wrapping chip rows, measured — each row fills to the edge before breaking.
 private struct FlowChipWrap: View {
     let items: [String]
     let selected: String
     let onSelect: (String) -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            ForEach(rows, id: \.self) { row in
-                HStack(spacing: 8) {
-                    ForEach(row, id: \.self) { item in
-                        let isOn = selected == item
-                        Button {
-                            onSelect(item)
-                        } label: {
-                            Text(item)
-                                .font(VS.TextStyle.caption(.semibold))
-                                .padding(.horizontal, 12)
-                                .padding(.vertical, 8)
-                                .background(Capsule().fill(isOn ? VS.Color.accent : VS.Color.chip))
-                                .foregroundStyle(isOn ? VS.Color.navPill : VS.Color.textSecondary)
-                        }
-                        .buttonStyle(.plain)
-                    }
-                    Spacer(minLength: 0)
+        ChipFlowLayout(spacing: 8) {
+            ForEach(items, id: \.self) { item in
+                let isOn = selected == item
+                Button {
+                    onSelect(item)
+                } label: {
+                    Text(item)
+                        .font(VS.TextStyle.caption(.semibold))
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 8)
+                        .background(Capsule().fill(isOn ? VS.Color.accent : VS.Color.chip))
+                        .foregroundStyle(isOn ? VS.Color.navPill : VS.Color.textSecondary)
                 }
+                .buttonStyle(.plain)
             }
         }
     }
+}
 
-    /// Rough wrap by character budget so chips don’t overflow on small phones.
-    private var rows: [[String]] {
-        var result: [[String]] = [[]]
-        var lineWidth = 0
-        let budget = 34
-        for item in items {
-            let cost = item.count + 4
-            if lineWidth + cost > budget, !result[result.count - 1].isEmpty {
-                result.append([item])
-                lineWidth = cost
+/// Left-aligned flow layout: places subviews in rows, wrapping at the proposed width.
+private struct ChipFlowLayout: Layout {
+    var spacing: CGFloat
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let rows = arrange(width: proposal.width ?? .infinity, subviews: subviews)
+        let height = rows.map(\.height).reduce(0, +) + spacing * CGFloat(max(rows.count - 1, 0))
+        let width = rows.map(\.width).max() ?? 0
+        return CGSize(width: proposal.width ?? width, height: height)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        var y = bounds.minY
+        for row in arrange(width: bounds.width, subviews: subviews) {
+            var x = bounds.minX
+            for index in row.indices {
+                let size = subviews[index].sizeThatFits(.unspecified)
+                subviews[index].place(at: CGPoint(x: x, y: y), proposal: ProposedViewSize(size))
+                x += size.width + spacing
+            }
+            y += row.height + spacing
+        }
+    }
+
+    private struct Row {
+        var indices: [Int] = []
+        var width: CGFloat = 0
+        var height: CGFloat = 0
+    }
+
+    private func arrange(width: CGFloat, subviews: Subviews) -> [Row] {
+        var rows: [Row] = [Row()]
+        for index in subviews.indices {
+            let size = subviews[index].sizeThatFits(.unspecified)
+            let needed = rows[rows.count - 1].indices.isEmpty ? size.width : rows[rows.count - 1].width + spacing + size.width
+            if needed > width, !rows[rows.count - 1].indices.isEmpty {
+                rows.append(Row(indices: [index], width: size.width, height: size.height))
             } else {
-                result[result.count - 1].append(item)
-                lineWidth += cost
+                rows[rows.count - 1].indices.append(index)
+                rows[rows.count - 1].width = needed
+                rows[rows.count - 1].height = max(rows[rows.count - 1].height, size.height)
             }
         }
-        return result
+        return rows
     }
 }
 

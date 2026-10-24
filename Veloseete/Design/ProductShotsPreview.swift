@@ -18,6 +18,8 @@ struct ProductShotsPreview: View {
             _tab = State(initialValue: .fuel)
         } else if args.contains("-ShotDriver") {
             _tab = State(initialValue: .driver)
+        } else if args.contains("-ShotService") {
+            _tab = State(initialValue: .service)
         } else {
             _tab = State(initialValue: .details)
         }

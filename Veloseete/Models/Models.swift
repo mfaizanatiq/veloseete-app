@@ -311,9 +311,12 @@ extension FuelLog {
 }
 
 extension ServiceLog {
+    /// Most-common first. Stored as plain strings, so older entries keep working.
     static let knownTypes = [
-        "Oil Change", "New Tires", "Tire Rotation", "Brake Service", "Air Filter",
-        "Battery Replacement", "Transmission Service", "General Inspection", "Other"
+        "Oil Change", "Tire Rotation", "Wheel Alignment", "New Tires", "Brake Service",
+        "Air Filter", "Cabin Filter", "AC Service", "Battery Replacement", "Wiper Blades",
+        "Spark Plugs", "Coolant Flush", "Brake Fluid", "Transmission Service", "Timing Belt",
+        "General Inspection", "Registration", "Other"
     ]
 
     static func from(document id: String, data: [String: Any]) -> ServiceLog {
@@ -472,5 +475,96 @@ enum ProductModeration {
         }
         if let userId, config?.userIds.contains(userId) == true { return true }
         return false
+    }
+}
+
+/// Typical intervals and "what's due next" across a car's service history.
+enum ServiceSchedule {
+    struct Interval: Equatable {
+        var km: Double?
+        var months: Int?
+    }
+
+    /// Common-sense defaults — the owner's manual always wins, so these only prefill.
+    static func suggestedInterval(for type: String) -> Interval? {
+        switch type {
+        case "Oil Change": Interval(km: 10_000, months: 12)
+        case "Tire Rotation": Interval(km: 10_000, months: nil)
+        case "Wheel Alignment": Interval(km: 20_000, months: 12)
+        case "New Tires": Interval(km: 50_000, months: 60)
+        case "Brake Service": Interval(km: 30_000, months: 24)
+        case "Air Filter": Interval(km: 20_000, months: 24)
+        case "Cabin Filter": Interval(km: 15_000, months: 12)
+        case "AC Service": Interval(km: nil, months: 12)
+        case "Battery Replacement": Interval(km: nil, months: 36)
+        case "Wiper Blades": Interval(km: nil, months: 12)
+        case "Spark Plugs": Interval(km: 50_000, months: nil)
+        case "Coolant Flush": Interval(km: 50_000, months: 36)
+        case "Brake Fluid": Interval(km: nil, months: 24)
+        case "Transmission Service": Interval(km: 60_000, months: nil)
+        case "Timing Belt": Interval(km: 100_000, months: 72)
+        case "General Inspection", "Registration": Interval(km: nil, months: 12)
+        default: nil
+        }
+    }
+
+    enum Status: Equatable { case onTrack, dueSoon, overdue }
+
+    struct NextUp: Equatable {
+        var log: ServiceLog
+        var kmLeft: Double?
+        var daysLeft: Int?
+        /// 0…1 of the way from that service to its reminder.
+        var progress: Double
+        var status: Status
+    }
+
+    /// Rough km/day used to compare a km reminder with a date reminder.
+    static let assumedDailyKm: Double = 40
+
+    /// The most urgent reminder, using only the latest entry of each service type.
+    static func nextUp(
+        logs: [ServiceLog],
+        currentKm: Double,
+        now: Date = Date(),
+        calendar: Calendar = .current
+    ) -> NextUp? {
+        var latestByType: [String: ServiceLog] = [:]
+        for log in logs where (latestByType[log.serviceType]?.timestamp ?? .distantPast) < log.timestamp {
+            latestByType[log.serviceType] = log
+        }
+
+        let candidates: [(NextUp, urgency: Double)] = latestByType.values.compactMap { log in
+            let kmLeft = log.nextServiceOdometer.map { $0 - currentKm }
+            let daysLeft = log.nextServiceDate.map {
+                calendar.dateComponents([.day], from: calendar.startOfDay(for: now), to: calendar.startOfDay(for: $0)).day ?? 0
+            }
+            guard kmLeft != nil || daysLeft != nil else { return nil }
+
+            let kmProgress: Double? = log.nextServiceOdometer.flatMap { next in
+                let span = next - log.odometerReading
+                return span > 0 ? (currentKm - log.odometerReading) / span : nil
+            }
+            let dateProgress: Double? = log.nextServiceDate.flatMap { due in
+                let span = due.timeIntervalSince(log.timestamp)
+                return span > 0 ? now.timeIntervalSince(log.timestamp) / span : nil
+            }
+            let progress = min(max([kmProgress, dateProgress].compactMap { $0 }.max() ?? 0, 0), 1)
+
+            let overdue = (kmLeft ?? 1) < 0 || (daysLeft ?? 1) < 0
+            let soon = (kmLeft.map { $0 <= 500 } ?? false) || (daysLeft.map { $0 <= 14 } ?? false)
+            let urgency = min(kmLeft.map { $0 / assumedDailyKm } ?? .infinity, daysLeft.map(Double.init) ?? .infinity)
+            return (
+                NextUp(
+                    log: log,
+                    kmLeft: kmLeft,
+                    daysLeft: daysLeft,
+                    progress: progress,
+                    status: overdue ? .overdue : (soon ? .dueSoon : .onTrack)
+                ),
+                urgency
+            )
+        }
+        return candidates.min { $0.urgency < $1.urgency }?.0
     }
 }
