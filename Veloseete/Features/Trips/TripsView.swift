@@ -187,8 +187,10 @@ struct TripsView: View {
                 )
                 // Skip MapKit content rebuilds when nothing the map draws changed.
                 .equatable()
+                // Oversize the map past the chrome so its centre lands in the visible gap
+                // (below the top chips, above / beside the panel).
                 .frame(
-                    width: proxy.size.width,
+                    width: proxy.size.width + mapLeadingObstruction,
                     height: proxy.size.height + mapTopObstruction + mapBottomObstruction
                 )
                 .offset(y: -mapBottomObstruction)
@@ -204,21 +206,27 @@ struct TripsView: View {
             .allowsHitTesting(false)
             .ignoresSafeArea()
 
-            VStack(spacing: 0) {
-                // Must not eat taps meant for the map or the top segment.
-                Spacer(minLength: 0)
-                    .allowsHitTesting(false)
-
-                Group {
-                    if mode == .tracking {
-                        trackingMode
-                            .transition(.move(edge: .bottom).combined(with: .opacity))
-                    } else {
-                        drivesMode
-                            .transition(.move(edge: .bottom).combined(with: .opacity))
-                    }
+            if isWide {
+                // Duo unfolded: one full-height panel on the left, the map to its right.
+                HStack(spacing: 0) {
+                    tripsPanel(edge: .leading)
+                        .frame(width: VS.Layout.sidePanelWidth, height: sidePanelHeight, alignment: .top)
+                        .clipShape(RoundedRectangle(cornerRadius: VS.Radius.panel, style: .continuous))
+                        .padding(.leading, VS.Spacing.frameGutter)
+                    Spacer(minLength: 0)
+                        .allowsHitTesting(false)
                 }
-                .floatingInFrame(bottomClearance: VS.Spacing.frameGutter + 78)
+                .frame(maxHeight: .infinity, alignment: .bottom)
+                .padding(.bottom, VS.Spacing.frameGutter)
+            } else {
+                VStack(spacing: 0) {
+                    // Must not eat taps meant for the map or the top segment.
+                    Spacer(minLength: 0)
+                        .allowsHitTesting(false)
+
+                    tripsPanel(edge: .bottom)
+                        .floatingInFrame(bottomClearance: VS.Spacing.frameGutter + 78)
+                }
             }
 
             // Top chrome in the ZStack (not an overlay) so MapKit can't steal hits.
@@ -261,15 +269,18 @@ struct TripsView: View {
                     Spacer(minLength: 0)
                         .allowsHitTesting(false)
 
-                    Button {
-                        UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                        onProfile()
-                    } label: {
-                        ProfileAvatarView(image: avatarStore.image, size: 40)
-                            .overlay(Circle().stroke(VS.Color.accent.opacity(0.24), lineWidth: 1))
+                    // Wide mode: profile sits at the top of the nav rail.
+                    if !isWide {
+                        Button {
+                            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                            onProfile()
+                        } label: {
+                            ProfileAvatarView(image: avatarStore.image, size: 40)
+                                .overlay(Circle().stroke(VS.Color.accent.opacity(0.24), lineWidth: 1))
+                        }
+                        .buttonStyle(ScaleButtonStyle())
+                        .accessibilityLabel("Open profile")
                     }
-                    .buttonStyle(ScaleButtonStyle())
-                    .accessibilityLabel("Open profile")
                 }
                 .padding(.leading, VS.Spacing.frameGutter + 6)
                 .padding(.trailing, 16)
@@ -339,7 +350,7 @@ struct TripsView: View {
             }
         }) { trip in
             TripDetailView(trip: trip, unit: store.defaultDistanceUnit)
-                .veloseeteSheet()
+                .veloseeteSheet(allowsWide: true)
         }
         .onChange(of: drivesInputs) { old, new in
             rebuildDrives()
@@ -396,11 +407,37 @@ struct TripsView: View {
         }
     }
 
+    private var isWide: Bool { VS.Layout.isWide(windowSize) }
+
+    /// Tracking or My Drives, sliding in from the edge it lives on.
+    private func tripsPanel(edge: Edge) -> some View {
+        Group {
+            if mode == .tracking {
+                trackingMode
+                    .transition(.move(edge: edge).combined(with: .opacity))
+            } else {
+                drivesMode
+                    .transition(.move(edge: edge).combined(with: .opacity))
+            }
+        }
+    }
+
+    /// Wide mode: everything below the top chips, minus the bottom gutter.
+    private var sidePanelHeight: CGFloat {
+        max(320, windowSize.height - 150)
+    }
+
+    /// Wide mode keeps the panel on the left, so the map widens instead of growing down.
+    private var mapLeadingObstruction: CGFloat {
+        isWide ? VS.Layout.sidePanelWidth + VS.Spacing.frameGutter : 0
+    }
+
     /// Keeps the camera focal point inside the map area that is actually visible
     /// between the top controls and the live bottom panel.
     private var mapTopObstruction: CGFloat { 148 }
 
     private var mapBottomObstruction: CGFloat {
+        guard !isWide else { return 0 }
         let floatChrome = VS.Spacing.frameGutter * 2 + 78
         guard mode == .drives else { return trackingPanelHeight + floatChrome }
         // Always the collapsed height: expanding the drawer must never resize MapKit.
@@ -411,6 +448,7 @@ struct TripsView: View {
     private var trackingPanelHeight: CGFloat {
         let railExtra: CGFloat = trackingStatusPriority != nil ? 56 : 0
         let errorExtra: CGFloat = recorder.lastError == nil ? 0 : 36
+        if isWide, recorder.phase == .recording { return sidePanelHeight }
         switch recorder.phase {
         // ~60% of the screen — room for HUD without swallowing the map.
         case .recording:
@@ -981,8 +1019,9 @@ struct TripsView: View {
             vehicles: store.vehicles,
             isConfirmingAll: isConfirmingAll,
             showsSetUpTracking: tripPermissions.locationStatus != .always,
-            collapsedHeight: drives.isEmpty ? driveDrawerEmptyHeight : driveDrawerCollapsedHeight,
-            expandedHeight: drives.isEmpty ? driveDrawerEmptyHeight : driveDrawerExpandedHeight,
+            // Wide mode: a side panel is always fully open — no drag.
+            collapsedHeight: isWide ? sidePanelHeight : (drives.isEmpty ? driveDrawerEmptyHeight : driveDrawerCollapsedHeight),
+            expandedHeight: isWide ? sidePanelHeight : (drives.isEmpty ? driveDrawerEmptyHeight : driveDrawerExpandedHeight),
             expanded: $driveDrawerExpanded,
             actions: DrivesDrawer.Actions(
                 selectVehicle: { selectedVehicleId = $0 },
@@ -1895,44 +1934,7 @@ struct TripDetailView: View {
 
     var body: some View {
         NavigationStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 0) {
-                    routeHero
-
-                    VStack(alignment: .leading, spacing: 22) {
-                        metaRow
-                        statGrid
-                        paceCard
-                        fuelCard
-
-                        if let shareError {
-                            Text(shareError)
-                                .font(VS.TextStyle.footnote(.medium))
-                                .foregroundStyle(VS.Color.warning)
-                        }
-                        if let deleteError {
-                            Text(deleteError)
-                                .font(VS.TextStyle.footnote(.medium))
-                                .foregroundStyle(VS.Color.error)
-                        }
-                    }
-                    .padding(.horizontal, VS.Spacing.sheetInset)
-                    .padding(.top, 18)
-                    .padding(.bottom, 20)
-                }
-            }
-            .scrollIndicators(.hidden)
-            // Map runs edge-to-edge under the close button.
-            .ignoresSafeArea(.container, edges: .top)
-            // Fixed scrim so scrolled stats never sit naked under the toolbar buttons.
-            .overlay(alignment: .top) {
-                LinearGradient(colors: [VS.Color.bgPrimary.opacity(0.85), .clear], startPoint: .top, endPoint: .bottom)
-                    .frame(height: 120)
-                    .ignoresSafeArea(edges: .top)
-                    .allowsHitTesting(false)
-            }
-            // Actions stay reachable at any scroll depth; content insets above them.
-            .safeAreaInset(edge: .bottom, spacing: 0) { actionBar }
+            detailLayout
             .veloseetePage()
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
@@ -1978,12 +1980,80 @@ struct TripDetailView: View {
         }
     }
 
+    // MARK: Layout
+
+    @Environment(\.windowSize) private var windowSize
+
+    /// Phone: map hero above a scrolling column. Wide (Duo unfolded): the map fills
+    /// the left, details scroll in a column on the right.
+    @ViewBuilder
+    private var detailLayout: some View {
+        if VS.Layout.isWide(windowSize) {
+            HStack(spacing: 0) {
+                routeHero(height: nil)
+                    .ignoresSafeArea(.container, edges: [.top, .bottom, .leading])
+
+                ScrollView {
+                    detailsStack
+                        .padding(.top, 64)
+                }
+                .scrollIndicators(.hidden)
+                .frame(width: VS.Layout.sidePanelWidth + 40)
+                .safeAreaInset(edge: .bottom, spacing: 0) { actionBar }
+            }
+        } else {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 0) {
+                    routeHero(height: 400)
+                    detailsStack
+                }
+            }
+            .scrollIndicators(.hidden)
+            // Map runs edge-to-edge under the close button.
+            .ignoresSafeArea(.container, edges: .top)
+            // Fixed scrim so scrolled stats never sit naked under the toolbar buttons.
+            .overlay(alignment: .top) {
+                LinearGradient(colors: [VS.Color.bgPrimary.opacity(0.85), .clear], startPoint: .top, endPoint: .bottom)
+                    .frame(height: 120)
+                    .ignoresSafeArea(edges: .top)
+                    .allowsHitTesting(false)
+            }
+            // Actions stay reachable at any scroll depth; content insets above them.
+            .safeAreaInset(edge: .bottom, spacing: 0) { actionBar }
+        }
+    }
+
+    private var detailsStack: some View {
+        VStack(alignment: .leading, spacing: 22) {
+            metaRow
+            statGrid
+            paceCard
+            fuelCard
+
+            if let shareError {
+                Text(shareError)
+                    .font(VS.TextStyle.footnote(.medium))
+                    .foregroundStyle(VS.Color.warning)
+            }
+            if let deleteError {
+                Text(deleteError)
+                    .font(VS.TextStyle.footnote(.medium))
+                    .foregroundStyle(VS.Color.error)
+            }
+        }
+        .padding(.horizontal, VS.Spacing.sheetInset)
+        .padding(.top, 18)
+        .padding(.bottom, 20)
+    }
+
     // MARK: Sections
 
     /// Map with the drive's story on it: where from, where to, when.
-    private var routeHero: some View {
+    /// `height: nil` fills whatever the layout gives it (wide mode).
+    private func routeHero(height: CGFloat?) -> some View {
         routeMap
-            .frame(height: 400)
+            .frame(height: height)
+            .frame(maxHeight: height == nil ? .infinity : nil)
             .overlay(alignment: .bottom) {
                 LinearGradient(
                     stops: [

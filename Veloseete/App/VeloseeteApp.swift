@@ -62,6 +62,7 @@ struct VeloseeteApp: App {
     var body: some Scene {
         WindowGroup {
             #if DEBUG
+            Group {
             if ProcessInfo.processInfo.arguments.contains("-DriveHUDPreview") {
                 ActiveDriveHUDPreview()
                     .preferredColorScheme(.dark)
@@ -77,6 +78,7 @@ struct VeloseeteApp: App {
                 || ProcessInfo.processInfo.arguments.contains("-ShotDriver")
                 || ProcessInfo.processInfo.arguments.contains("-ShotService")
                 || ProcessInfo.processInfo.arguments.contains("-ShotFuelsEarly")
+                || ProcessInfo.processInfo.arguments.contains("-ShotTrips")
                 || ProcessInfo.processInfo.arguments.contains("-ProductShotsPreview")
             {
                 ProductShotsPreview()
@@ -90,6 +92,9 @@ struct VeloseeteApp: App {
             } else {
                 appRoot
             }
+            }
+            // Previews measure the window like appRoot does.
+            .tracksWindowSize()
             #else
             appRoot
             #endif

@@ -5,6 +5,7 @@ import SwiftUI
 /// Portfolio hero — real Trips map + ride HUD (tracking) or My Drives with routes.
 /// Launch Simulator with: `-TripsHeroPreview` or `-TripsHeroPreviewDrives`
 struct TripsHeroPreview: View {
+    @Environment(\.windowSize) private var windowSize
     private var showDrives: Bool {
         ProcessInfo.processInfo.arguments.contains("-TripsHeroPreviewDrives")
     }
@@ -73,6 +74,22 @@ struct TripsHeroPreview: View {
             .allowsHitTesting(false)
             .ignoresSafeArea()
 
+            if VS.Layout.isWide(windowSize) {
+                // Same as TripsView wide mode: chips on top, one full-height panel on the left.
+                VStack(alignment: .leading, spacing: 12) {
+                    topChrome
+                        .padding(.horizontal, 16)
+                        .padding(.top, 8)
+                    Group {
+                        if showDrives { drivesSheet } else { rideSheet }
+                    }
+                    .frame(width: VS.Layout.sidePanelWidth)
+                    .frame(maxHeight: .infinity, alignment: .top)
+                    .padding(.leading, VS.Spacing.frameGutter)
+                    .padding(.bottom, VS.Spacing.frameGutter)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            } else {
             VStack(spacing: 0) {
                 topChrome
                     .padding(.horizontal, 16)
@@ -93,6 +110,7 @@ struct TripsHeroPreview: View {
                         .padding(.horizontal, 14)
                         .padding(.bottom, 18)
                 }
+            }
             }
         }
         .preferredColorScheme(.dark)

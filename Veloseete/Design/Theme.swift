@@ -78,6 +78,17 @@ enum VS {
         static let readableWidth: CGFloat = 600
         /// Floating panels over the Trips map stay this wide at most.
         static let floatingPanelWidth: CGFloat = 560
+        /// At this width (iPhone Duo unfolded) the app switches to wide mode:
+        /// right-side nav rail, two-column tabs, Trips side panel.
+        static let wideMinWidth: CGFloat = 700
+        /// Wide-mode two-column pages stop growing here.
+        static let wideContentWidth: CGFloat = 1_000
+        /// Trips side panel width in wide mode.
+        static let sidePanelWidth: CGFloat = 400
+        /// Room the right-side nav rail takes, including its gutter.
+        static let railInset: CGFloat = 84
+
+        static func isWide(_ size: CGSize) -> Bool { size.width >= wideMinWidth }
 
         /// Current key-window size — a fallback before the root has measured.
         static var keyWindowSize: CGSize {
@@ -307,10 +318,18 @@ extension View {
         background { VeloseeteBackground() }
     }
 
-    /// Tab page width: full-bleed for the Trips map, a centred phone-width column otherwise.
-    func tabContentWidth(fullBleed: Bool) -> some View {
-        frame(maxWidth: fullBleed ? .infinity : VS.Layout.readableWidth)
+    /// Tab page width: full-bleed for the Trips map, otherwise a centred column —
+    /// phone-width normally, wider when the page lays out in two columns.
+    func tabContentWidth(fullBleed: Bool, twoColumn: Bool = false) -> some View {
+        frame(maxWidth: fullBleed ? .infinity : (twoColumn ? VS.Layout.wideContentWidth : VS.Layout.readableWidth))
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    /// For tab pages wrapped in a NavigationStack: in wide mode the shell has already
+    /// cleared the side safe areas with padding, but UIKit re-applies them inside the
+    /// stack — which made Driver narrower than Fuels and Service.
+    func wideTabSafeArea(_ isWide: Bool) -> some View {
+        ignoresSafeArea(.container, edges: isWide ? .horizontal : [])
     }
 
     /// Cap to a phone-width column and centre it; no-op on regular iPhones.
@@ -333,8 +352,9 @@ extension View {
     }
 
     /// Standard presentation chrome shared by all sheets and modals.
-    func veloseeteSheet() -> some View {
-        readableWidth()
+    /// `allowsWide`: the sheet has its own wide layout (e.g. drive details), so skip the column cap.
+    func veloseeteSheet(allowsWide: Bool = false) -> some View {
+        readableWidth(allowsWide ? .infinity : VS.Layout.readableWidth)
             .presentationBackground(Color(hex: 0x0B0E0B))
             .presentationCornerRadius(VS.Radius.sheet)
             .presentationDragIndicator(.visible)
@@ -465,5 +485,73 @@ private struct WindowSizeReader: ViewModifier {
                 }
                 .ignoresSafeArea()
             }
+    }
+}
+
+/// Two stacked groups on a phone; side by side in wide mode (iPhone Duo unfolded).
+/// `leadingTitle` only shows in wide mode, so both columns open on a section title
+/// and their first cards line up.
+struct AdaptiveColumns<Leading: View, Trailing: View>: View {
+    @Environment(\.windowSize) private var windowSize
+    var spacing: CGFloat = VS.Spacing.floatStack
+    var leadingTitle: String? = nil
+    var leadingSubtitle: String? = nil
+    @ViewBuilder var leading: () -> Leading
+    @ViewBuilder var trailing: () -> Trailing
+
+    var body: some View {
+        if VS.Layout.isWide(windowSize) {
+            EqualColumns(spacing: VS.Spacing.gutter) {
+                VStack(alignment: .leading, spacing: spacing) {
+                    if let leadingTitle {
+                        VSSectionHeader(title: leadingTitle, subtitle: leadingSubtitle)
+                    }
+                    leading()
+                }
+                VStack(alignment: .leading, spacing: spacing) { trailing() }
+            }
+        } else {
+            VStack(alignment: .leading, spacing: spacing) {
+                leading()
+                trailing()
+            }
+        }
+    }
+}
+
+/// Splits the width into equal columns, whatever the children would like — a
+/// sideways carousel can't widen its column and break the grid.
+struct EqualColumns: Layout {
+    var spacing: CGFloat
+
+    private func columnWidth(_ width: CGFloat, count: Int) -> CGFloat {
+        guard count > 0 else { return 0 }
+        return max(0, (width - spacing * CGFloat(count - 1)) / CGFloat(count))
+    }
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let width = proposal.width ?? 700
+        let column = columnWidth(width, count: subviews.count)
+        let height = subviews.map { $0.sizeThatFits(ProposedViewSize(width: column, height: nil)).height }.max() ?? 0
+        return CGSize(width: width, height: height)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        let column = columnWidth(bounds.width, count: subviews.count)
+        for (index, subview) in subviews.enumerated() {
+            let x = bounds.minX + CGFloat(index) * (column + spacing)
+            subview.place(
+                at: CGPoint(x: x, y: bounds.minY),
+                anchor: .topLeading,
+                proposal: ProposedViewSize(width: column, height: nil)
+            )
+        }
+    }
+}
+
+extension EnvironmentValues {
+    /// True when the window is in wide mode — the nav rail owns the profile button.
+    var isWideLayout: Bool {
+        VS.Layout.isWide(windowSize)
     }
 }

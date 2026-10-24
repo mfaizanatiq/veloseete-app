@@ -9,6 +9,9 @@ struct ProductShotsPreview: View {
     @StateObject private var avatarStore = ProfileAvatarStore.shared
     @StateObject private var vehiclePhotos = VehiclePhotoStore.shared
     @State private var tab: AppTab
+    @Environment(\.windowSize) private var windowSize
+
+    private var isWide: Bool { VS.Layout.isWide(windowSize) }
 
     init() {
         // Seed before first body render — Driver achievements crash on empty logs.
@@ -20,6 +23,8 @@ struct ProductShotsPreview: View {
             _tab = State(initialValue: .driver)
         } else if args.contains("-ShotService") {
             _tab = State(initialValue: .service)
+        } else if args.contains("-ShotTrips") {
+            _tab = State(initialValue: .trips)
         } else {
             _tab = State(initialValue: .details)
         }
@@ -45,10 +50,18 @@ struct ProductShotsPreview: View {
                 }
             }
             // Same width rule as MainTabShell, so shots match the real app.
-            .tabContentWidth(fullBleed: tab == .trips)
+            .tabContentWidth(fullBleed: tab == .trips, twoColumn: isWide && tab != .details)
+            .padding(.trailing, isWide && tab != .trips ? VS.Layout.railInset : 0)
+            .padding(.leading, isWide && tab != .trips ? VS.Spacing.frameGutter : 0)
 
-            BottomNavBar(active: $tab)
-                .allowsHitTesting(false)
+            if isWide {
+                NavRail(active: $tab)
+                    .padding(.trailing, VS.Spacing.frameGutter)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .trailing)
+            } else {
+                BottomNavBar(active: $tab)
+                    .allowsHitTesting(false)
+            }
         }
         .environmentObject(store)
         .environmentObject(navChrome)

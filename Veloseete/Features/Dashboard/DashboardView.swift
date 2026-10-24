@@ -34,6 +34,8 @@ struct DashboardView: View {
                 syncStatusChip
 
                 if let vehicle, let metrics {
+                    // Phone: one column. Wide (Duo unfolded): car + actions left, fills right.
+                    AdaptiveColumns(leadingTitle: "Overview") {
                     HeroCard(
                         vehicle: vehicle,
                         efficiency: metrics.current,
@@ -55,8 +57,9 @@ struct DashboardView: View {
                         unit: store.defaultDistanceUnit,
                         efficiencyUnit: efficiencyUnit.unit
                     )
-
-                    recentSection(metrics.recentLogs)
+                    } trailing: {
+                        recentSection(metrics.recentLogs)
+                    }
                 } else {
                     ProgressView().tint(VS.Color.accent)
                         .frame(maxWidth: .infinity)

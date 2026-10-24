@@ -37,9 +37,12 @@ struct MainTabShell: View {
     @State private var tab: AppTab = .trips
     @State private var showProfile = false
     @State private var carPlayRefuelDraft: CarPlayRefuelDraft?
+    @Environment(\.windowSize) private var windowSize
+
+    private var isWide: Bool { VS.Layout.isWide(windowSize) }
 
     var body: some View {
-        ZStack(alignment: .bottom) {
+        ZStack(alignment: isWide ? .trailing : .bottom) {
             Group {
                 switch tab {
                 case .trips:
@@ -57,11 +60,20 @@ struct MainTabShell: View {
                     DriverProfileView(onProfile: { showProfile = true })
                 }
             }
-            // Trips is a full-bleed map; every other tab is a phone-width column.
-            .tabContentWidth(fullBleed: tab == .trips)
+            // Trips is a full-bleed map; every other tab is a centred column.
+            .tabContentWidth(fullBleed: tab == .trips, twoColumn: isWide && tab != .details)
+            // Wide mode: the rail floats over the Trips map, other tabs make room for it
+            // and get the same breathing room on the leading edge.
+            .padding(.trailing, isWide && tab != .trips ? VS.Layout.railInset : 0)
+            .padding(.leading, isWide && tab != .trips ? VS.Spacing.frameGutter : 0)
             .coordinateSpace(name: "bottomNavScroll")
 
-            BottomNavBar(active: $tab)
+            if isWide {
+                NavRail(active: $tab, onProfile: { showProfile = true })
+                    .padding(.trailing, VS.Spacing.frameGutter)
+            } else {
+                BottomNavBar(active: $tab)
+            }
         }
         // Always fill the home-indicator region so Drives (map ignoresSafeArea)
         // and every other tab share the same bottom-nav baseline.
@@ -119,6 +131,7 @@ struct MainTabShell: View {
 /// the profile avatar supplied by `MainTabShell`, so local actions never collide.
 struct MainTabHeader<Accessory: View>: View {
     @EnvironmentObject private var avatarStore: ProfileAvatarStore
+    @Environment(\.isWideLayout) private var isWideLayout
     let title: String
     let subtitle: String?
     let onProfile: () -> Void
@@ -151,15 +164,18 @@ struct MainTabHeader<Accessory: View>: View {
             }
             Spacer(minLength: 8)
             accessory
-            Button {
-                UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                onProfile()
-            } label: {
-                ProfileAvatarView(image: avatarStore.image, size: 40)
-                    .overlay(Circle().stroke(VS.Color.accent.opacity(0.24), lineWidth: 1))
+            // Wide mode: profile lives at the top of the nav rail instead.
+            if !isWideLayout {
+                Button {
+                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                    onProfile()
+                } label: {
+                    ProfileAvatarView(image: avatarStore.image, size: 40)
+                        .overlay(Circle().stroke(VS.Color.accent.opacity(0.24), lineWidth: 1))
+                }
+                .buttonStyle(ScaleButtonStyle())
+                .accessibilityLabel("Open profile")
             }
-            .buttonStyle(ScaleButtonStyle())
-            .accessibilityLabel("Open profile")
         }
         .frame(minHeight: 52, alignment: .top)
         .padding(.top, VS.Spacing.xs)
@@ -266,6 +282,62 @@ struct BottomNavBar: View {
             .first(where: \.isKeyWindow)
             ?? scenes.first?.windows.first
         return window?.safeAreaInsets.bottom ?? 34
+    }
+}
+
+/// Wide-mode navigation (iPhone Duo unfolded): the same Veloseete pill and lime
+/// bubbles as `BottomNavBar`, stacked on the right edge within thumb reach.
+struct NavRail: View {
+    @Binding var active: AppTab
+    var onProfile: () -> Void = {}
+    @EnvironmentObject private var avatarStore: ProfileAvatarStore
+
+    var body: some View {
+        VStack(spacing: 8) {
+            Button {
+                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                onProfile()
+            } label: {
+                ProfileAvatarView(image: avatarStore.image, size: 40)
+                    .overlay(Circle().stroke(VS.Color.accent.opacity(0.24), lineWidth: 1))
+                    .frame(width: 52, height: 52)
+            }
+            .buttonStyle(ScaleButtonStyle())
+            .accessibilityLabel("Open profile")
+
+            Capsule()
+                .fill(VS.Color.hairline)
+                .frame(width: 28, height: 1)
+                .padding(.vertical, 2)
+
+            ForEach(AppTab.allCases, id: \.self) { item in
+                Button {
+                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                    withAnimation(.spring(response: 0.32, dampingFraction: 0.78)) {
+                        active = item
+                    }
+                } label: {
+                    NavIconBubble(
+                        icon: item.icon,
+                        isActive: active == item,
+                        iconSize: 22,
+                        circleSize: 44,
+                        activeTint: VS.Color.navPill
+                    )
+                    .frame(width: 52, height: 52)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(item.label)
+                .accessibilityAddTraits(active == item ? .isSelected : [])
+            }
+        }
+        .padding(8)
+        .background(
+            Capsule()
+                .fill(VS.Color.navPill)
+                .shadow(color: .black.opacity(0.4), radius: 16, y: 4)
+        )
     }
 }
 
@@ -1008,6 +1080,7 @@ struct DriverSnapshotInputs: Equatable {
 }
 
 struct DriverProfileView: View {
+    @Environment(\.isWideLayout) private var isWideLayout
     @EnvironmentObject private var store: DataStore
     let onProfile: () -> Void
     @State private var showBadges = false
@@ -1102,6 +1175,8 @@ struct DriverProfileView: View {
                         .accessibilityLabel("\(unlockedCount) of \(achievements.count) badges")
                     }
 
+                    // Phone: one column. Wide (Duo unfolded): who you are left, the numbers right.
+                    AdaptiveColumns(leadingTitle: "Your style", leadingSubtitle: "Read from every drive so far") {
                     DriverIdentityCard(snapshot: snapshot, displayName: displayName, unit: unit) {
                         shareDriverCard()
                     }
@@ -1110,6 +1185,9 @@ struct DriverProfileView: View {
                         VSSectionHeader(title: "Rhythm", subtitle: "Every drive, last \(DriverProfileSnapshot.heatmapWeeks) weeks")
                         DriverRhythmCard(snapshot: snapshot)
                     }
+
+                    topInsightSection
+                    } trailing: {
 
                     VStack(alignment: .leading, spacing: VS.Spacing.stack) {
                         VSSectionHeader(title: "Last 30 days", subtitle: "Rolling, so it never resets on the 1st")
@@ -1134,13 +1212,15 @@ struct DriverProfileView: View {
                         }
                     }
 
-                    topInsightSection
                     badgesHubPreview
+                    }
                 }
                 .padding(.horizontal, VS.Spacing.pageInset)
                 .padding(.bottom, 110)
                 .tracksBottomNavScroll()
             }
+            // Inside the stack, so UIKit's re-applied side safe area is ignored here.
+            .wideTabSafeArea(isWideLayout)
             .veloseetePage()
             .toolbar(.hidden, for: .navigationBar)
             .navigationDestination(isPresented: $showBadges) {
@@ -1153,7 +1233,7 @@ struct DriverProfileView: View {
             }
             .sheet(item: $recordTrip) { trip in
                 TripDetailView(trip: trip, unit: unit)
-                    .veloseeteSheet()
+                    .veloseeteSheet(allowsWide: true)
             }
             .onAppear(perform: rebuildSnapshot)
             .onChange(of: snapshotInputs) { _, _ in rebuildSnapshot() }
@@ -1555,6 +1635,8 @@ struct ServiceListView: View {
 
                 summaryChip
 
+                // Phone: one column. Wide (Duo unfolded): next-up + actions left, history right.
+                AdaptiveColumns(leadingTitle: "Next up") {
                 if vehicle != nil {
                     ServiceHeroCard(
                         logs: logs,
@@ -1586,7 +1668,9 @@ struct ServiceListView: View {
                     }
                 }
 
-                historySection
+                } trailing: {
+                    historySection
+                }
             }
             .padding(.horizontal, VS.Spacing.pageInset)
             .padding(.bottom, 110)
