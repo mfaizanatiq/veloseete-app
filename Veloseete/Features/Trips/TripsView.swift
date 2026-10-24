@@ -2004,15 +2004,20 @@ struct TripDetailView: View {
                 .font(VS.TextStyle.label())
                 .foregroundStyle(VS.Color.accent)
 
-            VStack(alignment: .leading, spacing: 4) {
-                placeLine(startPlace?.title, marker: false)
-                placeLine(endPlace?.title, marker: true)
+            // From → to, joined by one line like a trip itinerary.
+            VStack(alignment: .leading, spacing: Self.stopSpacing) {
+                placeLine(startPlace, time: trip.startedAt, isFinish: false)
+                placeLine(endPlace, time: trip.endedAt, isFinish: true)
             }
-            .redacted(reason: placesResolved ? [] : .placeholder)
-
-            Text("\(timeRangeLine)  ·  \(durationLabel)")
-                .font(VS.TextStyle.footnote(.semibold))
-                .foregroundStyle(VS.Color.textSecondary)
+            .background(alignment: .topLeading) {
+                Rectangle()
+                    .fill(VS.Color.hairlineStrong)
+                    .frame(width: 2)
+                    .padding(.leading, 5)
+                    // Marker bottom of the first stop → marker top of the last.
+                    .padding(.top, Self.markerTop + 12 + 3)
+                    .padding(.bottom, Self.stopHeight - Self.markerTop + 3)
+            }
         }
         .padding(.horizontal, VS.Spacing.sheetInset)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -2020,15 +2025,33 @@ struct TripDetailView: View {
         .accessibilityElement(children: .combine)
     }
 
-    private func placeLine(_ title: String?, marker isFinish: Bool) -> some View {
-        HStack(spacing: 10) {
-            RouteStopMarker(isFinish: isFinish, size: 11)
-            Text(title ?? (placesResolved ? (isFinish ? "Finish" : "Start") : "Finding place"))
-                .font(VS.TextStyle.title2())
-                .foregroundStyle(VS.Color.textPrimary)
-                .lineLimit(1)
-                .minimumScaleFactor(0.75)
+    private static let stopHeight: CGFloat = 44
+    private static let stopSpacing: CGFloat = 16
+    private static let markerTop: CGFloat = 7
+
+    private func placeLine(_ place: TripPlaceNames.Place?, time: Date, isFinish: Bool) -> some View {
+        HStack(alignment: .top, spacing: 10) {
+            RouteStopMarker(isFinish: isFinish, size: 12)
+                .padding(.top, Self.markerTop)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(place?.title ?? (placesResolved ? (isFinish ? "Finish" : "Start") : "Finding place"))
+                    .font(VS.TextStyle.title3())
+                    .foregroundStyle(VS.Color.textPrimary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.75)
+                    .redacted(reason: placesResolved ? [] : .placeholder)
+                Text([isFinish ? "FINISH" : "START", place?.city?.uppercased()].compactMap { $0 }.joined(separator: " · "))
+                    .font(VS.TextStyle.label())
+                    .foregroundStyle(VS.Color.textTertiary)
+                    .lineLimit(1)
+            }
+            Spacer(minLength: 8)
+            Text(time.formatted(date: .omitted, time: .shortened))
+                .font(VS.TextStyle.callout(.semibold))
+                .foregroundStyle(VS.Color.textSecondary)
+                .padding(.top, 3)
         }
+        .frame(height: Self.stopHeight, alignment: .top)
     }
 
     private var metaRow: some View {
