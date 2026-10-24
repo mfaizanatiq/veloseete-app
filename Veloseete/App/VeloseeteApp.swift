@@ -70,6 +70,8 @@ struct VeloseeteApp: App {
                 ProductShotsPreview()
             } else if ProcessInfo.processInfo.arguments.contains("-TripReviewPreview") {
                 TripReviewPreview()
+            } else if ProcessInfo.processInfo.arguments.contains("-TripDetailPreview") {
+                TripDetailPreview()
             } else if ProcessInfo.processInfo.arguments.contains("-MapHeroPreview") {
                 MapHeroPreview()
                     .preferredColorScheme(.dark)

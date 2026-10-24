@@ -1861,10 +1861,16 @@ struct TripDetailView: View {
         let lngDeltaRaw = max((maxLng - minLng) * 1.55, 0.02)
         let cosLat = max(cos(midLat * .pi / 180), 0.2)
         let lngDelta = max(lngDeltaRaw, latDelta / cosLat * 0.55)
+        // The route title covers the bottom ~40% of the hero, so give the map that
+        // much extra room below the route and keep the line in the clear top part.
+        let framedLatDelta = latDelta * 1.7
         return MKCoordinateRegion(
-            center: CLLocationCoordinate2D(latitude: midLat, longitude: (minLng + maxLng) / 2),
+            center: CLLocationCoordinate2D(
+                latitude: midLat - framedLatDelta * 0.16,
+                longitude: (minLng + maxLng) / 2
+            ),
             span: MKCoordinateSpan(
-                latitudeDelta: latDelta,
+                latitudeDelta: framedLatDelta,
                 longitudeDelta: lngDelta
             )
         )
@@ -1891,24 +1897,11 @@ struct TripDetailView: View {
                 VStack(alignment: .leading, spacing: 0) {
                     routeHero
 
-                    VStack(alignment: .leading, spacing: 26) {
-                        header
-                        statsPanel
-                        routeTimeline
-                        detailSection("Speed mix", trailing: unit == "mi" ? "MPH" : "KM/H") {
-                            SpeedMixView(
-                                speedBuckets: trip.speedBuckets,
-                                avgSpeedKmh: trip.avgSpeedKmh,
-                                maxSpeedKmh: trip.maxSpeedKmh,
-                                unit: unit,
-                                showsHeader: false
-                            )
-                            .padding(16)
-                            .detailCard()
-                        }
-                        detailSection("Fuel & odometer") {
-                            fuelPanel
-                        }
+                    VStack(alignment: .leading, spacing: 22) {
+                        metaRow
+                        statGrid
+                        paceCard
+                        fuelCard
 
                         if let shareError {
                             Text(shareError)
@@ -1922,12 +1915,20 @@ struct TripDetailView: View {
                         }
                     }
                     .padding(.horizontal, VS.Spacing.sheetInset)
+                    .padding(.top, 18)
                     .padding(.bottom, 20)
                 }
             }
             .scrollIndicators(.hidden)
             // Map runs edge-to-edge under the close button.
             .ignoresSafeArea(.container, edges: .top)
+            // Fixed scrim so scrolled stats never sit naked under the toolbar buttons.
+            .overlay(alignment: .top) {
+                LinearGradient(colors: [VS.Color.bgPrimary.opacity(0.85), .clear], startPoint: .top, endPoint: .bottom)
+                    .frame(height: 120)
+                    .ignoresSafeArea(edges: .top)
+                    .allowsHitTesting(false)
+            }
             // Actions stay reachable at any scroll depth; content insets above them.
             .safeAreaInset(edge: .bottom, spacing: 0) { actionBar }
             .veloseetePage()
@@ -1977,35 +1978,61 @@ struct TripDetailView: View {
 
     // MARK: Sections
 
+    /// Map with the drive's story on it: where from, where to, when.
     private var routeHero: some View {
         routeMap
-            .frame(height: 340)
-            .overlay(alignment: .top) {
-                // Keeps the status bar / close button legible over bright tiles.
-                LinearGradient(colors: [VS.Color.bgPrimary.opacity(0.7), .clear], startPoint: .top, endPoint: .bottom)
-                    .frame(height: 110)
-                    .allowsHitTesting(false)
-            }
+            .frame(height: 400)
             .overlay(alignment: .bottom) {
-                LinearGradient(colors: [.clear, VS.Color.bgPrimary], startPoint: .top, endPoint: .bottom)
-                    .frame(height: 96)
-                    .allowsHitTesting(false)
+                LinearGradient(
+                    stops: [
+                        .init(color: .clear, location: 0),
+                        .init(color: VS.Color.bgPrimary.opacity(0.85), location: 0.55),
+                        .init(color: VS.Color.bgPrimary, location: 1)
+                    ],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+                .frame(height: 190)
+                .allowsHitTesting(false)
             }
+            .overlay(alignment: .bottomLeading) { heroTitle }
     }
 
-    private var header: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text(dayLine.uppercased())
-                    .font(VS.TextStyle.label())
-                    .foregroundStyle(VS.Color.accent)
-                Text(timeRangeLine)
-                    .font(VS.TextStyle.largeTitle())
-                    .foregroundStyle(VS.Color.textPrimary)
-                    .minimumScaleFactor(0.7)
-                    .lineLimit(1)
-            }
+    private var heroTitle: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(dayLine.uppercased())
+                .font(VS.TextStyle.label())
+                .foregroundStyle(VS.Color.accent)
 
+            VStack(alignment: .leading, spacing: 4) {
+                placeLine(startPlace?.title, marker: false)
+                placeLine(endPlace?.title, marker: true)
+            }
+            .redacted(reason: placesResolved ? [] : .placeholder)
+
+            Text("\(timeRangeLine)  ·  \(durationLabel)")
+                .font(VS.TextStyle.footnote(.semibold))
+                .foregroundStyle(VS.Color.textSecondary)
+        }
+        .padding(.horizontal, VS.Spacing.sheetInset)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .allowsHitTesting(false)
+        .accessibilityElement(children: .combine)
+    }
+
+    private func placeLine(_ title: String?, marker isFinish: Bool) -> some View {
+        HStack(spacing: 10) {
+            RouteStopMarker(isFinish: isFinish, size: 11)
+            Text(title ?? (placesResolved ? (isFinish ? "Finish" : "Start") : "Finding place"))
+                .font(VS.TextStyle.title2())
+                .foregroundStyle(VS.Color.textPrimary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.75)
+        }
+    }
+
+    private var metaRow: some View {
+        ScrollView(.horizontal) {
             HStack(spacing: 8) {
                 // A rental drive sits under your car in the log, but it wasn't your car.
                 if let vehicle, trip.tripRole != .otherCar {
@@ -2025,100 +2052,77 @@ struct TripDetailView: View {
                 } text: { trip.source == "auto" ? "Auto-tracked" : "Manual" }
             }
         }
-        .accessibilityElement(children: .combine)
+        .scrollIndicators(.hidden)
     }
 
-    private var statsPanel: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text("DISTANCE")
-                    .font(VS.TextStyle.label())
-                    .foregroundStyle(VS.Color.textTertiary)
-                HStack(alignment: .firstTextBaseline, spacing: 6) {
-                    Text(distanceValue)
-                        .font(VS.TextStyle.display())
-                        .foregroundStyle(VS.Color.textPrimary)
-                    Text(unit == "mi" ? "mi" : "km")
-                        .font(VS.TextStyle.title3())
-                        .foregroundStyle(VS.Color.textTertiary)
-                }
+    /// Distance leads; time and pace sit beside it as equals.
+    private var statGrid: some View {
+        Grid(horizontalSpacing: 10, verticalSpacing: 10) {
+            GridRow {
+                statTile(value: distanceValue, unit: unit == "mi" ? "mi" : "km", label: "Distance", icon: .vs(.roadHorizon), isHero: true)
+                statTile(value: durationValue.value, unit: durationValue.unit, label: "Duration", icon: .system("timer"))
             }
-
-            Rectangle().fill(VS.Color.hairline).frame(height: 1)
-
-            HStack(alignment: .top, spacing: 0) {
-                inlineStat(durationLabel, "Duration")
-                statDivider
-                inlineStat(speedLabel(trip.avgSpeedKmh), "Avg speed")
-                statDivider
-                inlineStat(speedLabel(trip.maxSpeedKmh), "Top speed")
+            GridRow {
+                statTile(value: speedValue(trip.avgSpeedKmh), unit: speedUnit, label: "Avg speed", icon: .vs(.gauge))
+                statTile(value: speedValue(trip.maxSpeedKmh), unit: speedUnit, label: "Top speed", icon: .system("bolt.fill"))
             }
         }
     }
 
-    private var routeTimeline: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            timelineRow(
-                isFinish: false,
-                label: "Start",
-                time: trip.startedAt.formatted(date: .omitted, time: .shortened),
-                place: startPlace
-            )
-            // Connector between the two stops.
-            HStack(spacing: 0) {
-                Rectangle()
-                    .fill(VS.Color.hairlineStrong)
-                    .frame(width: 2, height: 22)
-                    .padding(.leading, 5)
-                Spacer()
-            }
-            timelineRow(
-                isFinish: true,
-                label: "Finish",
-                time: trip.endedAt.formatted(date: .omitted, time: .shortened),
-                place: endPlace
-            )
-        }
-        .padding(.top, 20)
-        .overlay(alignment: .top) {
-            Rectangle().fill(VS.Color.hairline).frame(height: 1)
-        }
-    }
-
-    private var fuelPanel: some View {
-        VStack(spacing: 0) {
-            if let liters = estimatedLiters {
-                detailRow(systemImage: "fuelpump.fill", title: "Fuel used", value: "~\(VolumeFormat.format(liters, unit: vehicle?.fuelVolumeUnit ?? VolumeFormat.liters))")
-                rowDivider
-                if let cost = estimatedCost(liters: liters) {
-                    detailRow(systemImage: "creditcard.fill", title: "Est. cost", value: "~\(cost)")
-                    rowDivider
-                }
-            }
-            HStack(alignment: .top, spacing: 12) {
-                Image(systemName: trip.countsOnVehicle ? "checkmark.circle.fill" : (trip.tripRole == .otherCar ? "car.fill" : "person.fill"))
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundStyle(trip.countsOnVehicle ? VS.Color.success : VS.Color.textTertiary)
-                    .frame(width: 22)
+    private var paceCard: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(alignment: .firstTextBaseline) {
                 VStack(alignment: .leading, spacing: 3) {
-                    Text(trip.countsOnVehicle ? TrackyVoice.Soft.inEstimateTitle : "Off the odometer")
+                    Text("PACE")
+                        .font(VS.TextStyle.label())
+                        .foregroundStyle(VS.Color.textTertiary)
+                    Text(paceHeadline)
                         .font(VS.TextStyle.headline())
                         .foregroundStyle(VS.Color.textPrimary)
-                    Text(trip.countsOnVehicle
-                         ? TrackyVoice.Soft.inEstimateBody(distance: DistanceFormat.formatDistance(trip.distanceKm, unit: unit))
-                         : (trip.tripRole == .otherCar
-                            ? "Rental or borrowed car. It counts toward your driving, not your car’s odometer or fuel."
-                            : "Passenger trip. It stays in your log and off the odometer."))
-                        .font(VS.TextStyle.footnote(.medium))
-                        .foregroundStyle(VS.Color.textTertiary)
-                        .fixedSize(horizontal: false, vertical: true)
                 }
-                Spacer(minLength: 0)
+                Spacer()
+                Text(unit == "mi" ? "MPH" : "KM/H")
+                    .font(VS.TextStyle.label())
+                    .foregroundStyle(VS.Color.textTertiary)
             }
-            .padding(.vertical, 14)
+            SpeedMixView(
+                speedBuckets: trip.speedBuckets,
+                avgSpeedKmh: trip.avgSpeedKmh,
+                maxSpeedKmh: trip.maxSpeedKmh,
+                unit: unit,
+                showsHeader: false
+            )
         }
-        .padding(.horizontal, 16)
+        .padding(16)
         .detailCard()
+    }
+
+    private var fuelCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            if let liters = estimatedLiters {
+                HStack(spacing: 10) {
+                    fuelTile(
+                        icon: "fuelpump.fill",
+                        value: "~" + VolumeFormat.format(liters, unit: vehicle?.fuelVolumeUnit ?? VolumeFormat.liters),
+                        label: "Fuel used"
+                    )
+                    if let cost = estimatedCost(liters: liters) {
+                        fuelTile(icon: "creditcard.fill", value: "~" + cost, label: "Est. cost")
+                    }
+                }
+            }
+            HStack(alignment: .top, spacing: 10) {
+                Image(systemName: odometerIcon)
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(trip.countsOnVehicle ? VS.Color.success : VS.Color.textTertiary)
+                    .padding(.top, 1)
+                Text(odometerNote)
+                    .font(VS.TextStyle.footnote(.medium))
+                    .foregroundStyle(VS.Color.textTertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(.horizontal, 4)
+        }
     }
 
     private var actionBar: some View {
@@ -2151,28 +2155,6 @@ struct TripDetailView: View {
 
     // MARK: Building blocks
 
-    private func detailSection<Content: View>(
-        _ title: String,
-        trailing: String? = nil,
-        @ViewBuilder content: () -> Content
-    ) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                Text(title)
-                    .font(VS.TextStyle.headline())
-                    .foregroundStyle(VS.Color.textSecondary)
-                Spacer()
-                if let trailing {
-                    Text(trailing)
-                        .font(VS.TextStyle.label())
-                        .foregroundStyle(VS.Color.textTertiary)
-                }
-            }
-            .padding(.horizontal, 2)
-            content()
-        }
-    }
-
     private func metaChip<Icon: View>(@ViewBuilder icon: () -> Icon, text: () -> String) -> some View {
         HStack(spacing: 6) {
             icon()
@@ -2187,70 +2169,81 @@ struct TripDetailView: View {
         .overlay(Capsule().stroke(VS.Color.hairline, lineWidth: 1))
     }
 
-    private func inlineStat(_ value: String, _ label: String) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(value)
-                .font(VS.TextStyle.title3())
-                .foregroundStyle(VS.Color.textPrimary)
-                .lineLimit(1)
-                .minimumScaleFactor(0.7)
-            Text(label.uppercased())
-                .font(VS.TextStyle.label())
-                .foregroundStyle(VS.Color.textTertiary)
+    private enum StatIcon {
+        case vs(VSIconName)
+        case system(String)
+    }
+
+    @ViewBuilder
+    private func statIcon(_ icon: StatIcon, tint: Color) -> some View {
+        switch icon {
+        case .vs(let name):
+            VSIcon(icon: name, size: 15, weight: .fill, tint: tint)
+        case .system(let name):
+            Image(systemName: name)
+                .font(.system(size: 13, weight: .bold))
+                .foregroundStyle(tint)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .accessibilityElement(children: .combine)
     }
 
-    private var statDivider: some View {
-        Rectangle()
-            .fill(VS.Color.hairline)
-            .frame(width: 1, height: 34)
-            .padding(.trailing, 14)
-    }
-
-    private var rowDivider: some View {
-        Rectangle().fill(VS.Color.hairline).frame(height: 1)
-    }
-
-    private func detailRow(systemImage: String, title: String, value: String) -> some View {
-        HStack(spacing: 12) {
-            Image(systemName: systemImage)
-                .font(.system(size: 15, weight: .semibold))
-                .foregroundStyle(VS.Color.textSecondary)
-                .frame(width: 22)
-            Text(title)
-                .font(VS.TextStyle.body(.medium))
-                .foregroundStyle(VS.Color.textSecondary)
-            Spacer()
-            Text(value)
-                .font(VS.TextStyle.headline())
-                .foregroundStyle(VS.Color.textPrimary)
-        }
-        .padding(.vertical, 14)
-        .accessibilityElement(children: .combine)
-    }
-
-    private func timelineRow(isFinish: Bool, label: String, time: String, place: TripPlaceNames.Place?) -> some View {
-        HStack(alignment: .top, spacing: 12) {
-            RouteStopMarker(isFinish: isFinish, size: 12)
-                .padding(.top, 4)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(place?.title ?? (placesResolved ? "Pinned on the map" : "Finding place…"))
-                    .font(VS.TextStyle.headline())
-                    .foregroundStyle(place == nil ? VS.Color.textTertiary : VS.Color.textPrimary)
+    private func statTile(value: String, unit: String, label: String, icon: StatIcon, isHero: Bool = false) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 7) {
+                statIcon(icon, tint: isHero ? VS.Color.navPill : VS.Color.accent)
+                Text(label.uppercased())
+                    .font(VS.TextStyle.label())
+                    .foregroundStyle(isHero ? VS.Color.navPill.opacity(0.7) : VS.Color.textTertiary)
+            }
+            HStack(alignment: .firstTextBaseline, spacing: 4) {
+                Text(value)
+                    .font(VS.TextStyle.title())
+                    .foregroundStyle(isHero ? VS.Color.navPill : VS.Color.textPrimary)
                     .lineLimit(1)
-                    .redacted(reason: place == nil && !placesResolved ? .placeholder : [])
-                Text([label.uppercased(), place?.city?.uppercased()].compactMap { $0 }.joined(separator: " · "))
+                    .minimumScaleFactor(0.6)
+                Text(unit)
+                    .font(VS.TextStyle.subheadline(.semibold))
+                    .foregroundStyle(isHero ? VS.Color.navPill.opacity(0.7) : VS.Color.textTertiary)
+            }
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background {
+            if isHero {
+                RoundedRectangle(cornerRadius: 22, style: .continuous).fill(VS.Color.accent)
+            } else {
+                RoundedRectangle(cornerRadius: 22, style: .continuous)
+                    .fill(VS.Color.chip)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 22, style: .continuous)
+                            .stroke(VS.Color.hairline, lineWidth: 1)
+                    )
+            }
+        }
+        .accessibilityElement(children: .combine)
+    }
+
+    private func fuelTile(icon: String, value: String, label: String) -> some View {
+        HStack(spacing: 12) {
+            Image(systemName: icon)
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(VS.Color.accent)
+                .frame(width: 36, height: 36)
+                .background(VS.Color.accent.opacity(0.12), in: Circle())
+            VStack(alignment: .leading, spacing: 2) {
+                Text(value)
+                    .font(VS.TextStyle.headline())
+                    .foregroundStyle(VS.Color.textPrimary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+                Text(label.uppercased())
                     .font(VS.TextStyle.label())
                     .foregroundStyle(VS.Color.textTertiary)
-                    .lineLimit(1)
             }
-            Spacer(minLength: 8)
-            Text(time)
-                .font(VS.TextStyle.callout(.semibold))
-                .foregroundStyle(VS.Color.textSecondary)
+            Spacer(minLength: 0)
         }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .detailCard()
         .accessibilityElement(children: .combine)
     }
 
@@ -2273,18 +2266,57 @@ struct TripDetailView: View {
         return String(format: value >= 100 ? "%.0f" : "%.1f", value)
     }
 
+    private var durationValue: (value: String, unit: String) {
+        let total = Int(trip.durationSec)
+        let hours = total / 3600
+        let minutes = (total % 3600) / 60
+        if hours > 0 { return ("\(hours):\(String(format: "%02d", minutes))", "h") }
+        return ("\(max(minutes, 1))", "min")
+    }
+
+    private var speedUnit: String { unit == "mi" ? "mph" : "km/h" }
+
+    private func speedValue(_ kmh: Double) -> String {
+        String(format: "%.0f", unit == "mi" ? kmh * 0.621371 : kmh)
+    }
+
+    /// One plain-language read of the speed bands, so the bar has a takeaway.
+    private var paceHeadline: String {
+        let shares = SpeedBands.fractions(counts: trip.speedBuckets, avgKmh: trip.avgSpeedKmh, maxKmh: trip.maxSpeedKmh)
+        guard let top = shares.indices.max(by: { shares[$0] < shares[$1] }), shares[top] > 0 else {
+            return "Steady drive"
+        }
+        let fastShare = shares.dropFirst(3).reduce(0, +)
+        if fastShare >= 0.25 { return "Plenty of highway speed" }
+        switch top {
+        case 0: return "Mostly city pace"
+        case 1: return "Mostly open roads"
+        case 2: return "Mostly highway cruising"
+        default: return "A fast run"
+        }
+    }
+
+    private var odometerIcon: String {
+        if trip.countsOnVehicle { return "checkmark.circle.fill" }
+        return trip.tripRole == .otherCar ? "car.fill" : "person.fill"
+    }
+
+    private var odometerNote: String {
+        if trip.countsOnVehicle {
+            return TrackyVoice.Soft.inEstimateBody(distance: DistanceFormat.formatDistance(trip.distanceKm, unit: unit))
+        }
+        if trip.tripRole == .otherCar {
+            return "Rental or borrowed car. Counts toward your driving, not your car’s odometer or fuel."
+        }
+        return "Passenger trip. It stays in your log and off the odometer."
+    }
+
     private var durationLabel: String {
         let total = Int(trip.durationSec)
         let hours = total / 3600
         let minutes = (total % 3600) / 60
         if hours > 0 { return "\(hours)h \(minutes)m" }
         return "\(max(minutes, 1)) min"
-    }
-
-    private func speedLabel(_ kmh: Double) -> String {
-        unit == "mi"
-            ? String(format: "%.0f mph", kmh * 0.621371)
-            : String(format: "%.0f km/h", kmh)
     }
 
     private var vehicleLogs: [FuelLog] {

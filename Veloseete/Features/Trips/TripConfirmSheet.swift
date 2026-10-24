@@ -604,11 +604,13 @@ struct SpeedMixView: View {
 struct TripReviewPreview: View {
     @StateObject private var store = DataStore.shared
 
+    static let sampleRoute: [TripCoordinate] = (0..<40).map { i in
+        TripCoordinate(latitude: 25.20 + Double(i) * 0.0016, longitude: 55.27 + sin(Double(i) / 6) * 0.004)
+    }
+
     private static let pending: PendingTripSave = {
         let end = Date().addingTimeInterval(-20 * 60)
-        let route = (0..<40).map { i in
-            TripCoordinate(latitude: 25.20 + Double(i) * 0.0016, longitude: 55.27 + sin(Double(i) / 6) * 0.004)
-        }
+        let route = sampleRoute
         return PendingTripSave(
             id: UUID(),
             vehicleId: "demo-coolray",
@@ -636,6 +638,43 @@ struct TripReviewPreview: View {
         TripConfirmSheet(pending: Self.pending)
             .environmentObject(store)
             .environmentObject(TripRecordingService.shared)
+            .preferredColorScheme(.dark)
+            .tint(VS.Color.accent)
+    }
+}
+
+/// Simulator-only — a saved drive's detail sheet over the demo garage.
+/// Launch with: `-TripDetailPreview`
+struct TripDetailPreview: View {
+    @StateObject private var store = DataStore.shared
+
+    private static let trip: Trip = {
+        let end = Date().addingTimeInterval(-3 * 3600)
+        let route = TripReviewPreview.sampleRoute
+        return Trip(
+            id: "preview-detail",
+            vehicleId: "demo-coolray",
+            startedAt: end.addingTimeInterval(-24 * 60),
+            endedAt: end,
+            distanceKm: 18.6,
+            durationSec: 24 * 60,
+            avgSpeedKmh: 46,
+            maxSpeedKmh: 92,
+            startCoordinate: route.first,
+            endCoordinate: route.last,
+            route: route,
+            source: "auto",
+            speedBuckets: [30, 22, 12, 2, 0]
+        )
+    }()
+
+    init() {
+        DataStore.shared.seedProductShots()
+    }
+
+    var body: some View {
+        TripDetailView(trip: Self.trip, unit: "km")
+            .environmentObject(store)
             .preferredColorScheme(.dark)
             .tint(VS.Color.accent)
     }
