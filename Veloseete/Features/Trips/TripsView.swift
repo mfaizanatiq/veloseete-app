@@ -87,8 +87,17 @@ struct TripsView: View {
         )
     }
 
+    /// How many drives have list rows so far — grows a page at a time on scroll.
+    @State private var driveRowLimit = DrivesListModel.pageSize
+
     private func rebuildDrives() {
-        drives = DrivesListModel.build(from: drivesInputs, revision: drives.revision &+ 1)
+        drives = DrivesListModel.build(from: drivesInputs, revision: drives.revision &+ 1, rowLimit: driveRowLimit)
+    }
+
+    private func loadMoreDrives() {
+        guard drives.hasMoreRows else { return }
+        driveRowLimit += DrivesListModel.pageSize
+        rebuildDrives()
     }
 
     private func rebuildTracking() {
@@ -269,6 +278,9 @@ struct TripsView: View {
                     Spacer(minLength: 0)
                         .allowsHitTesting(false)
 
+                    // Same cloud as every other tab's header.
+                    SyncStatusBadge()
+
                     Button {
                         UIImpactFeedbackGenerator(style: .light).impactOccurred()
                         onProfile()
@@ -350,8 +362,10 @@ struct TripsView: View {
                 .veloseeteSheet(allowsWide: true)
         }
         .onChange(of: drivesInputs) { old, new in
-            rebuildDrives()
             let filterChanged = old.sort != new.sort || old.selectedVehicleId != new.selectedVehicleId
+            // A new filter or sort starts back at the first page.
+            if filterChanged { driveRowLimit = DrivesListModel.pageSize }
+            rebuildDrives()
             if old.selectedVehicleId != new.selectedVehicleId {
                 syncRecorderVehicle()
             }
@@ -1030,7 +1044,8 @@ struct TripsView: View {
                 openTrip: { openTrip(id: $0) },
                 openPending: { openPending(id: $0) },
                 confirmAll: { Task { await confirmAllPending() } },
-                setUpTracking: { requestLocationAccess(for: .autoTrack) }
+                setUpTracking: { requestLocationAccess(for: .autoTrack) },
+                loadMore: { loadMoreDrives() }
             )
         )
         // Recorder / GPS publishes re-run TripsView; the drawer only redraws when its data does.
@@ -2652,8 +2667,13 @@ struct DriveMapRoute: Identifiable, Equatable {
 }
 
 struct DrivesListModel {
+    /// Rows are built a page at a time as the list scrolls; the map still gets every drive.
+    static let pageSize = 40
+
     var revision = 0
     var trips: [Trip] = []
+    /// More drives exist beyond the rows built so far.
+    var hasMoreRows = false
     var pending: [PendingTripSave] = []
     var pendingRows: [DriveRowModel] = []
     /// Day sections for chronological sorts.
@@ -2688,7 +2708,7 @@ struct DrivesListModel {
         return formatter
     }()
 
-    static func build(from input: DrivesInputs, revision: Int) -> DrivesListModel {
+    static func build(from input: DrivesInputs, revision: Int, rowLimit: Int = pageSize) -> DrivesListModel {
         var model = DrivesListModel()
         model.revision = revision
         model.isChronological = input.sort.isChronological
@@ -2708,6 +2728,10 @@ struct DrivesListModel {
         case .longest: trips.sort { $0.distanceKm > $1.distanceKm }
         }
         model.trips = trips
+        // Only the first `rowLimit` drives get list rows (route thumbnail, labels);
+        // totals, day summaries and map routes below still cover every drive.
+        let listed = Array(trips.prefix(rowLimit))
+        model.hasMoreRows = trips.count > listed.count
 
         model.pending = input.pending
             .filter { $0.vehicleId.isEmpty || activeIds.contains($0.vehicleId) }
@@ -2809,7 +2833,9 @@ struct DrivesListModel {
                 if byDay[day] == nil { order.append(day) }
                 byDay[day, default: []].append(trip)
             }
-            model.groups = order.map { day in
+            let listedIds = Set(listed.map(\.id))
+            let listedDays = order.filter { byDay[$0]?.contains { listedIds.contains($0.id) } ?? false }
+            model.groups = listedDays.map { day in
                 let dayTrips = byDay[day] ?? []
                 let title: String
                 if calendar.isDateInToday(day) {
@@ -2825,11 +2851,11 @@ struct DrivesListModel {
                     id: day,
                     title: title,
                     summary: dayTrips.count > 1 ? "\(count) · \(total)" : nil,
-                    rows: dayTrips.map { row($0, showsDay: false) }
+                    rows: dayTrips.filter { listedIds.contains($0.id) }.map { row($0, showsDay: false) }
                 )
             }
         } else {
-            model.flatRows = trips.map { row($0, showsDay: true) }
+            model.flatRows = listed.map { row($0, showsDay: true) }
         }
 
         model.mapRoutes = trips.compactMap(DriveMapRoute.init(trip:))
@@ -2981,6 +3007,7 @@ private struct DrivesDrawer: View, Equatable {
         var openPending: (String) -> Void
         var confirmAll: () -> Void
         var setUpTracking: () -> Void
+        var loadMore: () -> Void = {}
     }
 
     let model: DrivesListModel
@@ -3207,6 +3234,15 @@ private struct DrivesDrawer: View, Equatable {
                 } else {
                     sectionHeader(sort.label, trailing: model.rollupLine)
                     groupedRows(model.flatRows) { actions.openTrip($0) }
+                }
+
+                if model.hasMoreRows {
+                    // Lazy stack: this only appears near the end, then builds the next page.
+                    ProgressView()
+                        .tint(VS.Color.textTertiary)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 18)
+                        .onAppear { actions.loadMore() }
                 }
             }
             .padding(.horizontal, 14)

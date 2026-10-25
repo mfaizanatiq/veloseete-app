@@ -161,6 +161,8 @@ struct MainTabHeader<Accessory: View>: View {
             }
             Spacer(minLength: 8)
             accessory
+            // Same spot on every tab: sync state lives next to the account it belongs to.
+            SyncStatusBadge()
             Button {
                 UIImpactFeedbackGenerator(style: .light).impactOccurred()
                 onProfile()
@@ -180,6 +182,94 @@ struct MainTabHeader<Accessory: View>: View {
 extension MainTabHeader where Accessory == EmptyView {
     init(_ title: String, subtitle: String? = nil, onProfile: @escaping () -> Void) {
         self.init(title, subtitle: subtitle, onProfile: onProfile) { EmptyView() }
+    }
+}
+
+/// Small cloud next to the profile avatar: synced, syncing, or working offline.
+/// Replaces the full-width "☁ 3 cars · 4 fills · email" pill that sat in the content.
+struct SyncStatusBadge: View {
+    @EnvironmentObject private var store: DataStore
+    @State private var showDetails = false
+
+    private enum SyncState { case synced, syncing, offline }
+
+    private var state: SyncState {
+        if store.isLoading { return .syncing }
+        if !store.loadWarnings.isEmpty { return .offline }
+        return .synced
+    }
+
+    private var symbol: String {
+        switch state {
+        case .synced: "checkmark.icloud"
+        case .syncing: "arrow.triangle.2.circlepath.icloud"
+        case .offline: "icloud.slash"
+        }
+    }
+
+    private var tint: Color {
+        state == .offline ? VS.Color.warning : VS.Color.textTertiary
+    }
+
+    private var title: String {
+        switch state {
+        case .synced: "Synced"
+        case .syncing: "Syncing…"
+        case .offline: "Working offline"
+        }
+    }
+
+    var body: some View {
+        Button {
+            UISelectionFeedbackGenerator().selectionChanged()
+            showDetails = true
+        } label: {
+            Image(systemName: symbol)
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(tint)
+                .symbolEffect(.pulse, isActive: state == .syncing)
+                .frame(width: 40, height: 40)
+                // Solid, so it reads the same over the Trips map as on plain pages.
+                .background(Color(hex: 0x161916), in: Circle())
+                .overlay(Circle().stroke(state == .offline ? VS.Color.warning.opacity(0.4) : VS.Color.hairline, lineWidth: 1))
+        }
+        .buttonStyle(ScaleButtonStyle())
+        .accessibilityLabel("Sync status: \(title)")
+        .popover(isPresented: $showDetails, arrowEdge: .top) {
+            details
+                .presentationCompactAdaptation(.popover)
+        }
+    }
+
+    private var details: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Label(title, systemImage: symbol)
+                .font(VS.TextStyle.headline())
+                .foregroundStyle(state == .offline ? VS.Color.warning : VS.Color.textPrimary)
+            Text(TrackyVoice.Soft.syncChip(cars: store.vehicles.count, fills: store.fuelLogs.count))
+                .font(VS.TextStyle.footnote(.medium))
+                .foregroundStyle(VS.Color.textSecondary)
+            if let email = AuthService.shared.user?.email {
+                Text(email)
+                    .font(VS.TextStyle.caption())
+                    .foregroundStyle(VS.Color.textTertiary)
+            }
+            if state == .offline {
+                Text(store.loadWarnings.joined(separator: "\n"))
+                    .font(VS.TextStyle.caption())
+                    .foregroundStyle(VS.Color.warning)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Text("Pull down on any tab to refresh.")
+                .font(VS.TextStyle.caption())
+                .foregroundStyle(VS.Color.textTertiary)
+        }
+        .padding(16)
+        .frame(width: 260, alignment: .leading)
+        // Solid surface: the default glass picked up the lime hero card behind it
+        // and washed out the grey text.
+        .presentationBackground(Color(hex: 0x161916))
+        .environment(\.colorScheme, .dark)
     }
 }
 
@@ -1645,11 +1735,9 @@ struct ServiceListView: View {
             VStack(alignment: .leading, spacing: VS.Spacing.floatStack) {
                 MainTabHeader(
                     "Service",
-                    subtitle: vehicle.map { "\($0.nickname) · care & costs" } ?? TrackyVoice.Soft.serviceSubtitle,
+                    subtitle: headerSubtitle,
                     onProfile: onProfile
                 )
-
-                summaryChip
 
                 // Phone: one column. Wide (Duo unfolded): next-up + actions left, history right.
                 AdaptiveColumns(leadingTitle: "Next up") {
@@ -1704,21 +1792,16 @@ struct ServiceListView: View {
         }
     }
 
-    private var summaryChip: some View {
-        HStack(spacing: 8) {
-            VSIcon(icon: .wrench, size: 12, weight: .bold, tint: VS.Color.textTertiary)
-            Text(logs.isEmpty
-                 ? "No services logged yet"
-                 : "\(logs.count) service\(logs.count == 1 ? "" : "s") · \(CurrencyFormat.format(spent(since: nil), currency: currency)) all time")
-                .font(VS.TextStyle.caption2(.medium))
-            Spacer()
-            Text(DistanceFormat.formatOdometer(currentKm, unit: store.defaultDistanceUnit))
-                .font(VS.TextStyle.caption2(.semibold))
-        }
-        .foregroundStyle(VS.Color.textTertiary)
-        .padding(.horizontal, 14)
-        .padding(.vertical, 10)
-        .glassCard(elevated: true)
+    /// "Coolray · 3 services · QR840 total" — the facts the old summary pill carried.
+    /// (The odometer it also showed is already in the Next-up card.)
+    private var headerSubtitle: String {
+        guard let vehicle else { return TrackyVoice.Soft.serviceSubtitle }
+        guard !logs.isEmpty else { return "\(vehicle.nickname) · no services yet" }
+        let count = "\(logs.count) service\(logs.count == 1 ? "" : "s")"
+        let total = spent(since: nil)
+        return total > 0
+            ? "\(vehicle.nickname) · \(count) · \(CurrencyFormat.format(total, currency: currency)) total"
+            : "\(vehicle.nickname) · \(count)"
     }
 
     private var historySection: some View {

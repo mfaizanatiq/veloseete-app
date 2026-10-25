@@ -673,6 +673,40 @@ final class TripTrackingLogicTests: XCTestCase {
         )
     }
 
+    func testDrivesListBuildsRowsAPageAtATimeButMapsEveryDrive() {
+        let start = Date(timeIntervalSince1970: 1_790_000_000)
+        let trips = (0..<100).map { i in
+            Trip(
+                id: "t\(i)", vehicleId: "car",
+                startedAt: start.addingTimeInterval(Double(i) * 3_600 * 7),
+                endedAt: start.addingTimeInterval(Double(i) * 3_600 * 7 + 1_200),
+                distanceKm: 10, durationSec: 1_200, avgSpeedKmh: 30, maxSpeedKmh: 60,
+                startCoordinate: .init(latitude: 25.2, longitude: 51.5),
+                endCoordinate: .init(latitude: 25.3, longitude: 51.6),
+                route: [], source: "auto"
+            )
+        }
+        let input = DrivesInputs(
+            trips: trips, vehicles: [testVehicle], archivedVehicles: [], pending: [],
+            fuelLogs: [], manufacturerStandard: nil, selectedVehicleId: nil, sort: .recent, unit: "km"
+        )
+
+        let first = DrivesListModel.build(from: input, revision: 1, rowLimit: 40)
+        XCTAssertEqual(first.groups.flatMap(\.rows).count, 40)
+        XCTAssertTrue(first.hasMoreRows)
+        XCTAssertEqual(first.mapRoutes.count, 100)
+        XCTAssertEqual(first.trips.count, 100)
+        XCTAssertEqual(first.groups.first?.rows.first?.id, "t99")
+
+        let all = DrivesListModel.build(from: input, revision: 2, rowLimit: 120)
+        XCTAssertEqual(all.groups.flatMap(\.rows).count, 100)
+        XCTAssertFalse(all.hasMoreRows)
+
+        var ranked = input
+        ranked.sort = .longest
+        XCTAssertEqual(DrivesListModel.build(from: ranked, revision: 3, rowLimit: 40).flatRows.count, 40)
+    }
+
     private var testVehicle: Vehicle {
         Vehicle(id: "car", nickname: "Test", make: "Test", model: "Car", fuelType: "petrol", currentOdometer: 10_500, fuelTankCapacity: 50, currency: "QAR", fuelVolumeUnit: "L", icon: nil, paintColor: nil, createdAt: Date(), isArchived: false, archivedAt: nil)
     }

@@ -31,8 +31,6 @@ struct DashboardView: View {
                         .glassCard(elevated: true)
                 }
 
-                syncStatusChip
-
                 if let vehicle, let metrics {
                     // Phone: one column. Wide (Duo unfolded): car + actions left, fills right.
                     AdaptiveColumns(leadingTitle: "Overview") {
@@ -89,29 +87,12 @@ struct DashboardView: View {
         }
     }
 
-    private var syncStatusChip: some View {
-        let vehicleLogs = store.fuelLogsForCurrentVehicle
-        return HStack(spacing: 8) {
-            VSIcon(icon: .cloud, size: 12, weight: .bold, tint: VS.Color.textTertiary)
-            Text(TrackyVoice.Soft.syncChip(cars: store.vehicles.count, fills: vehicleLogs.count))
-                .font(VS.TextStyle.caption2(.medium))
-            Spacer()
-            if let email = AuthService.shared.user?.email {
-                Text(email)
-                    .font(VS.TextStyle.caption2())
-                    .lineLimit(1)
-            }
-        }
-        .foregroundStyle(VS.Color.textTertiary)
-        .padding(.horizontal, 14)
-        .padding(.vertical, 10)
-        .glassCard(elevated: true)
-    }
-
     private var topBar: some View {
-        MainTabHeader(
+        let fills = store.fuelLogsForCurrentVehicle.count
+        return MainTabHeader(
             "Fuels",
-            subtitle: vehicle.map { "\($0.nickname) · fill & spend" } ?? "Fill & spend",
+            // The facts the old cloud pill carried, where the eye already reads.
+            subtitle: vehicle.map { "\($0.nickname) · \(fills) fill\(fills == 1 ? "" : "s")" } ?? "Fill & spend",
             onProfile: onProfile
         )
     }
