@@ -234,7 +234,8 @@ struct TripsView: View {
                         .allowsHitTesting(false)
 
                     tripsPanel(edge: .bottom)
-                        .floatingInFrame(bottomClearance: VS.Spacing.frameGutter + 78)
+                        // Measured from the bar itself, so there's always a gap above the nav.
+                        .floatingInFrame(bottomClearance: BottomNavBar.occupiedHeight + BottomNavBar.panelGap)
                 }
             }
 
@@ -449,7 +450,7 @@ struct TripsView: View {
 
     private var mapBottomObstruction: CGFloat {
         guard !isWide else { return 0 }
-        let floatChrome = VS.Spacing.frameGutter * 2 + 78
+        let floatChrome = BottomNavBar.occupiedHeight + BottomNavBar.panelGap
         guard mode == .drives else { return trackingPanelHeight + floatChrome }
         // Always the collapsed height: expanding the drawer must never resize MapKit.
         // A map frame change inside the drawer spring was what made the sheet stutter.
@@ -1061,7 +1062,7 @@ struct TripsView: View {
     private var driveDrawerMaxHeight: CGFloat {
         let screen = windowSize.height
         let reservedTop: CGFloat = 132
-        let reservedBottom = VS.Spacing.frameGutter + 78 + 12
+        let reservedBottom = BottomNavBar.occupiedHeight + BottomNavBar.panelGap
         return max(driveDrawerCollapsedHeight, screen - reservedTop - reservedBottom)
     }
 

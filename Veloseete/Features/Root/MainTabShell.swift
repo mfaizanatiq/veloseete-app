@@ -360,6 +360,17 @@ struct BottomNavBar: View {
         )
     }
 
+    /// Space the full-size bar takes from the physical bottom edge (its bottom
+    /// padding + pill height). Panels that sit above it clear this, plus `panelGap`,
+    /// so the two never touch — derived here so it can't drift from the bar.
+    static var occupiedHeight: CGFloat {
+        let pill: CGFloat = 48 + 10 * 2 // itemMinHeight + outerPadding, full size
+        return max(homeIndicatorInset - 13, 6) + pill
+    }
+
+    /// Breathing room between the bar and any panel above it.
+    static let panelGap: CGFloat = 12
+
     /// Stable home-indicator height from the key window (not affected by tab layout).
     private static var homeIndicatorInset: CGFloat {
         let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
