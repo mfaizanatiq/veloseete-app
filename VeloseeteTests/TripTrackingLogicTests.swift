@@ -1,4 +1,5 @@
 import CoreLocation
+import MapKit
 import XCTest
 @testable import Veloseete
 
@@ -167,6 +168,62 @@ final class TripTrackingLogicTests: XCTestCase {
         let restored = try JSONDecoder().decode([PendingTripSave].self, from: encoded)
 
         XCTAssertEqual(restored, [pending])
+    }
+
+    /// Where a coordinate lands on screen (points) when the map shows `rect` in a view of `size`.
+    private func screenPoint(_ coordinate: CLLocationCoordinate2D, rect: MKMapRect, size: CGSize) -> CGPoint {
+        let p = MKMapPoint(coordinate)
+        return CGPoint(
+            x: (p.x - rect.origin.x) / rect.size.width * size.width,
+            y: (p.y - rect.origin.y) / rect.size.height * size.height
+        )
+    }
+
+    func testRouteFramingKeepsEveryPointInTheVisibleAreaWhateverTheShape() {
+        func coords(_ count: Int, _ f: (Double) -> (Double, Double)) -> [CLLocationCoordinate2D] {
+            (0..<count).map { i in
+                let (lat, lng) = f(Double(i) / Double(count - 1))
+                return CLLocationCoordinate2D(latitude: 25.2 + lat, longitude: 55.27 + lng)
+            }
+        }
+        let routes: [String: [CLLocationCoordinate2D]] = [
+            "north-south": coords(50) { ($0 * 0.30, sin($0 * 5) * 0.012) },
+            "east-west": coords(50) { (sin($0 * 6) * 0.01, $0 * 0.30) },
+            "diagonal": coords(50) { ($0 * 0.22, $0 * 0.22) },
+            "loop": coords(50) { (sin($0 * .pi * 2) * 0.05, (1 - cos($0 * .pi * 2)) * 0.05) },
+            "short": coords(20) { ($0 * 0.003, sin($0 * 4) * 0.0008) },
+            "single point": [CLLocationCoordinate2D(latitude: 25.2, longitude: 55.27)]
+        ]
+        let layouts: [(CGSize, RouteFraming.Insets)] = [
+            (CGSize(width: 402, height: 440), .phoneHero),   // phone hero
+            (CGSize(width: 510, height: 669), .wideHero),    // Duo unfolded, tall hero
+            (CGSize(width: 330, height: 220), .card),        // review sheet card
+            (CGSize(width: 377, height: 440), .phoneHero)    // Duo folded
+        ]
+        for (name, route) in routes {
+            for (size, insets) in layouts {
+                let rect = RouteFraming.mapRect(for: route, viewSize: size, insets: insets)
+                XCTAssertNotNil(rect, name)
+                guard let rect else { continue }
+                // The view is shown whole, undistorted.
+                XCTAssertEqual(rect.size.width / rect.size.height, size.width / size.height, accuracy: 0.001, name)
+                let clear = CGRect(
+                    x: insets.leading, y: insets.top,
+                    width: size.width - insets.leading - insets.trailing,
+                    height: size.height - insets.top - insets.bottom
+                )
+                for coordinate in route {
+                    let point = screenPoint(coordinate, rect: rect, size: size)
+                    XCTAssertTrue(clear.insetBy(dx: -0.5, dy: -0.5).contains(point), "\(name) \(size): \(point) outside \(clear)")
+                }
+                // Centred in the clear area (the bounding box midpoint sits at its centre).
+                let xs = route.map { screenPoint($0, rect: rect, size: size).x }
+                let ys = route.map { screenPoint($0, rect: rect, size: size).y }
+                XCTAssertEqual((xs.min()! + xs.max()!) / 2, clear.midX, accuracy: 1, name)
+                XCTAssertEqual((ys.min()! + ys.max()!) / 2, clear.midY, accuracy: 1, name)
+            }
+        }
+        XCTAssertNil(RouteFraming.mapRect(for: [], viewSize: CGSize(width: 300, height: 300), insets: .card))
     }
 
     func testQueuedDriveKeepsBothAnswersAndOldQueuesStillLoad() throws {

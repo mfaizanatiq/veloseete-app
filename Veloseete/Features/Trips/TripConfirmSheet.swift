@@ -387,39 +387,27 @@ private struct PendingTripRouteMap: View {
             : TripTrackingLogic.cleanedForDisplay(pending.route)
     }
 
-    private var routeRegion: MKCoordinateRegion {
-        let points = coordinates
-        guard let first = points.first else {
-            return MKCoordinateRegion(
-                center: CLLocationCoordinate2D(latitude: 25.2854, longitude: 51.5310),
-                span: MKCoordinateSpan(latitudeDelta: 0.2, longitudeDelta: 0.2)
-            )
-        }
-        let latitudes = points.map(\.latitude)
-        let longitudes = points.map(\.longitude)
-        let minLatitude = latitudes.min() ?? first.latitude
-        let maxLatitude = latitudes.max() ?? first.latitude
-        let minLongitude = longitudes.min() ?? first.longitude
-        let maxLongitude = longitudes.max() ?? first.longitude
-        let midLat = (minLatitude + maxLatitude) / 2
-        let latDelta = max((maxLatitude - minLatitude) * 1.55, 0.02)
-        let lngDeltaRaw = max((maxLongitude - minLongitude) * 1.55, 0.02)
-        let cosLat = max(cos(midLat * .pi / 180), 0.2)
-        let lngDelta = max(lngDeltaRaw, latDelta / cosLat * 0.55)
-        return MKCoordinateRegion(
-            center: CLLocationCoordinate2D(
-                latitude: midLat,
-                longitude: (minLongitude + maxLongitude) / 2
-            ),
-            span: MKCoordinateSpan(
-                latitudeDelta: latDelta,
-                longitudeDelta: lngDelta
-            )
-        )
+    @State private var position: MapCameraPosition = .automatic
+
+    private var framed: [CLLocationCoordinate2D] {
+        coordinates.map { CLLocationCoordinate2D(latitude: $0.latitude, longitude: $0.longitude) }
+    }
+
+    private func reframe(_ size: CGSize) {
+        guard let rect = RouteFraming.mapRect(for: framed, viewSize: size, insets: .card) else { return }
+        position = .rect(rect)
     }
 
     var body: some View {
-        Map(initialPosition: .region(routeRegion), interactionModes: []) {
+        GeometryReader { proxy in
+            map
+                .onAppear { reframe(proxy.size) }
+                .onChange(of: proxy.size) { _, size in reframe(size) }
+        }
+    }
+
+    private var map: some View {
+        Map(position: $position, interactionModes: []) {
             if coordinates.count >= 2 {
                 MapPolyline(coordinates: coordinates.map {
                     CLLocationCoordinate2D(latitude: $0.latitude, longitude: $0.longitude)
@@ -672,9 +660,31 @@ struct TripReviewPreview: View {
 struct TripDetailPreview: View {
     @StateObject private var store = DataStore.shared
 
+    /// `-TripRoute ns|ew|short|loop|diag` — route shapes that stress the map framing.
+    private static var route: [TripCoordinate] {
+        let args = ProcessInfo.processInfo.arguments
+        guard let flag = args.firstIndex(of: "-TripRoute"), args.indices.contains(flag + 1) else {
+            return TripReviewPreview.sampleRoute
+        }
+        let n = 60
+        func line(_ f: (Double) -> (Double, Double)) -> [TripCoordinate] {
+            (0..<n).map { i in
+                let (lat, lng) = f(Double(i) / Double(n - 1))
+                return TripCoordinate(latitude: 25.20 + lat, longitude: 55.27 + lng)
+            }
+        }
+        switch args[flag + 1] {
+        case "ew": return line { t in (sin(t * 6) * 0.01, t * 0.30) }          // ~30 km east-west
+        case "short": return line { t in (t * 0.003, sin(t * 4) * 0.0008) }   // ~300 m
+        case "loop": return line { t in (sin(t * .pi * 2) * 0.05, (1 - cos(t * .pi * 2)) * 0.05) }
+        case "diag": return line { t in (t * 0.22, t * 0.22) }
+        default: return line { t in (t * 0.30, sin(t * 5) * 0.012) }           // ~33 km north-south
+        }
+    }
+
     private static let trip: Trip = {
         let end = Date().addingTimeInterval(-3 * 3600)
-        let route = TripReviewPreview.sampleRoute
+        let route = Self.route
         return Trip(
             id: "preview-detail",
             vehicleId: "demo-coolray",

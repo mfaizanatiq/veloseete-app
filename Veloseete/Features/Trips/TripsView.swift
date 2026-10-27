@@ -1890,41 +1890,6 @@ struct TripDetailView: View {
     @State private var isDeleting = false
     @State private var deleteError: String?
 
-    private var routeRegion: MKCoordinateRegion {
-        let coords = trip.route.isEmpty
-            ? [trip.startCoordinate, trip.endCoordinate].compactMap { $0 }
-            : TripTrackingLogic.mapDisplayRoute(id: trip.id, points: trip.route, maximumPoints: 800)
-        guard !coords.isEmpty else {
-            return MKCoordinateRegion(
-                center: CLLocationCoordinate2D(latitude: 25.2854, longitude: 51.5310),
-                span: MKCoordinateSpan(latitudeDelta: 0.25, longitudeDelta: 0.25)
-            )
-        }
-        let lats = coords.map(\.latitude)
-        let lngs = coords.map(\.longitude)
-        let minLat = lats.min()!, maxLat = lats.max()!
-        let minLng = lngs.min()!, maxLng = lngs.max()!
-        let midLat = (minLat + maxLat) / 2
-        // Keep geographic aspect so short routes aren't crushed / off-center.
-        let latDelta = max((maxLat - minLat) * 1.55, 0.02)
-        let lngDeltaRaw = max((maxLng - minLng) * 1.55, 0.02)
-        let cosLat = max(cos(midLat * .pi / 180), 0.2)
-        let lngDelta = max(lngDeltaRaw, latDelta / cosLat * 0.55)
-        // The route title covers the bottom ~40% of the hero, so give the map that
-        // much extra room below the route and keep the line in the clear top part.
-        let framedLatDelta = latDelta * 1.7
-        return MKCoordinateRegion(
-            center: CLLocationCoordinate2D(
-                latitude: midLat - framedLatDelta * 0.16,
-                longitude: (minLng + maxLng) / 2
-            ),
-            span: MKCoordinateSpan(
-                latitudeDelta: framedLatDelta,
-                longitudeDelta: lngDelta
-            )
-        )
-    }
-
     private var vehicleName: String {
         store.vehicles.first(where: { $0.id == trip.vehicleId })?.nickname
             ?? store.archivedVehicles.first(where: { $0.id == trip.vehicleId })?.nickname
@@ -2012,7 +1977,7 @@ struct TripDetailView: View {
         } else {
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
-                    routeHero(height: 400)
+                    routeHero(height: 440)
                     detailsStack
                 }
             }
@@ -2059,7 +2024,7 @@ struct TripDetailView: View {
     /// Map with the drive's story on it: where from, where to, when.
     /// `height: nil` fills whatever the layout gives it (wide mode).
     private func routeHero(height: CGFloat?) -> some View {
-        routeMap
+        routeMap(insets: height == nil ? .wideHero : .phoneHero)
             .frame(height: height)
             .frame(maxHeight: height == nil ? .infinity : nil)
             .overlay(alignment: .bottom) {
@@ -2523,8 +2488,8 @@ struct TripDetailView: View {
         root.present(controller, animated: true)
     }
 
-    private var routeMap: some View {
-        TripDetailRouteMap(trip: trip, region: routeRegion)
+    private func routeMap(insets: RouteFraming.Insets) -> some View {
+        TripDetailRouteMap(trip: trip, insets: insets)
             .equatable()
     }
 
@@ -2532,16 +2497,86 @@ struct TripDetailView: View {
 
 /// The detail hero map, built once per drive. Its own Equatable view so place
 /// lookups and store updates on the sheet never rebuild MapKit content.
+/// Fits a route into the part of a map the person can actually see — not the whole view,
+/// which has toolbar buttons over the top and the drive's title over the bottom.
+enum RouteFraming {
+    struct Insets: Equatable {
+        var top: CGFloat
+        var leading: CGFloat
+        var bottom: CGFloat
+        var trailing: CGFloat
+
+        // The Start / Finish pins are 28 pt wide and centred on the route's ends, so every
+        // inset below includes ~16 pt for them on top of the real overlays.
+        /// Hero on a phone: close button above (~72), the From → To title card below (~156).
+        static let phoneHero = Insets(top: 88, leading: 46, bottom: 172, trailing: 46)
+        /// Hero beside the details on a wide screen: the title card is still at the bottom.
+        static let wideHero = Insets(top: 72, leading: 54, bottom: 172, trailing: 54)
+        /// A plain map card with nothing on top of it.
+        static let card = Insets(top: 32, leading: 32, bottom: 32, trailing: 32)
+    }
+
+    /// A very short drive shouldn't zoom to street level.
+    static let minimumSpanMeters: Double = 900
+
+    /// The map rect to show so every coordinate lands inside the visible area
+    /// (the view minus `insets`), centred in it — whatever shape the route or the view is.
+    static func mapRect(
+        for coordinates: [CLLocationCoordinate2D],
+        viewSize: CGSize,
+        insets: Insets
+    ) -> MKMapRect? {
+        guard !coordinates.isEmpty, viewSize.width > 0, viewSize.height > 0 else { return nil }
+        let points = coordinates.map(MKMapPoint.init)
+        var minX = points.map(\.x).min()!
+        var maxX = points.map(\.x).max()!
+        var minY = points.map(\.y).min()!
+        var maxY = points.map(\.y).max()!
+
+        let midLatitude = MKMapPoint(x: (minX + maxX) / 2, y: (minY + maxY) / 2).coordinate.latitude
+        let minSpan = minimumSpanMeters / MKMetersPerMapPointAtLatitude(midLatitude)
+        if maxX - minX < minSpan {
+            let mid = (minX + maxX) / 2
+            minX = mid - minSpan / 2
+            maxX = mid + minSpan / 2
+        }
+        if maxY - minY < minSpan {
+            let mid = (minY + maxY) / 2
+            minY = mid - minSpan / 2
+            maxY = mid + minSpan / 2
+        }
+
+        let clearWidth = max(viewSize.width - insets.leading - insets.trailing, 40)
+        let clearHeight = max(viewSize.height - insets.top - insets.bottom, 40)
+        // Screen points per map point: the tighter of the two fits.
+        let scale = min(clearWidth / (maxX - minX), clearHeight / (maxY - minY))
+        let clearCenterX = insets.leading + clearWidth / 2
+        let clearCenterY = insets.top + clearHeight / 2
+        let midX = (minX + maxX) / 2
+        let midY = (minY + maxY) / 2
+        return MKMapRect(
+            x: midX - clearCenterX / scale,
+            y: midY - clearCenterY / scale,
+            width: viewSize.width / scale,
+            height: viewSize.height / scale
+        )
+    }
+}
+
+/// The detail hero map, built once per drive. Its own Equatable view so place
+/// lookups and store updates on the sheet never rebuild MapKit content.
 private struct TripDetailRouteMap: View, Equatable {
     let tripId: String
-    let region: MKCoordinateRegion
     let coordinates: [CLLocationCoordinate2D]
     let start: CLLocationCoordinate2D?
     let end: CLLocationCoordinate2D?
+    let insets: RouteFraming.Insets
 
-    init(trip: Trip, region: MKCoordinateRegion) {
+    @State private var position: MapCameraPosition = .automatic
+
+    init(trip: Trip, insets: RouteFraming.Insets) {
         tripId = trip.id
-        self.region = region
+        self.insets = insets
         coordinates = TripTrackingLogic.mapDisplayRoute(id: trip.id, points: trip.route, maximumPoints: 800)
             .map { CLLocationCoordinate2D(latitude: $0.latitude, longitude: $0.longitude) }
         start = (trip.startCoordinate ?? trip.route.first)
@@ -2551,12 +2586,32 @@ private struct TripDetailRouteMap: View, Equatable {
     }
 
     static func == (lhs: Self, rhs: Self) -> Bool {
-        lhs.tripId == rhs.tripId && lhs.coordinates.count == rhs.coordinates.count
+        lhs.tripId == rhs.tripId && lhs.coordinates.count == rhs.coordinates.count && lhs.insets == rhs.insets
+    }
+
+    /// Everything that must stay in view: the whole line and both ends.
+    private var framed: [CLLocationCoordinate2D] {
+        coordinates + [start, end].compactMap { $0 }
+    }
+
+    private func reframe(_ size: CGSize) {
+        guard let rect = RouteFraming.mapRect(for: framed, viewSize: size, insets: insets) else { return }
+        position = .rect(rect)
     }
 
     var body: some View {
+        // Sized by the view itself, so the route is centred in what's visible — and
+        // re-framed when the window changes shape (fold / unfold, rotation).
+        GeometryReader { proxy in
+            map
+                .onAppear { reframe(proxy.size) }
+                .onChange(of: proxy.size) { _, size in reframe(size) }
+        }
+    }
+
+    private var map: some View {
         // Pinch to zoom only — panning would fight the page scroll.
-        Map(initialPosition: .region(region), interactionModes: [.zoom]) {
+        Map(position: $position, interactionModes: [.zoom]) {
             if coordinates.count >= 2 {
                 MapPolyline(coordinates: coordinates)
                     .stroke(VS.Color.accent.opacity(0.22), lineWidth: 12)
