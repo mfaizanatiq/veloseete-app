@@ -44,8 +44,11 @@ struct PendingTripSave: Codable, Equatable, Identifiable {
     var role: String = TripRole.driver.rawValue
     /// Five speed-band sample counts. Missing on drives queued before the histogram.
     var speedBuckets: [Int] = []
+    /// "garage" or "other" — set at review time; nil until then (and on older queued drives).
+    var vehicleKind: String? = nil
 
     var tripRole: TripRole { TripRole(rawValue: role) ?? .driver }
+    var tripVehicle: TripVehicle { TripContext.vehicle(stored: vehicleKind, role: tripRole) }
 
     init(
         id: UUID,
@@ -63,7 +66,8 @@ struct PendingTripSave: Codable, Equatable, Identifiable {
         source: String,
         suggestedOdometer: Double,
         role: String = TripRole.driver.rawValue,
-        speedBuckets: [Int] = []
+        speedBuckets: [Int] = [],
+        vehicleKind: String? = nil
     ) {
         self.id = id
         self.vehicleId = vehicleId
@@ -81,13 +85,14 @@ struct PendingTripSave: Codable, Equatable, Identifiable {
         self.suggestedOdometer = suggestedOdometer
         self.role = role
         self.speedBuckets = speedBuckets
+        self.vehicleKind = vehicleKind
     }
 
     private enum CodingKeys: String, CodingKey {
         case id, vehicleId, vehicleName, startedAt, endedAt
         case distanceKm, durationSec, avgSpeedKmh, maxSpeedKmh
         case startCoordinate, endCoordinate, route, source, suggestedOdometer
-        case role, speedBuckets
+        case role, speedBuckets, vehicleKind
     }
 
     init(from decoder: Decoder) throws {
@@ -108,6 +113,7 @@ struct PendingTripSave: Codable, Equatable, Identifiable {
         suggestedOdometer = try container.decode(Double.self, forKey: .suggestedOdometer)
         role = try container.decodeIfPresent(String.self, forKey: .role) ?? TripRole.driver.rawValue
         speedBuckets = try container.decodeIfPresent([Int].self, forKey: .speedBuckets) ?? []
+        vehicleKind = try container.decodeIfPresent(String.self, forKey: .vehicleKind)
     }
 
     func encode(to encoder: Encoder) throws {
@@ -128,6 +134,7 @@ struct PendingTripSave: Codable, Equatable, Identifiable {
         try container.encode(suggestedOdometer, forKey: .suggestedOdometer)
         try container.encode(role, forKey: .role)
         try container.encode(speedBuckets, forKey: .speedBuckets)
+        try container.encodeIfPresent(vehicleKind, forKey: .vehicleKind)
     }
 }
 
@@ -537,6 +544,14 @@ final class TripRecordingService: NSObject, ObservableObject {
 
     func markPendingSaved(id: UUID) {
         pendingSaves.removeAll { $0.id == id }
+        persistPendingSaves()
+    }
+
+    /// Removes several reviewed drives with one write to disk and one UI update.
+    func markPendingSaved(ids: [UUID]) {
+        guard !ids.isEmpty else { return }
+        let done = Set(ids)
+        pendingSaves.removeAll { done.contains($0.id) }
         persistPendingSaves()
     }
 

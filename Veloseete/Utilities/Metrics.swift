@@ -405,8 +405,10 @@ enum InsightGenerator {
             return ids.reduce(0) { $0 + totalKilometersDriven(trips: trips, logs: logs, vehicleId: $1) }
         }
 
+        // Km this car moved, plus km you drove. A ride as a passenger in someone
+        // else's vehicle is neither, so it never inflates a car's distance.
         let tripKm = trips
-            .filter { $0.vehicleId == vehicleId }
+            .filter { $0.vehicleId == vehicleId && ($0.countsOnVehicle || $0.countsAsDriven) }
             .reduce(0) { $0 + max(0, $1.distanceKm) }
 
         let vehicleLogs = logs

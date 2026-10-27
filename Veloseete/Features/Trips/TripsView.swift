@@ -134,16 +134,11 @@ struct TripsView: View {
         guard !isConfirmingAll else { return }
         isConfirmingAll = true
         UIImpactFeedbackGenerator(style: .light).impactOccurred()
-        for pending in drives.pending {
-            do {
-                try await store.saveTrip(pending, odometer: pending.suggestedOdometer, applyOdometer: false)
-                recorder.markPendingSaved(id: pending.id)
-            } catch {
-                // Stop on the first failure; the remaining drives stay queued for review.
-                break
-            }
-        }
-        UINotificationFeedbackGenerator().notificationOccurred(.success)
+        // Same flow as confirming one by one — each drive keeps the answers already on it.
+        let result = await store.saveTrips(drives.pending)
+        recorder.markPendingSaved(ids: result.saved)
+        // Stopped at the first failure; whatever didn't go through stays queued for review.
+        UINotificationFeedbackGenerator().notificationOccurred(result.error == nil ? .success : .warning)
         isConfirmingAll = false
     }
 
@@ -2142,8 +2137,9 @@ struct TripDetailView: View {
     private var metaRow: some View {
         ScrollView(.horizontal) {
             HStack(spacing: 8) {
-                // A rental drive sits under your car in the log, but it wasn't your car.
-                if let vehicle, trip.tripRole != .otherCar {
+                // Which vehicle moved. A drive in another vehicle is filed under a car of
+                // yours in the log, but it wasn't that car.
+                if let vehicle, trip.tripVehicle == .garage {
                     metaChip {
                         VehicleMark(
                             style: VehicleMarkStyle.resolve(vehicle.icon),
@@ -2151,10 +2147,15 @@ struct TripDetailView: View {
                             paint: VehiclePaintColor.resolve(vehicle.paintColor)
                         )
                     } text: { vehicle.nickname }
+                } else if trip.tripVehicle == .other {
+                    metaChip {
+                        VSIcon(icon: .car, size: 13, weight: .fill, tint: VS.Color.textSecondary)
+                    } text: { TripVehicle.other.label }
                 }
+                // Who drove.
                 metaChip {
                     VSIcon(icon: roleIcon, size: 13, weight: .fill, tint: VS.Color.textSecondary)
-                } text: { trip.tripRole.label }
+                } text: { trip.countsAsDriven ? "You drove" : "Someone else drove" }
                 metaChip {
                     VSIcon(icon: trip.source == "auto" ? .target : .play, size: 13, weight: .fill, tint: VS.Color.textSecondary)
                 } text: { trip.source == "auto" ? "Auto-tracked" : "Manual" }
@@ -2222,7 +2223,7 @@ struct TripDetailView: View {
             HStack(alignment: .top, spacing: 10) {
                 Image(systemName: odometerIcon)
                     .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(trip.countsOnVehicle ? VS.Color.success : VS.Color.textTertiary)
+                    .foregroundStyle(trip.countsAsDriven || trip.countsOnVehicle ? VS.Color.success : VS.Color.textTertiary)
                     .padding(.top, 1)
                 Text(odometerNote)
                     .font(VS.TextStyle.footnote(.medium))
@@ -2405,18 +2406,25 @@ struct TripDetailView: View {
     }
 
     private var odometerIcon: String {
-        if trip.countsOnVehicle { return "checkmark.circle.fill" }
-        return trip.tripRole == .otherCar ? "car.fill" : "person.fill"
+        switch (trip.countsAsDriven, trip.tripVehicle) {
+        case (true, .garage): "checkmark.circle.fill"
+        case (false, .garage): "car.fill"
+        case (true, .other): "steeringwheel"
+        case (false, .other): "person.fill"
+        }
     }
 
     private var odometerNote: String {
-        if trip.countsOnVehicle {
+        switch (trip.countsAsDriven, trip.tripVehicle) {
+        case (true, .garage):
             return TrackyVoice.Soft.inEstimateBody(distance: DistanceFormat.formatDistance(trip.distanceKm, unit: unit))
+        case (false, .garage):
+            return "Someone else drove your car. Its odometer and fuel count these km; your driving stats don’t."
+        case (true, .other):
+            return "Another vehicle. Counts toward your driving, not your car’s odometer or fuel."
+        case (false, .other):
+            return "Passenger in another vehicle. It stays in your log, off every car and your driving stats."
         }
-        if trip.tripRole == .otherCar {
-            return "Rental or borrowed car. Counts toward your driving, not your car’s odometer or fuel."
-        }
-        return "Passenger trip. It stays in your log and off the odometer."
     }
 
     private var durationLabel: String {
@@ -2432,11 +2440,7 @@ struct TripDetailView: View {
     }
 
     private var roleIcon: VSIconName {
-        switch trip.tripRole {
-        case .driver: .gauge
-        case .passenger: .user
-        case .otherCar: .car
-        }
+        trip.countsAsDriven ? .gauge : .user
     }
 
     /// Rough fuel for this leg from the car's own consumption. Passenger legs are skipped.
@@ -2801,7 +2805,7 @@ struct DrivesListModel {
             let time = trip.startedAt.formatted(date: .omitted, time: .shortened)
             // Leaderboards care which day, not which minute — keeps room for the origin.
             var timeLabel = showsDay ? dayFormatter.string(from: trip.startedAt) : time
-            if trip.tripRole != .driver { timeLabel += " · \(trip.tripRole.label)" }
+            if let note = trip.contextNote { timeLabel += " · \(note)" }
             let meta = "\(timeLabel) · \(DriveListCopy.duration(trip.durationSec))"
             let distance = DistanceFormat.formatDistance(trip.distanceKm, unit: input.unit)
             let fuel = fuelLabel(distanceKm: trip.distanceKm, vehicleId: trip.vehicleId, counts: trip.countsOnVehicle)

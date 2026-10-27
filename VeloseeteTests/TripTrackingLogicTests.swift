@@ -169,6 +169,32 @@ final class TripTrackingLogicTests: XCTestCase {
         XCTAssertEqual(restored, [pending])
     }
 
+    func testQueuedDriveKeepsBothAnswersAndOldQueuesStillLoad() throws {
+        var pending = PendingTripSave(
+            id: UUID(), vehicleId: "car", vehicleName: "Daily Driver",
+            startedAt: Date(timeIntervalSince1970: 1_000), endedAt: Date(timeIntervalSince1970: 1_900),
+            distanceKm: 12.4, durationSec: 900, avgSpeedKmh: 49.6, maxSpeedKmh: 82,
+            startCoordinate: nil, endCoordinate: nil, route: [], source: "auto", suggestedOdometer: 52_000
+        )
+        pending.role = TripRole.passenger.rawValue
+        pending.vehicleKind = TripVehicle.garage.rawValue
+        let restored = try JSONDecoder().decode(PendingTripSave.self, from: JSONEncoder().encode(pending))
+        XCTAssertEqual(restored.tripRole, .passenger)
+        XCTAssertEqual(restored.tripVehicle, .garage)
+
+        // A drive queued by an older build has neither field beyond `role`.
+        let legacy = """
+        {"id":"\(UUID().uuidString)","vehicleId":"car","vehicleName":"Daily Driver",
+         "startedAt":1000,"endedAt":1900,"distanceKm":3,"durationSec":300,"avgSpeedKmh":36,
+         "maxSpeedKmh":50,"route":[],"source":"auto","suggestedOdometer":10,"role":"passenger"}
+        """.data(using: .utf8)!
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .secondsSince1970
+        let old = try decoder.decode(PendingTripSave.self, from: legacy)
+        XCTAssertNil(old.vehicleKind)
+        XCTAssertEqual(old.tripVehicle, .other) // an old "passenger" meant keep it off my car
+    }
+
     func testOdometerEstimateAndVariance() {
         XCTAssertEqual(OdometerReconciliation.estimated(verifiedKm: 52_000, trackedKm: 184), 52_184)
         XCTAssertEqual(OdometerReconciliation.variance(enteredKm: 52_191, verifiedKm: 52_000, trackedKm: 184), 7)

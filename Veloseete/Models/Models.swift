@@ -70,17 +70,79 @@ struct TripCoordinate: Codable, Equatable, Hashable {
     var longitude: Double
 }
 
+/// Who was behind the wheel. New drives only ever store `driver` or `passenger`;
+/// `otherCar` is the legacy value from when "which car" was folded into the role.
 enum TripRole: String, Codable, Equatable {
     case driver
     case passenger
-    /// You drove, but a car that isn't in the garage — a rental or a friend's car.
+    /// Legacy: you drove a car that isn't in the garage.
     case otherCar
 
     var label: String {
         switch self {
         case .driver: "Driver"
         case .passenger: "Passenger"
-        case .otherCar: "Other car"
+        case .otherCar: "Driver"
+        }
+    }
+}
+
+/// Which vehicle moved. Independent of who drove: your wife driving your car is
+/// still your car's kilometres; you riding in an Uber never are.
+enum TripVehicle: String, Codable, Equatable {
+    /// One of your garage cars — its odometer and fuel follow these drives.
+    case garage
+    /// A rental, a friend's car, a taxi — anything not in your garage.
+    case other
+
+    var label: String {
+        switch self {
+        case .garage: "My car"
+        case .other: "Another vehicle"
+        }
+    }
+}
+
+/// The two facts a drive review asks for, and what each combination means.
+enum TripContext {
+    static func countsAsDriven(role: TripRole) -> Bool { role != .passenger }
+
+    /// Legacy rows have no stored vehicle: "driver" meant a garage car, anything else meant "keep it off my car".
+    static func vehicle(stored: String?, role: TripRole) -> TripVehicle {
+        if let stored, let known = TripVehicle(rawValue: stored) { return known }
+        return role == .driver ? .garage : .other
+    }
+
+    /// What to pre-select when reviewing a drive.
+    struct Suggestion: Equatable {
+        var role: TripRole
+        var vehicle: TripVehicle
+        /// When the earlier drive this follows ended — nil when it's just the default.
+        var followsDriveEndedAt: Date?
+    }
+
+    /// A rental stays a rental for the day: if the last drive you made was in another vehicle
+    /// within `stickyWindow`, the next one defaults to it too. Riding as a passenger or someone
+    /// else driving your car are one-offs, so they never carry over.
+    static let stickyWindow: TimeInterval = 18 * 3_600
+
+    static func suggest(startedAt: Date, recentTrips: [Trip]) -> Suggestion {
+        let previous = recentTrips
+            .filter { $0.endedAt <= startedAt && startedAt.timeIntervalSince($0.endedAt) <= stickyWindow }
+            .max { $0.endedAt < $1.endedAt }
+        if let previous, previous.tripVehicle == .other, previous.countsAsDriven {
+            return Suggestion(role: .driver, vehicle: .other, followsDriveEndedAt: previous.endedAt)
+        }
+        return Suggestion(role: .driver, vehicle: .garage, followsDriveEndedAt: nil)
+    }
+
+    /// Short note for list rows and chips; nil for the ordinary case (you, your car).
+    static func note(role: TripRole, vehicle: TripVehicle) -> String? {
+        switch (role == .passenger, vehicle) {
+        case (false, .garage): nil
+        case (true, .garage): "Someone else drove"
+        case (false, .other): "Another vehicle"
+        case (true, .other): "Passenger · another vehicle"
         }
     }
 }
@@ -133,16 +195,21 @@ struct Trip: Identifiable, Equatable {
     var endCoordinate: TripCoordinate?
     var route: [TripCoordinate]
     var source: String // "auto" | "manual"
-    /// "driver", "passenger" or "otherCar". Missing on older trips means the person was driving.
+    /// Who drove: "driver" or "passenger" ("otherCar" on drives saved before the split).
     var role: String = TripRole.driver.rawValue
     /// Five speed-band sample counts. Empty on trips recorded before the histogram.
     var speedBuckets: [Int] = []
+    /// Which vehicle: "garage" or "other". Nil on drives saved before the split.
+    var vehicleKind: String? = nil
 
     var tripRole: TripRole { TripRole(rawValue: role) ?? .driver }
-    /// You were behind the wheel — counts toward your driving stats.
-    var countsAsDriven: Bool { tripRole != .passenger }
-    /// Kilometres this garage car actually did — the odometer and fuel only follow these.
-    var countsOnVehicle: Bool { tripRole == .driver }
+    var tripVehicle: TripVehicle { TripContext.vehicle(stored: vehicleKind, role: tripRole) }
+    /// You were behind the wheel — counts toward your driving stats, in any car.
+    var countsAsDriven: Bool { TripContext.countsAsDriven(role: tripRole) }
+    /// A garage car moved these kilometres (whoever drove) — its odometer and fuel follow them.
+    var countsOnVehicle: Bool { tripVehicle == .garage }
+    /// "Someone else drove", "Another vehicle"… nil for the ordinary case.
+    var contextNote: String? { TripContext.note(role: tripRole, vehicle: tripVehicle) }
 }
 
 extension Trip {
@@ -187,7 +254,11 @@ extension Trip {
             route: route,
             source: FirestoreDecode.string(data["source"], fallback: "manual"),
             role: FirestoreDecode.string(data["role"], fallback: TripRole.driver.rawValue),
-            speedBuckets: FirestoreDecode.intArray(data["speedBuckets"])
+            speedBuckets: FirestoreDecode.intArray(data["speedBuckets"]),
+            vehicleKind: {
+                let value = FirestoreDecode.string(data["vehicleKind"])
+                return value.isEmpty ? nil : value
+            }()
         )
     }
 }

@@ -137,7 +137,7 @@ final class DataStore: ObservableObject {
         let pending = TripRecordingService.shared.pendingSaves
             .filter {
                 $0.vehicleId == vehicleId
-                    && $0.tripRole == .driver
+                    && $0.tripVehicle == .garage
                     && $0.endedAt > verifiedAt
                     && $0.endedAt <= date
             }
@@ -817,6 +817,44 @@ final class DataStore: ObservableObject {
 
     @discardableResult
     func saveTrip(_ pending: PendingTripSave, odometer: Double, applyOdometer: Bool) async throws -> Trip {
+        let trip = try await writeTrip(pending, odometer: odometer, applyOdometer: applyOdometer)
+        trips.insert(trip, at: 0)
+        refreshAfterTripChange()
+        return trip
+    }
+
+    /// Saves a whole review queue: every drive is written first, then the list, widgets and
+    /// reminders update once — not once per drive (which rebuilt My Drives N times).
+    /// Stops at the first failure; `saved` still lists what went through.
+    func saveTrips(_ pendings: [PendingTripSave]) async -> (saved: [UUID], error: Error?) {
+        var saved: [UUID] = []
+        var written: [Trip] = []
+        var failure: Error?
+        for pending in pendings {
+            do {
+                written.append(try await writeTrip(pending, odometer: pending.suggestedOdometer, applyOdometer: false))
+                saved.append(pending.id)
+            } catch {
+                failure = error
+                break
+            }
+        }
+        if !written.isEmpty {
+            // Newest first, like a single insert at the top.
+            trips.insert(contentsOf: written.reversed(), at: 0)
+            refreshAfterTripChange()
+        }
+        return (saved, failure)
+    }
+
+    private func refreshAfterTripChange() {
+        publishCarPlayWidgetState()
+        // Driven km change the fuel-range picture, so re-evaluate reminders.
+        VehicleInsightScheduler.shared.refresh(using: self)
+    }
+
+    /// The remote write plus odometer bookkeeping — no published-state changes for the trip itself.
+    private func writeTrip(_ pending: PendingTripSave, odometer: Double, applyOdometer: Bool) async throws -> Trip {
         guard let userId = AuthService.shared.userId else {
             throw NSError(domain: "Veloseete", code: 401, userInfo: [NSLocalizedDescriptionKey: "Not signed in"])
         }
@@ -835,6 +873,10 @@ final class DataStore: ObservableObject {
             resolvedVehicleId = pending.vehicleId
         }
 
+        // Always store both facts explicitly, so the meaning survives any future rule change.
+        let role: TripRole = pending.tripRole == .passenger ? .passenger : .driver
+        let vehicleKind = pending.tripVehicle.rawValue
+
         let input = FirestoreRepository.NewTripInput(
             vehicleId: resolvedVehicleId,
             startedAt: pending.startedAt,
@@ -847,8 +889,9 @@ final class DataStore: ObservableObject {
             endCoordinate: pending.endCoordinate,
             route: pending.route,
             source: pending.source,
-            role: pending.role,
-            speedBuckets: pending.speedBuckets
+            role: role.rawValue,
+            speedBuckets: pending.speedBuckets,
+            vehicleKind: vehicleKind
         )
 
         let id = try await FirestoreRepository.shared.createTrip(userId: userId, input: input)
@@ -867,7 +910,7 @@ final class DataStore: ObservableObject {
             publishCarPlayWidgetState()
         }
 
-        let trip = Trip(
+        return Trip(
             id: id,
             vehicleId: resolvedVehicleId,
             startedAt: pending.startedAt,
@@ -880,14 +923,10 @@ final class DataStore: ObservableObject {
             endCoordinate: pending.endCoordinate,
             route: pending.route,
             source: pending.source,
-            role: pending.role,
-            speedBuckets: pending.speedBuckets
+            role: role.rawValue,
+            speedBuckets: pending.speedBuckets,
+            vehicleKind: vehicleKind
         )
-        trips.insert(trip, at: 0)
-        publishCarPlayWidgetState()
-        // Driven km change the fuel-range picture, so re-evaluate reminders.
-        VehicleInsightScheduler.shared.refresh(using: self)
-        return trip
     }
 
     func deleteTrip(_ trip: Trip) async throws {

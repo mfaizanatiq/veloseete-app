@@ -12,20 +12,25 @@ struct TripConfirmSheet: View {
 
     @State private var isSaving = false
     @State private var errorMessage: String?
+    /// Two independent answers: who was driving, and which vehicle moved.
     @State private var role: TripRole = .driver
-    /// Car this drive is saved to. Starts as the car that was current when it was
-    /// recorded; switch it for a rental or a friend's car.
+    /// Garage car this drive belongs to. Starts as the car it was recorded on.
     @State private var vehicleId: String = ""
-    /// Drove a car that isn't in the garage — no need to add a rental just to log it.
-    @State private var usesOtherCar = false
+    /// A rental, a friend's car, a taxi — anything not in the garage.
+    @State private var usesOtherVehicle = false
+    /// Set when the answers were pre-filled from a recent drive (e.g. the rental from this morning).
+    @State private var suggestion: TripContext.Suggestion?
+    @State private var didPrefill = false
 
-    private var effectiveRole: TripRole {
-        if role == .passenger { return .passenger }
-        return usesOtherCar ? .otherCar : .driver
-    }
+    private var vehicleKind: TripVehicle { usesOtherVehicle ? .other : .garage }
 
     private var selectedVehicle: Vehicle? {
         store.vehicles.first { $0.id == vehicleId }
+    }
+
+    /// The car named in explanations: the one picked, or the one this was recorded on.
+    private var carName: String {
+        selectedVehicle?.nickname ?? pending.vehicleName
     }
 
     private var queuePeers: [PendingTripSave] {
@@ -44,7 +49,7 @@ struct TripConfirmSheet: View {
 
     /// The pending km is already in the recording car's estimate; for another car add it on top.
     private var movesToOtherCar: Bool {
-        !usesOtherCar && !vehicleId.isEmpty && vehicleId != pending.vehicleId
+        !usesOtherVehicle && !vehicleId.isEmpty && vehicleId != pending.vehicleId
     }
 
     /// Estimate after this confirm — same total (pending → confirmed), for clarity.
@@ -84,70 +89,13 @@ struct TripConfirmSheet: View {
                         durationSec: pending.durationSec,
                         maxSpeedKmh: pending.maxSpeedKmh,
                         avgSpeedKmh: pending.avgSpeedKmh,
-                        vehicleName: usesOtherCar ? Self.otherCarLabel : (selectedVehicle?.nickname ?? pending.vehicleName),
                         unit: store.defaultDistanceUnit,
-                        speedBuckets: pending.speedBuckets,
-                        role: effectiveRole,
-                        roleSelection: $role
+                        speedBuckets: pending.speedBuckets
                     )
 
-                    if role != .passenger {
-                        vehiclePicker
-                    }
-
-                    if role == .passenger {
-                        Text("Logged as a passenger. Uber, a lift, a friend driving: it stays in your log and off your odometer.")
-                            .font(VS.TextStyle.footnote(.medium))
-                            .foregroundStyle(VS.Color.textTertiary)
-                            .fixedSize(horizontal: false, vertical: true)
-                    } else if usesOtherCar {
-                        Text("Counts toward your driving. Stays off \(pending.vehicleName)’s odometer and fuel.")
-                            .font(VS.TextStyle.footnote(.medium))
-                            .foregroundStyle(VS.Color.textTertiary)
-                            .fixedSize(horizontal: false, vertical: true)
-                    } else if let estimateKm {
-                        HStack(spacing: 12) {
-                            VSIcon(icon: .gauge, size: 22, weight: .duotone, tint: VS.Color.accent)
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text(TrackyVoice.confirmEstimateTitle(km: estimateKm))
-                                    .font(VS.TextStyle.headline())
-                                    .foregroundStyle(VS.Color.textPrimary)
-                                Text(movesToOtherCar
-                                     ? "Moves to \(selectedVehicle?.nickname ?? "this car") and stays off \(pending.vehicleName)."
-                                     : TrackyVoice.confirmEstimateBody())
-                                    .font(VS.TextStyle.footnote(.medium))
-                                    .foregroundStyle(VS.Color.textTertiary)
-                                    .fixedSize(horizontal: false, vertical: true)
-                            }
-                        }
-                        .padding(16)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(VS.Color.chip, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 22, style: .continuous)
-                                .stroke(VS.Color.hairline, lineWidth: 1)
-                        )
-                    } else {
-                        HStack(spacing: 12) {
-                            VSIcon(icon: .gauge, size: 22, weight: .duotone, tint: VS.Color.accent)
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text(TrackyVoice.confirmFallbackTitle())
-                                    .font(VS.TextStyle.headline())
-                                    .foregroundStyle(VS.Color.textPrimary)
-                                Text(TrackyVoice.confirmFallbackBody())
-                                    .font(VS.TextStyle.footnote(.medium))
-                                    .foregroundStyle(VS.Color.textTertiary)
-                                    .fixedSize(horizontal: false, vertical: true)
-                            }
-                        }
-                        .padding(16)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(VS.Color.chip, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 22, style: .continuous)
-                                .stroke(VS.Color.hairline, lineWidth: 1)
-                        )
-                    }
+                    whoDrovePicker
+                    vehiclePicker
+                    outcomeCard
 
                     if let errorMessage {
                         Text(errorMessage)
@@ -177,12 +125,7 @@ struct TripConfirmSheet: View {
                 .padding(.bottom, 28)
             }
             .veloseetePage()
-            .onAppear {
-                guard vehicleId.isEmpty else { return }
-                vehicleId = store.vehicles.contains { $0.id == pending.vehicleId }
-                    ? pending.vehicleId
-                    : (store.currentVehicle?.id ?? "")
-            }
+            .onAppear(perform: prefill)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     ModalCloseButton { dismiss() }
@@ -192,22 +135,52 @@ struct TripConfirmSheet: View {
         .veloseeteSheet()
     }
 
-    @ViewBuilder
+    /// Start from the car it was recorded on and the answers a recent drive implies.
+    private func prefill() {
+        guard !didPrefill else { return }
+        didPrefill = true
+        vehicleId = store.vehicles.contains { $0.id == pending.vehicleId }
+            ? pending.vehicleId
+            : (store.currentVehicle?.id ?? "")
+        // An answer already on the drive wins over a guess.
+        if let kind = pending.vehicleKind, let known = TripVehicle(rawValue: kind) {
+            role = pending.tripRole == .passenger ? .passenger : .driver
+            usesOtherVehicle = known == .other
+            return
+        }
+        let guess = TripContext.suggest(startedAt: pending.startedAt, recentTrips: store.trips)
+        role = guess.role
+        usesOtherVehicle = guess.vehicle == .other
+        suggestion = guess.followsDriveEndedAt == nil ? nil : guess
+    }
+
+    // MARK: Who drove
+
+    private var whoDrovePicker: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            sectionLabel("WHO WAS DRIVING?")
+            HStack(spacing: 8) {
+                choicePill("I was driving", icon: .gauge, isSelected: role != .passenger) { role = .driver }
+                choicePill("Someone else", icon: .user, isSelected: role == .passenger) { role = .passenger }
+            }
+        }
+    }
+
+    // MARK: Which vehicle
+
     private var vehiclePicker: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("WHICH CAR?")
-                .font(VS.TextStyle.label())
-                .foregroundStyle(VS.Color.textTertiary)
+            sectionLabel("WHICH VEHICLE?")
             ScrollView(.horizontal) {
-                // Recording car, then Rental / other — both on screen without scrolling.
+                // Recording car first, then Another vehicle — both visible without scrolling.
                 HStack(spacing: 8) {
                     if let first = pickerVehicles.first {
                         vehicleChip(first)
                     }
-                    chip(isSelected: usesOtherCar, title: Self.otherCarLabel) {
-                        usesOtherCar = true
+                    chip(isSelected: usesOtherVehicle, title: Self.otherVehicleLabel) {
+                        usesOtherVehicle = true
                     } icon: {
-                        VSIcon(icon: .car, size: 16, weight: .fill, tint: usesOtherCar ? VS.Color.navPill : VS.Color.textSecondary)
+                        VSIcon(icon: .car, size: 16, weight: .fill, tint: usesOtherVehicle ? VS.Color.navPill : VS.Color.textSecondary)
                     }
                     ForEach(pickerVehicles.dropFirst()) { vehicle in
                         vehicleChip(vehicle)
@@ -215,14 +188,22 @@ struct TripConfirmSheet: View {
                 }
             }
             .scrollIndicators(.hidden)
-            Text("Rental or a friend’s car? Pick \(Self.otherCarLabel) — no need to add it to your garage.")
-                .font(VS.TextStyle.footnote(.medium))
-                .foregroundStyle(VS.Color.textTertiary)
-                .fixedSize(horizontal: false, vertical: true)
+
+            if let followed = suggestion?.followsDriveEndedAt, usesOtherVehicle, role != .passenger {
+                Text("Set from your drive at \(followed.formatted(date: .omitted, time: .shortened)) in another vehicle. Change it if this one was different.")
+                    .font(VS.TextStyle.footnote(.medium))
+                    .foregroundStyle(VS.Color.textTertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else {
+                Text("A rental, a friend’s car, a taxi? Pick Another vehicle — it doesn’t need to be in your garage.")
+                    .font(VS.TextStyle.footnote(.medium))
+                    .foregroundStyle(VS.Color.textTertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
     }
 
-    private static let otherCarLabel = "Rental / other"
+    private static let otherVehicleLabel = "Another vehicle"
 
     private var pickerVehicles: [Vehicle] {
         let recording = store.vehicles.filter { $0.id == pending.vehicleId }
@@ -230,9 +211,9 @@ struct TripConfirmSheet: View {
     }
 
     private func vehicleChip(_ vehicle: Vehicle) -> some View {
-        chip(isSelected: !usesOtherCar && vehicle.id == vehicleId, title: vehicle.nickname) {
+        chip(isSelected: !usesOtherVehicle && vehicle.id == vehicleId, title: vehicle.nickname) {
             vehicleId = vehicle.id
-            usesOtherCar = false
+            usesOtherVehicle = false
         } icon: {
             VehicleMark(
                 style: VehicleMarkStyle.resolve(vehicle.icon),
@@ -240,6 +221,104 @@ struct TripConfirmSheet: View {
                 paint: VehiclePaintColor.resolve(vehicle.paintColor)
             )
         }
+    }
+
+    // MARK: What it means
+
+    /// What this combination does to the odometer, fuel and your driving stats — in words.
+    private var outcomeCard: some View {
+        let copy = outcomeCopy
+        return HStack(alignment: .top, spacing: 12) {
+            VSIcon(icon: copy.icon, size: 22, weight: .duotone, tint: VS.Color.accent)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(copy.title)
+                    .font(VS.TextStyle.headline())
+                    .foregroundStyle(VS.Color.textPrimary)
+                Text(copy.body)
+                    .font(VS.TextStyle.footnote(.medium))
+                    .foregroundStyle(VS.Color.textTertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(VS.Color.chip, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
+                .stroke(VS.Color.hairline, lineWidth: 1)
+        )
+        .animation(.snappy(duration: 0.2), value: role)
+        .animation(.snappy(duration: 0.2), value: usesOtherVehicle)
+    }
+
+    private var outcomeCopy: (icon: VSIconName, title: String, body: String) {
+        let youDrove = role != .passenger
+        switch (youDrove, vehicleKind) {
+        case (true, .garage):
+            if let estimateKm {
+                return (
+                    .gauge,
+                    TrackyVoice.confirmEstimateTitle(km: estimateKm),
+                    movesToOtherCar
+                        ? "Moves to \(carName) and stays off \(pending.vehicleName)."
+                        : TrackyVoice.confirmEstimateBody()
+                )
+            }
+            return (.gauge, TrackyVoice.confirmFallbackTitle(), TrackyVoice.confirmFallbackBody())
+        case (false, .garage):
+            return (
+                .car,
+                "\(carName) still did these km",
+                "Its odometer and fuel count them — the car moved. They stay out of your driving stats and badges."
+            )
+        case (true, .other):
+            return (
+                .gauge,
+                "Your driving, not your car’s",
+                "Counts toward your driving stats. \(carName)’s odometer and fuel stay untouched."
+            )
+        case (false, .other):
+            return (
+                .user,
+                "Just for your history",
+                "A ride in another vehicle: it stays in My Drives, off every car and off your driving stats."
+            )
+        }
+    }
+
+    // MARK: Pieces
+
+    private func sectionLabel(_ text: String) -> some View {
+        Text(text)
+            .font(VS.TextStyle.label())
+            .foregroundStyle(VS.Color.textTertiary)
+    }
+
+    private func choicePill(
+        _ title: String,
+        icon: VSIconName,
+        isSelected: Bool,
+        select: @escaping () -> Void
+    ) -> some View {
+        Button {
+            guard !isSelected else { return }
+            UISelectionFeedbackGenerator().selectionChanged()
+            select()
+        } label: {
+            HStack(spacing: 8) {
+                VSIcon(icon: icon, size: 15, weight: .fill, tint: isSelected ? VS.Color.navPill : VS.Color.textSecondary)
+                Text(title)
+                    .font(VS.TextStyle.subheadline(.semibold))
+                    .foregroundStyle(isSelected ? VS.Color.navPill : VS.Color.textSecondary)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 12)
+            .background(isSelected ? VS.Color.accent : VS.Color.chip, in: Capsule())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(title)
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 
     private func chip<Icon: View>(
@@ -276,9 +355,11 @@ struct TripConfirmSheet: View {
         errorMessage = nil
         do {
             var saving = pending
-            saving.role = effectiveRole.rawValue
-            // Other-car drives stay filed under the recording car, flagged off its odometer.
-            if !usesOtherCar, let selectedVehicle {
+            saving.role = (role == .passenger ? TripRole.passenger : .driver).rawValue
+            saving.vehicleKind = vehicleKind.rawValue
+            // Another-vehicle drives stay filed under the car they were recorded on,
+            // flagged so that car's odometer and fuel ignore them.
+            if !usesOtherVehicle, let selectedVehicle {
                 saving.vehicleId = selectedVehicle.id
                 saving.vehicleName = selectedVehicle.nickname
             }
@@ -378,11 +459,8 @@ struct TripReviewSummary: View {
     var durationSec: Double
     var maxSpeedKmh: Double
     var avgSpeedKmh: Double
-    var vehicleName: String
     var unit: String
     var speedBuckets: [Int]
-    var role: TripRole
-    var roleSelection: Binding<TripRole>? = nil
 
     private var distanceLabel: String {
         DistanceFormat.formatDistance(distanceKm, unit: unit)
@@ -421,36 +499,6 @@ struct TripReviewSummary: View {
                     .foregroundStyle(VS.Color.textTertiary)
             }
 
-            HStack(spacing: 10) {
-                reviewFact(icon: .car, title: "Vehicle", value: vehicleName)
-                reviewFact(
-                    icon: role == .passenger ? .user : (role == .otherCar ? .car : .gauge),
-                    title: "Role",
-                    value: role.label
-                )
-            }
-
-            if let roleSelection {
-                HStack(spacing: 8) {
-                    ForEach([TripRole.driver, .passenger], id: \.self) { item in
-                        // An other-car drive is still you driving.
-                        let isOn = item == .passenger ? role == .passenger : role != .passenger
-                        Button {
-                            UISelectionFeedbackGenerator().selectionChanged()
-                            roleSelection.wrappedValue = item
-                        } label: {
-                            Text(item == .driver ? "I'm driving" : "I'm a passenger")
-                                .font(VS.TextStyle.subheadline(.semibold))
-                                .foregroundStyle(isOn ? VS.Color.navPill : VS.Color.textSecondary)
-                                .frame(maxWidth: .infinity)
-                                .padding(.vertical, 12)
-                                .background(isOn ? VS.Color.accent : VS.Color.chip, in: Capsule())
-                        }
-                        .buttonStyle(.plain)
-                    }
-                }
-            }
-
             HStack(spacing: 8) {
                 reviewStat(distanceLabel, "Distance")
                 reviewStat(durationLabel, "Duration")
@@ -469,30 +517,6 @@ struct TripReviewSummary: View {
                 RoundedRectangle(cornerRadius: 18, style: .continuous)
                     .stroke(VS.Color.hairline, lineWidth: 1)
             )
-    }
-
-    private func reviewFact(icon: VSIconName, title: String, value: String) -> some View {
-        HStack(spacing: 10) {
-            VSIcon(icon: icon, size: 16, weight: .fill, tint: VS.Color.textSecondary)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title.uppercased())
-                    .font(VS.TextStyle.label())
-                    .foregroundStyle(VS.Color.textTertiary)
-                Text(value)
-                    .font(VS.TextStyle.subheadline())
-                    .foregroundStyle(VS.Color.textPrimary)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.7)
-            }
-            Spacer(minLength: 0)
-        }
-        .padding(12)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(VS.Color.chip, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .stroke(VS.Color.hairline, lineWidth: 1)
-        )
     }
 
     private func reviewStat(_ value: String, _ label: String) -> some View {

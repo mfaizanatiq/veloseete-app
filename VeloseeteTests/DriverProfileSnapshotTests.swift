@@ -121,4 +121,74 @@ final class DriverProfileSnapshotTests: XCTestCase {
         let total = InsightGenerator.totalKilometersDriven(trips: [], logs: logs, vehicleId: nil)
         XCTAssertEqual(total, 1_500)
     }
+
+    // MARK: - Who drove x which vehicle
+
+    private func contextTrip(role: String, kind: String?, endedHoursAgo: Double = 2) -> Trip {
+        var trip = trip(daysAgo: 0, km: 20)
+        trip.role = role
+        trip.vehicleKind = kind
+        trip.endedAt = now.addingTimeInterval(-endedHoursAgo * 3_600)
+        return trip
+    }
+
+    func testEveryWhoDroveByWhichVehicleCombination() {
+        // You drove your car: your stats, your odometer.
+        let mine = contextTrip(role: "driver", kind: "garage")
+        XCTAssertTrue(mine.countsAsDriven)
+        XCTAssertTrue(mine.countsOnVehicle)
+        XCTAssertNil(mine.contextNote)
+
+        // Your wife drove your car: the car still moved, but not your driving.
+        let wife = contextTrip(role: "passenger", kind: "garage")
+        XCTAssertFalse(wife.countsAsDriven)
+        XCTAssertTrue(wife.countsOnVehicle)
+        XCTAssertEqual(wife.contextNote, "Someone else drove")
+
+        // You drove a rental: your driving, not your car.
+        let rental = contextTrip(role: "driver", kind: "other")
+        XCTAssertTrue(rental.countsAsDriven)
+        XCTAssertFalse(rental.countsOnVehicle)
+
+        // Passenger in an Uber or someone's rental: neither.
+        let uber = contextTrip(role: "passenger", kind: "other")
+        XCTAssertFalse(uber.countsAsDriven)
+        XCTAssertFalse(uber.countsOnVehicle)
+        XCTAssertEqual(uber.contextNote, "Passenger · another vehicle")
+    }
+
+    func testDrivesSavedBeforeTheSplitKeepTheirMeaning() {
+        // Old "passenger" meant "keep it off my car" (an Uber).
+        let oldPassenger = contextTrip(role: "passenger", kind: nil)
+        XCTAssertFalse(oldPassenger.countsAsDriven)
+        XCTAssertFalse(oldPassenger.countsOnVehicle)
+        // Old "otherCar" meant you drove something that isn't yours.
+        let oldOther = contextTrip(role: "otherCar", kind: nil)
+        XCTAssertTrue(oldOther.countsAsDriven)
+        XCTAssertFalse(oldOther.countsOnVehicle)
+        // Old "driver" was a garage car.
+        XCTAssertTrue(contextTrip(role: "driver", kind: nil).countsOnVehicle)
+    }
+
+    func testARentalStaysARentalForTheDay() {
+        let started = now
+        let rental = contextTrip(role: "driver", kind: "other", endedHoursAgo: 3)
+        XCTAssertEqual(TripContext.suggest(startedAt: started, recentTrips: [rental]).vehicle, .other)
+        XCTAssertEqual(TripContext.suggest(startedAt: started, recentTrips: [rental]).role, .driver)
+
+        // Older than the window, or nothing recent: back to your own car.
+        let stale = contextTrip(role: "driver", kind: "other", endedHoursAgo: 30)
+        XCTAssertEqual(TripContext.suggest(startedAt: started, recentTrips: [stale]).vehicle, .garage)
+        XCTAssertEqual(TripContext.suggest(startedAt: started, recentTrips: []).vehicle, .garage)
+
+        // An Uber or your wife driving is a one-off — it never carries over.
+        let uber = contextTrip(role: "passenger", kind: "other", endedHoursAgo: 1)
+        let wife = contextTrip(role: "passenger", kind: "garage", endedHoursAgo: 1)
+        XCTAssertEqual(TripContext.suggest(startedAt: started, recentTrips: [uber]).vehicle, .garage)
+        XCTAssertEqual(TripContext.suggest(startedAt: started, recentTrips: [wife]).role, .driver)
+
+        // Only the most recent drive decides: back in your own car after the rental.
+        let back = contextTrip(role: "driver", kind: "garage", endedHoursAgo: 1)
+        XCTAssertEqual(TripContext.suggest(startedAt: started, recentTrips: [rental, back]).vehicle, .garage)
+    }
 }

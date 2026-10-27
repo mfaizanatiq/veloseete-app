@@ -369,6 +369,7 @@ final class FirestoreRepository {
         var source: String
         var role: String = TripRole.driver.rawValue
         var speedBuckets: [Int] = []
+        var vehicleKind: String? = nil
     }
 
     func createTrip(userId: String, input: NewTripInput) async throws -> String {
@@ -389,13 +390,21 @@ final class FirestoreRepository {
             "createdAt": FieldValue.serverTimestamp(),
             "updatedAt": FieldValue.serverTimestamp()
         ]
+        if let kind = input.vehicleKind {
+            data["vehicleKind"] = kind
+        }
         if let start = input.startCoordinate {
             data["startCoord"] = ["lat": start.latitude, "lng": start.longitude]
         }
         if let end = input.endCoordinate {
             data["endCoord"] = ["lat": end.latitude, "lng": end.longitude]
         }
-        try await ref.setData(data)
+        // Don't wait for the server: Firestore keeps the write in its local cache and
+        // syncs it in the background (retrying offline). Awaiting the acknowledgement
+        // made "Lock it in" crawl on slow or VPN networks — one round trip per drive.
+        ref.setData(data) { error in
+            if let error { print("[Trips] background save failed for \(ref.documentID): \(error)") }
+        }
         return ref.documentID
     }
 
