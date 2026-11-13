@@ -1169,6 +1169,40 @@ final class DataStore: ObservableObject {
             ),
         ]
 
+        // `-ManyDrives [n]`: a long, real-shaped history (2 s GPS fixes, winding roads)
+        // for profiling My Drives — the fixtures above carry no routes at all.
+        let args = ProcessInfo.processInfo.arguments
+        // The preview harness calls this on every re-init; build the big histories once.
+        struct Seeded { static var trips: [Trip]? }
+        if args.contains("-ManyDrives"), let cached = Seeded.trips {
+            trips = cached
+        } else if let flag = args.firstIndex(of: "-ManyDrives") {
+            let count = args.indices.contains(flag + 1) ? Int(args[flag + 1]) ?? 52 : 52
+            trips = (0..<count).map { i in
+                let started = now.addingTimeInterval(-Double(i) * 9 * 3_600)
+                let points = (0..<3_000).map { n -> TripCoordinate in
+                    let t = Double(n) / 3_000
+                    return TripCoordinate(
+                        latitude: 25.20 + Double(i % 9) * 0.01 + t * 0.10 + sin(t * 40) * 0.002,
+                        longitude: 51.45 + Double(i % 7) * 0.012 + t * 0.09 + cos(t * 33) * 0.002
+                    )
+                }
+                return Trip(
+                    id: "many-\(i)", vehicleId: coolray,
+                    startedAt: started, endedAt: started.addingTimeInterval(1_500),
+                    distanceKm: 12 + Double(i % 11), durationSec: 1_500, avgSpeedKmh: 44, maxSpeedKmh: 80,
+                    startCoordinate: points.first, endCoordinate: points.last,
+                    route: points, source: "auto"
+                )
+            }
+            Seeded.trips = trips
+        }
+
+        if let flag = args.firstIndex(of: "-ManyPending"), TripRecordingService.shared.pendingSaves.isEmpty {
+            let count = args.indices.contains(flag + 1) ? Int(args[flag + 1]) ?? 55 : 55
+            TripRecordingService.shared.debugSeedPending(count: count, vehicleId: coolray, vehicleName: "Coolray")
+        }
+
         serviceLogs = [
             ServiceLog(
                 id: "s1", vehicleId: coolray,

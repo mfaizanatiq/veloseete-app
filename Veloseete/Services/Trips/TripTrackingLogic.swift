@@ -83,15 +83,56 @@ enum TripTrackingLogic {
     }
 
     /// Ramer–Douglas–Peucker — keeps corners / hairpins, drops collinear highway points.
+    /// Points are projected to metres once, then the search is plain arithmetic: the
+    /// per-point trig version was the main cost of opening a long drive history.
     static func simplify(_ points: [TripCoordinate], epsilonMeters: Double) -> [TripCoordinate] {
         guard points.count > 2, epsilonMeters > 0 else { return points }
-        var keep = [Bool](repeating: false, count: points.count)
+        let count = points.count
+        let meanLat = points.reduce(0.0) { $0 + $1.latitude } / Double(count)
+        let lngScale = 111_320 * cos(meanLat * .pi / 180)
+        var xs = [Double](repeating: 0, count: count)
+        var ys = [Double](repeating: 0, count: count)
+        for index in 0..<count {
+            xs[index] = points[index].longitude * lngScale
+            ys[index] = points[index].latitude * 111_320
+        }
+
+        var keep = [Bool](repeating: false, count: count)
         keep[0] = true
-        keep[points.count - 1] = true
-        rdpMark(points, start: 0, end: points.count - 1, epsilonMeters: epsilonMeters, keep: &keep)
+        keep[count - 1] = true
+        let epsilonSq = epsilonMeters * epsilonMeters
+        var stack: [(Int, Int)] = [(0, count - 1)]
+        while let (start, end) = stack.popLast() {
+            guard end > start + 1 else { continue }
+            let ax = xs[start], ay = ys[start]
+            let dx = xs[end] - ax, dy = ys[end] - ay
+            let lengthSq = dx * dx + dy * dy
+            var maxSq = 0.0
+            var maxIndex = start
+            for index in (start + 1)..<end {
+                let px = xs[index] - ax, py = ys[index] - ay
+                let distanceSq: Double
+                if lengthSq > 1e-6 {
+                    let t = max(0, min(1, (px * dx + py * dy) / lengthSq))
+                    let ex = px - t * dx, ey = py - t * dy
+                    distanceSq = ex * ex + ey * ey
+                } else {
+                    distanceSq = px * px + py * py
+                }
+                if distanceSq > maxSq {
+                    maxSq = distanceSq
+                    maxIndex = index
+                }
+            }
+            guard maxSq > epsilonSq else { continue }
+            keep[maxIndex] = true
+            stack.append((start, maxIndex))
+            stack.append((maxIndex, end))
+        }
+
         var out: [TripCoordinate] = []
-        out.reserveCapacity(keep.filter { $0 }.count)
-        for index in points.indices where keep[index] {
+        out.reserveCapacity(count / 8)
+        for index in 0..<count where keep[index] {
             out.append(points[index])
         }
         return out
@@ -199,6 +240,22 @@ enum TripTrackingLogic {
         return prepared
     }
 
+    /// Fills the display cache for every drive on a background thread — the thumbnail
+    /// (96), history map (160) and review map (400) budgets the screens ask for.
+    static func prewarmDisplayRoutes(trips: [Trip], pending: [PendingTripSave]) {
+        Task.detached(priority: .utility) {
+            for trip in trips where trip.route.count > 2 {
+                _ = mapDisplayRoute(id: trip.id, points: trip.route, maximumPoints: 96)
+                _ = mapDisplayRoute(id: trip.id, points: trip.route, maximumPoints: 160)
+            }
+            for save in pending where save.route.count > 2 {
+                let id = save.id.uuidString
+                _ = mapDisplayRoute(id: id, points: save.route, maximumPoints: 96)
+                _ = mapDisplayRoute(id: id, points: save.route, maximumPoints: 400)
+            }
+        }
+    }
+
     /// Equirectangular approximation — fast enough for spike detection / UI, no CLLocation alloc.
     static func approximateDistanceMeters(from lhs: TripCoordinate, to rhs: TripCoordinate) -> Double {
         let meanLat = (lhs.latitude + rhs.latitude) * 0.5 * .pi / 180
@@ -233,35 +290,6 @@ enum TripTrackingLogic {
         let ex = px - projX
         let ey = py - projY
         return (ex * ex + ey * ey).squareRoot()
-    }
-
-    private static func rdpMark(
-        _ points: [TripCoordinate],
-        start: Int,
-        end: Int,
-        epsilonMeters: Double,
-        keep: inout [Bool]
-    ) {
-        guard end > start + 1 else { return }
-        var maxDistance = 0.0
-        var maxIndex = start
-        let lineStart = points[start]
-        let lineEnd = points[end]
-        for index in (start + 1)..<end {
-            let distance = perpendicularDistanceMeters(
-                point: points[index],
-                start: lineStart,
-                end: lineEnd
-            )
-            if distance > maxDistance {
-                maxDistance = distance
-                maxIndex = index
-            }
-        }
-        guard maxDistance > epsilonMeters else { return }
-        keep[maxIndex] = true
-        rdpMark(points, start: start, end: maxIndex, epsilonMeters: epsilonMeters, keep: &keep)
-        rdpMark(points, start: maxIndex, end: end, epsilonMeters: epsilonMeters, keep: &keep)
     }
 
     private static let displayCache = NSCache<NSString, CachedRoute>()

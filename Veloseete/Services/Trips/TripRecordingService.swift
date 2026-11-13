@@ -603,6 +603,7 @@ final class TripRecordingService: NSObject, ObservableObject {
     func wipeLocalStateForAccountDeletion() {
         if let uid = boundUserId {
             UserDefaults.standard.removeObject(forKey: Keys.pendingSaves(for: uid))
+            PendingQueueStore.remove(userId: uid)
             UserDefaults.standard.removeObject(forKey: Keys.autoTracking(for: uid))
         }
         UserDefaults.standard.removeObject(forKey: Keys.legacyPendingSaves)
@@ -834,7 +835,7 @@ final class TripRecordingService: NSObject, ObservableObject {
         }
         migrateLegacyPendingSavesIfNeeded(into: userId)
 
-        guard let data = UserDefaults.standard.data(forKey: Keys.pendingSaves(for: userId)) else {
+        guard let data = PendingQueueStore.load(userId: userId, legacyDefaultsKey: Keys.pendingSaves(for: userId)) else {
             pendingSaves = []
             CarPlayWidgetStateStore.updatePendingTripCount(0)
             refreshPendingReviewReminders(forceReschedule: true)
@@ -886,16 +887,34 @@ final class TripRecordingService: NSObject, ObservableObject {
         UserDefaults.standard.removeObject(forKey: Keys.legacyAutoTracking)
     }
 
+    #if DEBUG
+    /// `-ManyPending n`: a long review queue of winding drives, for profiling My Drives.
+    func debugSeedPending(count: Int, vehicleId: String, vehicleName: String) {
+        let now = Date()
+        pendingSaves = (0..<count).map { i in
+            let ended = now.addingTimeInterval(-Double(i) * 5 * 3_600)
+            let route = (0..<1_500).map { n -> TripCoordinate in
+                let t = Double(n) / 1_500
+                return TripCoordinate(
+                    latitude: 25.22 + Double(i % 8) * 0.012 + t * 0.08 + sin(t * 36) * 0.002,
+                    longitude: 51.47 + Double(i % 6) * 0.014 + t * 0.07 + cos(t * 29) * 0.002
+                )
+            }
+            return PendingTripSave(
+                id: UUID(), vehicleId: vehicleId, vehicleName: vehicleName,
+                startedAt: ended.addingTimeInterval(-1_300), endedAt: ended,
+                distanceKm: 9 + Double(i % 13), durationSec: 1_300, avgSpeedKmh: 40, maxSpeedKmh: 85,
+                startCoordinate: route.first, endCoordinate: route.last,
+                route: route, source: "auto", suggestedOdometer: 42_000
+            )
+        }
+    }
+    #endif
+
     private func persistPendingSaves() {
         guard let userId = boundUserId else { return }
-        do {
-            UserDefaults.standard.set(
-                try JSONEncoder().encode(pendingSaves),
-                forKey: Keys.pendingSaves(for: userId)
-            )
-        } catch {
-            print("[TripQueue] Could not persist pending trips: \(error.localizedDescription)")
-        }
+        // Routes make the queue megabytes — encode and write off the main thread.
+        PendingQueueStore.save(pendingSaves, userId: userId)
         refreshPendingReviewReminders(forceReschedule: true)
         CarPlayWidgetStateStore.updatePendingTripCount(pendingSaves.count)
     }
@@ -1558,5 +1577,53 @@ extension TripRecordingService: CLLocationManagerDelegate {
 
     nonisolated func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
         print("[TripLocation] update failed: \(error.localizedDescription)")
+    }
+}
+
+
+/// The review queue on disk. Routes make it megabytes, which UserDefaults rewrites in
+/// full on the main thread for every confirm or discard — a file written in the
+/// background keeps the UI thread free, and only the newest snapshot is ever written.
+enum PendingQueueStore {
+    private static let queue = DispatchQueue(label: "veloseete.pending-queue", qos: .utility)
+    private static let lock = NSLock()
+    private static var latest: [String: [PendingTripSave]] = [:]
+
+    private static func url(for userId: String) -> URL? {
+        guard let base = try? FileManager.default.url(
+            for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true
+        ) else { return nil }
+        let safe = userId.replacingOccurrences(of: "/", with: "_")
+        return base.appendingPathComponent("pending-drives.\(safe).json")
+    }
+
+    static func save(_ saves: [PendingTripSave], userId: String) {
+        lock.lock(); latest[userId] = saves; lock.unlock()
+        queue.async {
+            lock.lock(); let snapshot = latest.removeValue(forKey: userId); lock.unlock()
+            // A newer save already took this one's place.
+            guard let snapshot, let url = url(for: userId) else { return }
+            do {
+                try JSONEncoder().encode(snapshot).write(to: url, options: .atomic)
+            } catch {
+                print("[TripQueue] Could not persist pending trips: \(error.localizedDescription)")
+            }
+        }
+    }
+
+    /// Reads the file; first run after the move migrates what UserDefaults held.
+    static func load(userId: String, legacyDefaultsKey: String) -> Data? {
+        // Wait for any in-flight write so a reload never reads a stale file.
+        queue.sync {}
+        if let url = url(for: userId), let data = try? Data(contentsOf: url) { return data }
+        guard let legacy = UserDefaults.standard.data(forKey: legacyDefaultsKey) else { return nil }
+        if let url = url(for: userId), (try? legacy.write(to: url, options: .atomic)) != nil {
+            UserDefaults.standard.removeObject(forKey: legacyDefaultsKey)
+        }
+        return legacy
+    }
+
+    static func remove(userId: String) {
+        queue.async { if let url = url(for: userId) { try? FileManager.default.removeItem(at: url) } }
     }
 }

@@ -2835,7 +2835,10 @@ struct DrivesListModel {
                 : String(format: "%.0f km/h", kmh)
         }
 
-        model.pendingRows = model.pending.map { pending in
+        // Review rows page like the rest — 50 queued drives shouldn't all build at once.
+        let listedPending = model.pending.prefix(rowLimit)
+        model.hasMoreRows = model.hasMoreRows || model.pending.count > listedPending.count
+        model.pendingRows = listedPending.map { pending in
             let id = pending.id.uuidString
             let day = dayFormatter.string(from: pending.startedAt)
             let duration = DriveListCopy.duration(pending.durationSec)
@@ -3367,7 +3370,7 @@ private struct DrivesDrawer: View, Equatable {
             Text(TrackyVoice.reviewRequired())
                 .font(VS.TextStyle.subheadline())
                 .foregroundStyle(VS.Color.warning)
-            Text("\(model.pendingRows.count)")
+            Text("\(model.pending.count)")
                 .font(VS.TextStyle.tag())
                 .foregroundStyle(VS.Color.navPill)
                 .padding(.horizontal, 8)
@@ -3536,8 +3539,20 @@ enum TripPlaceNames {
     private static func store(_ place: Place, for key: String) {
         if cache.count >= maxEntries { cache.removeAll(keepingCapacity: true) }
         cache[key] = place
-        let encoded = cache.mapValues { [$0.title, $0.city ?? ""] }
-        UserDefaults.standard.set(encoded, forKey: defaultsKey)
+        scheduleSave()
+    }
+
+    /// Resolving a screenful of rows stores dozens of names in a burst; rewriting the whole
+    /// cache for each one is wasted work, so coalesce into one write.
+    private static var saveScheduled = false
+    private static func scheduleSave() {
+        guard !saveScheduled else { return }
+        saveScheduled = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+            saveScheduled = false
+            let encoded = cache.mapValues { [$0.title, $0.city ?? ""] }
+            UserDefaults.standard.set(encoded, forKey: defaultsKey)
+        }
     }
 
     private static func loadCache() -> [String: Place] {

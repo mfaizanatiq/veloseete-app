@@ -381,16 +381,20 @@ struct TripConfirmSheet: View {
 private struct PendingTripRouteMap: View {
     let pending: PendingTripSave
 
-    private var coordinates: [TripCoordinate] {
-        pending.route.isEmpty
-            ? [pending.startCoordinate, pending.endCoordinate].compactMap { $0 }
-            : TripTrackingLogic.cleanedForDisplay(pending.route)
-    }
+    /// Cleaned and simplified once (cached per drive) — the raw route can be thousands
+    /// of points, and this was being rebuilt on every body pass.
+    private let coordinates: [TripCoordinate]
+    private let framed: [CLLocationCoordinate2D]
 
     @State private var position: MapCameraPosition = .automatic
 
-    private var framed: [CLLocationCoordinate2D] {
-        coordinates.map { CLLocationCoordinate2D(latitude: $0.latitude, longitude: $0.longitude) }
+    init(pending: PendingTripSave) {
+        self.pending = pending
+        let points = pending.route.isEmpty
+            ? [pending.startCoordinate, pending.endCoordinate].compactMap { $0 }
+            : TripTrackingLogic.mapDisplayRoute(id: pending.id.uuidString, points: pending.route, maximumPoints: 400)
+        coordinates = points
+        framed = points.map { CLLocationCoordinate2D(latitude: $0.latitude, longitude: $0.longitude) }
     }
 
     private func reframe(_ size: CGSize) {
@@ -409,10 +413,8 @@ private struct PendingTripRouteMap: View {
     private var map: some View {
         Map(position: $position, interactionModes: []) {
             if coordinates.count >= 2 {
-                MapPolyline(coordinates: coordinates.map {
-                    CLLocationCoordinate2D(latitude: $0.latitude, longitude: $0.longitude)
-                })
-                .stroke(VS.Color.accent, style: StrokeStyle(lineWidth: 4, lineCap: .round, lineJoin: .round))
+                MapPolyline(coordinates: framed)
+                    .stroke(VS.Color.accent, style: StrokeStyle(lineWidth: 4, lineCap: .round, lineJoin: .round))
             }
 
             if let start = coordinates.first {

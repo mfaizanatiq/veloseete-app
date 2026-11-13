@@ -790,6 +790,97 @@ final class TripTrackingLogicTests: XCTestCase {
         XCTAssertEqual(DrivesListModel.build(from: ranked, revision: 3, rowLimit: 40).flatRows.count, 40)
     }
 
+    /// 52 real-shaped drives (a GPS fix every ~2 s, winding road) — the empty-route
+    /// fixtures above hide what a long history actually costs to build.
+    func testDrivesListBuildCostWithRealRoutes() {
+        let start = Date(timeIntervalSince1970: 1_790_000_000)
+        let trips = (0..<52).map { i -> Trip in
+            let points = (0..<3_000).map { n -> TripCoordinate in
+                let t = Double(n) / 3_000
+                return TripCoordinate(
+                    latitude: 25.20 + Double(i) * 0.002 + t * 0.12 + sin(t * 40) * 0.002,
+                    longitude: 51.50 + t * 0.10 + cos(t * 33) * 0.002
+                )
+            }
+            return Trip(
+                id: "r\(i)", vehicleId: "car",
+                startedAt: start.addingTimeInterval(Double(i) * 3_600 * 7),
+                endedAt: start.addingTimeInterval(Double(i) * 3_600 * 7 + 1_200),
+                distanceKm: 18, durationSec: 1_200, avgSpeedKmh: 54, maxSpeedKmh: 90,
+                startCoordinate: points.first, endCoordinate: points.last,
+                route: points, source: "auto"
+            )
+        }
+        let input = DrivesInputs(
+            trips: trips, vehicles: [testVehicle], archivedVehicles: [], pending: [],
+            fuelLogs: [], manufacturerStandard: nil, selectedVehicleId: nil, sort: .recent, unit: "km"
+        )
+        func ms(_ block: () -> Void) -> Double {
+            let t0 = CFAbsoluteTimeGetCurrent(); block(); return (CFAbsoluteTimeGetCurrent() - t0) * 1000
+        }
+        let cold = ms { _ = DrivesListModel.build(from: input, revision: 1, rowLimit: 40) }
+        let warm = ms { _ = DrivesListModel.build(from: input, revision: 2, rowLimit: 40) }
+        let compare = ms { _ = (input == input) }
+        let sample = trips[0].route
+        let tClean = ms { for _ in 0..<52 { _ = TripTrackingLogic.cleanedForDisplay(sample) } }
+        let cleaned = TripTrackingLogic.cleanedForDisplay(sample)
+        let tRdp = ms { for _ in 0..<52 { _ = TripTrackingLogic.simplify(cleaned, epsilonMeters: 12) } }
+        let tRdp28 = ms { for _ in 0..<52 { _ = TripTrackingLogic.simplify(cleaned, epsilonMeters: 28) } }
+        print("PARTS clean×52=\(Int(tClean))ms rdp12×52=\(Int(tRdp))ms rdp28×52=\(Int(tRdp28))ms")
+        print("DRIVES-BENCH cold=\(Int(cold))ms warm=\(Int(warm))ms equality=\(Int(compare))ms")
+
+        // The review queue: 55 pending drives, each thinned to ~1,500 points on disk.
+        let pending = (0..<55).map { i -> PendingTripSave in
+            let route = trips[i % trips.count].route.enumerated().filter { $0.offset % 2 == 0 }.map(\.element)
+            return PendingTripSave(
+                id: UUID(), vehicleId: "car", vehicleName: "Test",
+                startedAt: start, endedAt: start.addingTimeInterval(1_200),
+                distanceKm: 18, durationSec: 1_200, avgSpeedKmh: 54, maxSpeedKmh: 90,
+                startCoordinate: route.first, endCoordinate: route.last,
+                route: route, source: "auto", suggestedOdometer: 1_000
+            )
+        }
+        var encoded = Data()
+        let encode = ms { encoded = (try? JSONEncoder().encode(pending)) ?? Data() }
+        let decode = ms { _ = try? JSONDecoder().decode([PendingTripSave].self, from: encoded) }
+        let pendingInput = DrivesInputs(
+            trips: trips, vehicles: [testVehicle], archivedVehicles: [], pending: pending,
+            fuelLogs: [], manufacturerStandard: nil, selectedVehicleId: nil, sort: .recent, unit: "km"
+        )
+        let pendingCold = ms { _ = DrivesListModel.build(from: pendingInput, revision: 3, rowLimit: 40) }
+        print("PENDING-BENCH 55 drives: json=\(encoded.count / 1_000_000)MB encode=\(Int(encode))ms decode=\(Int(decode))ms build=\(Int(pendingCold))ms")
+    }
+
+    func testPendingQueueRoundTripsThroughItsFileAndKeepsTheNewestSave() throws {
+        let user = "queue-test-\(UUID().uuidString)"
+        defer { PendingQueueStore.remove(userId: user) }
+        func save(_ km: Double) -> PendingTripSave {
+            PendingTripSave(
+                id: UUID(), vehicleId: "car", vehicleName: "Test",
+                startedAt: Date(), endedAt: Date(), distanceKm: km, durationSec: 60,
+                avgSpeedKmh: 30, maxSpeedKmh: 50, startCoordinate: nil, endCoordinate: nil,
+                route: [], source: "auto", suggestedOdometer: 1
+            )
+        }
+        PendingQueueStore.save([save(1), save(2)], userId: user)
+        PendingQueueStore.save([save(3)], userId: user)
+        let data = try XCTUnwrap(PendingQueueStore.load(userId: user, legacyDefaultsKey: "none-\(user)"))
+        let restored = try JSONDecoder().decode([PendingTripSave].self, from: data)
+        XCTAssertEqual(restored.map(\.distanceKm), [3])
+    }
+
+    func testSimplifyKeepsCornersAndEndpoints() {
+        // An L-shaped route sampled every ~11 m: collinear points drop, the corner stays.
+        let leg = (0...100).map { TripCoordinate(latitude: 25.0 + Double($0) * 0.0001, longitude: 51.0) }
+        let turn = (1...100).map { TripCoordinate(latitude: 25.01, longitude: 51.0 + Double($0) * 0.0001) }
+        let route = leg + turn
+        let simplified = TripTrackingLogic.simplify(route, epsilonMeters: 8)
+        XCTAssertEqual(simplified.count, 3)
+        XCTAssertEqual(simplified.first, route.first)
+        XCTAssertEqual(simplified.last, route.last)
+        XCTAssertEqual(simplified[1], leg.last)
+    }
+
     private var testVehicle: Vehicle {
         Vehicle(id: "car", nickname: "Test", make: "Test", model: "Car", fuelType: "petrol", currentOdometer: 10_500, fuelTankCapacity: 50, currency: "QAR", fuelVolumeUnit: "L", icon: nil, paintColor: nil, createdAt: Date(), isArchived: false, archivedAt: nil)
     }

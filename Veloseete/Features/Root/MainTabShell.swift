@@ -95,6 +95,12 @@ struct MainTabShell: View {
             applyPortfolioTabOverrideIfNeeded()
             presentPendingCarPlayRefuel()
         }
+        // Route thumbnails and map lines are simplified here, off the main thread, so
+        // opening My Drives (or the review queue) finds them ready instead of doing
+        // it all in one frame.
+        .task(id: store.trips.count) {
+            TripTrackingLogic.prewarmDisplayRoutes(trips: store.trips, pending: TripRecordingService.shared.pendingSaves)
+        }
         .onChange(of: scenePhase) { _, phase in
             guard phase == .active else { return }
             applyPortfolioTabOverrideIfNeeded()
