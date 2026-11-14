@@ -1641,6 +1641,8 @@ private struct DriveListRow: View, Equatable {
     var isFirst = true
     var isLast = true
     var highlight: Color? = nil
+    /// nil = normal row; true/false = bulk-select mode, with this row picked or not.
+    var selection: Bool? = nil
 
     @State private var startPlace: TripPlaceNames.Place?
     @State private var endPlace: TripPlaceNames.Place?
@@ -1648,6 +1650,7 @@ private struct DriveListRow: View, Equatable {
     static func == (lhs: DriveListRow, rhs: DriveListRow) -> Bool {
         lhs.row == rhs.row && lhs.isFirst == rhs.isFirst
             && lhs.isLast == rhs.isLast && lhs.highlight == rhs.highlight
+            && lhs.selection == rhs.selection
     }
 
     /// "Dubai Marina → Al Mustaqbal Street", "Around Dubai Marina", or "Morning drive".
@@ -1697,6 +1700,14 @@ private struct DriveListRow: View, Equatable {
 
     var body: some View {
         HStack(alignment: .center, spacing: 12) {
+            // Own column left of the thumbnail, vertically centred — never on top of it.
+            if let selection {
+                Image(systemName: selection ? "checkmark.circle.fill" : "circle")
+                    .font(.system(size: 24, weight: .regular))
+                    .foregroundStyle(selection ? VS.Color.accent : VS.Color.textTertiary)
+                    .frame(width: 26)
+                    .accessibilityHidden(true)
+            }
             MiniRoutePreview(route: row.route)
                 .frame(width: 48, height: 48)
                 .padding(.trailing, 2)
@@ -1709,7 +1720,8 @@ private struct DriveListRow: View, Equatable {
                     .lineLimit(1)
                     .contentTransition(.opacity)
                 HStack(spacing: 0) {
-                    if let note = row.note {
+                    // "Needs review" is implied while bulk-reviewing; the room goes to the details.
+                    if let note = row.note, selection == nil {
                         Text(note)
                             .font(VS.TextStyle.caption2(.bold))
                             .foregroundStyle(VS.Color.warning)
@@ -3148,14 +3160,17 @@ private struct DrivesListContent: View, Equatable {
                     }
                 }
 
-                if model.isChronological {
-                    ForEach(model.groups) { group in
-                        sectionHeader(group.title, trailing: group.summary)
-                        groupedRows(group.rows) { actions.openTrip($0) }
+                // Bulk-reviewing is only about the drives still waiting; confirmed ones come back after.
+                if !isSelecting {
+                    if model.isChronological {
+                        ForEach(model.groups) { group in
+                            sectionHeader(group.title, trailing: group.summary)
+                            groupedRows(group.rows) { actions.openTrip($0) }
+                        }
+                    } else {
+                        sectionHeader(sort.label, trailing: model.rollupLine)
+                        groupedRows(model.flatRows) { actions.openTrip($0) }
                     }
-                } else {
-                    sectionHeader(sort.label, trailing: model.rollupLine)
-                    groupedRows(model.flatRows) { actions.openTrip($0) }
                 }
 
                 if model.hasMoreRows {
@@ -3219,18 +3234,9 @@ private struct DrivesListContent: View, Equatable {
                     row: row,
                     isFirst: index == 0,
                     isLast: index == lastIndex,
-                    highlight: isPicked ? VS.Color.accent : highlight
+                    highlight: isPicked ? VS.Color.accent : highlight,
+                    selection: selectable ? isPicked : nil
                 )
-                .overlay(alignment: .topLeading) {
-                    if selectable {
-                        Image(systemName: isPicked ? "checkmark.circle.fill" : "circle.fill")
-                            .font(.system(size: 22, weight: .semibold))
-                            .foregroundStyle(isPicked ? VS.Color.accent : Color.black.opacity(0.55))
-                            .background(Circle().stroke(isPicked ? .clear : VS.Color.textTertiary, lineWidth: 2))
-                            .padding(.leading, 8)
-                            .padding(.top, 8)
-                    }
-                }
             }
             .buttonStyle(.plain)
         }
