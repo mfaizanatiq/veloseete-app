@@ -366,6 +366,8 @@ struct TripsView: View {
                     reviewPendingTrip = next
                 }
             }
+            // A new drive must never inherit the last one's saving spinner or answers.
+            .id(pending.id)
         }
         .sheet(item: $detailTrip, onDismiss: {
             selectedTripId = nil
@@ -1391,7 +1393,7 @@ struct TripsMapCanvas: View, Equatable {
         position: Binding<MapCameraPosition>
     ) {
         self.init(
-            routes: trips.compactMap(DriveMapRoute.init(trip:)),
+            routes: trips.compactMap { DriveMapRoute(trip: $0) },
             selected: selected,
             activeRoute: activeRoute,
             isActivelyRecording: isActivelyRecording,
@@ -1446,14 +1448,18 @@ struct TripsMapCanvas: View, Equatable {
                 }
             }
 
+            // The glow doubles the overlay count; with a long history it's what makes panning crawl.
+            let drawsGlow = routes.count <= 40
             ForEach(routes) { route in
                 let dim = selected?.id == route.id ? 0.35 : 1.0
 
-                MapPolyline(coordinates: route.coordinates)
-                    .stroke(
-                        VS.Color.accent.opacity(0.22 * dim),
-                        style: StrokeStyle(lineWidth: 10, lineCap: .round, lineJoin: .round)
-                    )
+                if drawsGlow {
+                    MapPolyline(coordinates: route.coordinates)
+                        .stroke(
+                            VS.Color.accent.opacity(0.22 * dim),
+                            style: StrokeStyle(lineWidth: 10, lineCap: .round, lineJoin: .round)
+                        )
+                }
                 MapPolyline(coordinates: route.coordinates)
                     .stroke(
                         Color.white.opacity(0.75 * dim),
@@ -1526,7 +1532,9 @@ struct TripsMapCanvas: View, Equatable {
                 }
             }
         }
-        .mapStyle(Self.lockedMapStyle)
+        // 3D buildings only matter once the camera is pitched on a single drive or while tracking;
+        // the flat history overview renders far cheaper without elevation.
+        .mapStyle(locksMinimumPitch ? Self.lockedMapStyle : Self.flatMapStyle)
         .mapControlVisibility(.hidden)
         .preferredColorScheme(.dark)
         .onMapCameraChange(frequency: .continuous) { context in
@@ -1555,6 +1563,11 @@ struct TripsMapCanvas: View, Equatable {
     /// pitched cameras reveal 3D buildings where Apple provides city data.
     private static let lockedMapStyle: MapStyle = .standard(
         elevation: .realistic,
+        pointsOfInterest: .excludingAll,
+        showsTraffic: false
+    )
+    private static let flatMapStyle: MapStyle = .standard(
+        elevation: .flat,
         pointsOfInterest: .excludingAll,
         showsTraffic: false
     )
@@ -2734,9 +2747,19 @@ struct DriveMapRoute: Identifiable, Equatable {
     let id: String
     let coordinates: [CLLocationCoordinate2D]
 
-    init?(trip: Trip) {
+    /// Vertices per route on the overview: a long history is hundreds of overlays, and each one
+    /// is a tiny line on screen, so the budget shrinks as the count grows.
+    static func vertexBudget(forRouteCount count: Int) -> Int {
+        switch count {
+        case ..<30: 160
+        case ..<80: 80
+        default: 48
+        }
+    }
+
+    init?(trip: Trip, maximumPoints: Int = 160) {
         let display: [TripCoordinate] = trip.route.count >= 2
-            ? TripTrackingLogic.mapDisplayRoute(id: trip.id, points: trip.route, maximumPoints: 160)
+            ? TripTrackingLogic.mapDisplayRoute(id: trip.id, points: trip.route, maximumPoints: maximumPoints)
             : [trip.startCoordinate, trip.endCoordinate].compactMap { $0 }
         guard display.count >= 2 else { return nil }
         id = trip.id
@@ -2943,7 +2966,8 @@ struct DrivesListModel {
             model.flatRows = listed.map { row($0, showsDay: true) }
         }
 
-        model.mapRoutes = trips.compactMap(DriveMapRoute.init(trip:))
+        let routeBudget = DriveMapRoute.vertexBudget(forRouteCount: trips.count)
+        model.mapRoutes = trips.compactMap { DriveMapRoute(trip: $0, maximumPoints: routeBudget) }
         model.overviewCoordinates = trips.flatMap { trip -> [TripCoordinate] in
             [trip.startCoordinate, trip.endCoordinate, trip.route.first, trip.route.last].compactMap { $0 }
         }
@@ -3084,231 +3108,26 @@ struct TrackingInsights {
 /// this view — never TripsView or MapKit. The panel is laid out once at its
 /// expanded height and slid with a transform + reveal mask, so dragging and the
 /// settle spring never re-layout the list.
-private struct DrivesDrawer: View, Equatable {
-    struct Actions {
-        var selectVehicle: (String?) -> Void
-        var selectSort: (DriveSort) -> Void
-        var openTrip: (String) -> Void
-        var openPending: (String) -> Void
-        var confirmAll: () -> Void
-        /// Pending drive ids to save as "someone else drove, another vehicle".
-        var markAsOther: (Set<String>) -> Void = { _ in }
-        var setUpTracking: () -> Void
-        var loadMore: () -> Void = {}
-    }
-
+/// The drawer's rows. Its own Equatable view, so dragging the sheet (which re-runs the drawer's
+/// body every frame) never rebuilds the list — only moves it.
+private struct DrivesListContent: View, Equatable {
     let model: DrivesListModel
     let sort: DriveSort
-    let vehicleFilterLabel: String
-    let vehicles: [Vehicle]
+    let expanded: Bool
     let isConfirmingAll: Bool
-    let showsSetUpTracking: Bool
-    let collapsedHeight: CGFloat
-    let expandedHeight: CGFloat
-    @Binding var expanded: Bool
-    let actions: Actions
+    let actions: DrivesDrawer.Actions
 
-    @State private var dragTranslation: CGFloat = 0
-    @GestureState private var isDragging = false
     @State private var isSelecting = false
     @State private var selected: Set<String> = []
 
-    private static let settleSpring = Animation.spring(response: 0.38, dampingFraction: 0.86)
-
-    static func == (lhs: DrivesDrawer, rhs: DrivesDrawer) -> Bool {
+    static func == (lhs: DrivesListContent, rhs: DrivesListContent) -> Bool {
         lhs.model.revision == rhs.model.revision
             && lhs.sort == rhs.sort
-            && lhs.vehicleFilterLabel == rhs.vehicleFilterLabel
-            && lhs.vehicles == rhs.vehicles
-            && lhs.isConfirmingAll == rhs.isConfirmingAll
-            && lhs.showsSetUpTracking == rhs.showsSetUpTracking
-            && lhs.collapsedHeight == rhs.collapsedHeight
-            && lhs.expandedHeight == rhs.expandedHeight
             && lhs.expanded == rhs.expanded
-    }
-
-    private var travel: CGFloat { max(0, expandedHeight - collapsedHeight) }
-
-    /// How much of the panel is pushed below the visible area (0 = fully expanded).
-    private var hiddenHeight: CGFloat {
-        let resting = expanded ? 0 : travel
-        return min(travel, max(0, resting + dragTranslation))
+            && lhs.isConfirmingAll == rhs.isConfirmingAll
     }
 
     var body: some View {
-        let hidden = hiddenHeight
-        panel
-            .frame(height: expandedHeight, alignment: .top)
-            .offset(y: hidden)
-            .clipShape(DrawerRevealShape(hiddenTop: hidden, cornerRadius: VS.Radius.panel))
-            // Hidden rows sit under the nav; don't let them catch taps.
-            .contentShape(DrawerRevealShape(hiddenTop: hidden, cornerRadius: VS.Radius.panel))
-            .onChange(of: isDragging) { _, dragging in
-                // A cancelled drag skips onEnded — never leave the sheet parked mid-way.
-                guard !dragging, dragTranslation != 0 else { return }
-                withAnimation(Self.settleSpring) { dragTranslation = 0 }
-            }
-    }
-
-    private var panel: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            header
-                .contentShape(Rectangle())
-                .onTapGesture { toggle() }
-                .highPriorityGesture(dragGesture)
-
-            if model.isEmpty {
-                emptyState
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else {
-                list
-            }
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .overlay(alignment: .bottom) {
-            if isSelecting { selectionBar }
-        }
-        .background(
-            RoundedRectangle(cornerRadius: VS.Radius.panel, style: .continuous)
-                .fill(Color(hex: 0x161916))
-                .overlay(
-                    RoundedRectangle(cornerRadius: VS.Radius.panel, style: .continuous)
-                        .stroke(VS.Color.hairline, lineWidth: 1)
-                )
-        )
-    }
-
-    private var header: some View {
-        VStack(spacing: 10) {
-            Capsule()
-                .fill(Color.white.opacity(0.26))
-                .frame(width: 42, height: 5)
-                .padding(.top, 8)
-
-            VStack(alignment: .leading, spacing: 6) {
-                // Overline: section + car filter inline, then status and sort.
-                HStack(spacing: 8) {
-                    Text("MY DRIVES")
-                        .font(VS.TextStyle.label())
-                        .foregroundStyle(VS.Color.textTertiary)
-                    Text("·")
-                        .font(VS.TextStyle.label())
-                        .foregroundStyle(VS.Color.textTertiary)
-                    vehicleMenu
-                    Spacer(minLength: 8)
-                    if !model.pending.isEmpty {
-                        HStack(spacing: 5) {
-                            Circle().fill(VS.Color.warning).frame(width: 6, height: 6)
-                            Text("\(model.pending.count) to review")
-                                .font(VS.TextStyle.caption(.bold))
-                                .foregroundStyle(VS.Color.warning)
-                        }
-                        .padding(.horizontal, 9)
-                        .padding(.vertical, 5)
-                        .background(VS.Color.warning.opacity(0.14), in: Capsule())
-                    }
-                    sortMenu
-                }
-
-                // Hero: the number is the headline.
-                HStack(alignment: .bottom, spacing: 12) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        HStack(alignment: .firstTextBaseline, spacing: 5) {
-                            Text(model.heroValue)
-                                .font(VS.TextStyle.display())
-                                .foregroundStyle(VS.Color.textPrimary)
-                                .contentTransition(.numericText())
-                                .lineLimit(1)
-                                .minimumScaleFactor(0.6)
-                            Text(model.heroUnit)
-                                .font(VS.TextStyle.title3())
-                                .foregroundStyle(VS.Color.textTertiary)
-                        }
-                        Text(model.heroCaption)
-                            .font(VS.TextStyle.footnote(.semibold))
-                            .foregroundStyle(VS.Color.textSecondary)
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.85)
-                    }
-                    .accessibilityElement(children: .combine)
-                    .accessibilityLabel("\(model.heroValue) \(model.heroUnit) total. \(model.heroCaption)")
-
-                    Spacer(minLength: 8)
-
-                    if model.recentBars.count >= 2 {
-                        DriveSparkBars(values: model.recentBars)
-                            .frame(width: 108, height: 40)
-                            .padding(.bottom, 4)
-                            .accessibilityLabel("Distance of your last \(model.recentBars.count) drives")
-                    }
-                }
-            }
-            .padding(.horizontal, 18)
-        }
-        .accessibilityHint(expanded ? "Collapses the drive list" : "Expands the drive list")
-    }
-
-    private var vehicleMenu: some View {
-        Menu {
-            Button("All Cars") { actions.selectVehicle(nil) }
-            ForEach(vehicles) { vehicle in
-                Button {
-                    actions.selectVehicle(vehicle.id)
-                } label: {
-                    Label {
-                        Text(vehicle.nickname)
-                    } icon: {
-                        VehicleMark(
-                            style: VehicleMarkStyle.resolve(vehicle.icon),
-                            size: 18,
-                            paint: VehiclePaintColor.resolve(vehicle.paintColor)
-                        )
-                    }
-                }
-            }
-        } label: {
-            HStack(spacing: 4) {
-                Text(vehicleFilterLabel.uppercased())
-                    .font(VS.TextStyle.label())
-                    .foregroundStyle(VS.Color.accent)
-                    .lineLimit(1)
-                Image(systemName: "chevron.down")
-                    .font(.system(size: 8, weight: .heavy))
-                    .foregroundStyle(VS.Color.accent)
-            }
-            .padding(.vertical, 6)
-            .contentShape(Rectangle())
-        }
-        .accessibilityLabel("Car filter, \(vehicleFilterLabel)")
-    }
-
-    private var sortMenu: some View {
-        Menu {
-            ForEach(DriveSort.allCases) { option in
-                Button {
-                    actions.selectSort(option)
-                } label: {
-                    if sort == option {
-                        Label(option.label, systemImage: "checkmark")
-                    } else {
-                        Text(option.label)
-                    }
-                }
-            }
-        } label: {
-            // Lit when the list isn't in its default order, so a non-default sort is never hidden.
-            let isDefault = sort == .recent
-            Image(systemName: "arrow.up.arrow.down")
-                .font(.system(size: 12, weight: .bold))
-                .foregroundStyle(isDefault ? VS.Color.textSecondary : VS.Color.navPill)
-                .frame(width: 32, height: 32)
-                .background(isDefault ? VS.Color.chip : VS.Color.accent, in: Circle())
-                .overlay(Circle().stroke(isDefault ? VS.Color.hairline : .clear, lineWidth: 1))
-        }
-        .accessibilityLabel("Sort, \(sort.label)")
-    }
-
-    private var list: some View {
         ScrollView {
             LazyVStack(spacing: 0) {
                 if !model.pendingRows.isEmpty {
@@ -3352,17 +3171,17 @@ private struct DrivesDrawer: View, Equatable {
             .padding(.bottom, 28)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        // Rows fade under the header instead of being sliced by a hard edge.
-        .mask(
-            VStack(spacing: 0) {
-                LinearGradient(colors: [.clear, .black], startPoint: .top, endPoint: .bottom)
-                    .frame(height: 14)
-                Rectangle()
-            }
-        )
+        // Rows fade under the header with a plain gradient overlay: a mask forces an offscreen
+        // pass of the whole list on every frame the drawer moves.
+        .overlay(alignment: .top) {
+            LinearGradient(colors: [Color(hex: 0x161916), Color(hex: 0x161916).opacity(0)], startPoint: .top, endPoint: .bottom)
+                .frame(height: 14)
+                .allowsHitTesting(false)
+        }
         .scrollDisabled(!expanded)
-        // Collapsed: dragging the list pulls the sheet up. Expanded: the list scrolls.
-        .simultaneousGesture(dragGesture, including: expanded ? .subviews : .all)
+        .overlay(alignment: .bottom) {
+            if isSelecting { selectionBar }
+        }
     }
 
     private func sectionHeader(_ title: String, trailing: String?) -> some View {
@@ -3515,6 +3334,235 @@ private struct DrivesDrawer: View, Equatable {
         .background(
             LinearGradient(colors: [.clear, Color(hex: 0x161916)], startPoint: .top, endPoint: UnitPoint(x: 0.5, y: 0.4))
         )
+    }
+
+}
+
+private struct DrivesDrawer: View, Equatable {
+    struct Actions {
+        var selectVehicle: (String?) -> Void
+        var selectSort: (DriveSort) -> Void
+        var openTrip: (String) -> Void
+        var openPending: (String) -> Void
+        var confirmAll: () -> Void
+        /// Pending drive ids to save as "someone else drove, another vehicle".
+        var markAsOther: (Set<String>) -> Void = { _ in }
+        var setUpTracking: () -> Void
+        var loadMore: () -> Void = {}
+    }
+
+    let model: DrivesListModel
+    let sort: DriveSort
+    let vehicleFilterLabel: String
+    let vehicles: [Vehicle]
+    let isConfirmingAll: Bool
+    let showsSetUpTracking: Bool
+    let collapsedHeight: CGFloat
+    let expandedHeight: CGFloat
+    @Binding var expanded: Bool
+    let actions: Actions
+
+    @State private var dragTranslation: CGFloat = 0
+    @GestureState private var isDragging = false
+    private static let settleSpring = Animation.spring(response: 0.38, dampingFraction: 0.86)
+
+    static func == (lhs: DrivesDrawer, rhs: DrivesDrawer) -> Bool {
+        lhs.model.revision == rhs.model.revision
+            && lhs.sort == rhs.sort
+            && lhs.vehicleFilterLabel == rhs.vehicleFilterLabel
+            && lhs.vehicles == rhs.vehicles
+            && lhs.isConfirmingAll == rhs.isConfirmingAll
+            && lhs.showsSetUpTracking == rhs.showsSetUpTracking
+            && lhs.collapsedHeight == rhs.collapsedHeight
+            && lhs.expandedHeight == rhs.expandedHeight
+            && lhs.expanded == rhs.expanded
+    }
+
+    private var travel: CGFloat { max(0, expandedHeight - collapsedHeight) }
+
+    /// How much of the panel is pushed below the visible area (0 = fully expanded).
+    private var hiddenHeight: CGFloat {
+        let resting = expanded ? 0 : travel
+        return min(travel, max(0, resting + dragTranslation))
+    }
+
+    var body: some View {
+        let hidden = hiddenHeight
+        panel
+            .frame(height: expandedHeight, alignment: .top)
+            .offset(y: hidden)
+            .clipShape(DrawerRevealShape(hiddenTop: hidden, cornerRadius: VS.Radius.panel))
+            // Hidden rows sit under the nav; don't let them catch taps.
+            .contentShape(DrawerRevealShape(hiddenTop: hidden, cornerRadius: VS.Radius.panel))
+            .onChange(of: isDragging) { _, dragging in
+                // A cancelled drag skips onEnded — never leave the sheet parked mid-way.
+                guard !dragging, dragTranslation != 0 else { return }
+                withAnimation(Self.settleSpring) { dragTranslation = 0 }
+            }
+    }
+
+    private var panel: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            header
+                .contentShape(Rectangle())
+                .onTapGesture { toggle() }
+                .highPriorityGesture(dragGesture)
+
+            if model.isEmpty {
+                emptyState
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                DrivesListContent(
+                    model: model,
+                    sort: sort,
+                    expanded: expanded,
+                    isConfirmingAll: isConfirmingAll,
+                    actions: actions
+                )
+                .equatable()
+                // Collapsed: dragging the list pulls the sheet up. Expanded: the list scrolls.
+                .simultaneousGesture(dragGesture, including: expanded ? .subviews : .all)
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .background(
+            RoundedRectangle(cornerRadius: VS.Radius.panel, style: .continuous)
+                .fill(Color(hex: 0x161916))
+                .overlay(
+                    RoundedRectangle(cornerRadius: VS.Radius.panel, style: .continuous)
+                        .stroke(VS.Color.hairline, lineWidth: 1)
+                )
+        )
+    }
+
+    private var header: some View {
+        VStack(spacing: 10) {
+            Capsule()
+                .fill(Color.white.opacity(0.26))
+                .frame(width: 42, height: 5)
+                .padding(.top, 8)
+
+            VStack(alignment: .leading, spacing: 6) {
+                // Overline: section + car filter inline, then status and sort.
+                HStack(spacing: 8) {
+                    Text("MY DRIVES")
+                        .font(VS.TextStyle.label())
+                        .foregroundStyle(VS.Color.textTertiary)
+                    Text("·")
+                        .font(VS.TextStyle.label())
+                        .foregroundStyle(VS.Color.textTertiary)
+                    vehicleMenu
+                    Spacer(minLength: 8)
+                    if !model.pending.isEmpty {
+                        HStack(spacing: 5) {
+                            Circle().fill(VS.Color.warning).frame(width: 6, height: 6)
+                            Text("\(model.pending.count) to review")
+                                .font(VS.TextStyle.caption(.bold))
+                                .foregroundStyle(VS.Color.warning)
+                        }
+                        .padding(.horizontal, 9)
+                        .padding(.vertical, 5)
+                        .background(VS.Color.warning.opacity(0.14), in: Capsule())
+                    }
+                    sortMenu
+                }
+
+                // Hero: the number is the headline.
+                HStack(alignment: .bottom, spacing: 12) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        HStack(alignment: .firstTextBaseline, spacing: 5) {
+                            Text(model.heroValue)
+                                .font(VS.TextStyle.display())
+                                .foregroundStyle(VS.Color.textPrimary)
+                                .contentTransition(.numericText())
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.6)
+                            Text(model.heroUnit)
+                                .font(VS.TextStyle.title3())
+                                .foregroundStyle(VS.Color.textTertiary)
+                        }
+                        Text(model.heroCaption)
+                            .font(VS.TextStyle.footnote(.semibold))
+                            .foregroundStyle(VS.Color.textSecondary)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.85)
+                    }
+                    .accessibilityElement(children: .combine)
+                    .accessibilityLabel("\(model.heroValue) \(model.heroUnit) total. \(model.heroCaption)")
+
+                    Spacer(minLength: 8)
+
+                    if model.recentBars.count >= 2 {
+                        DriveSparkBars(values: model.recentBars)
+                            .frame(width: 108, height: 40)
+                            .padding(.bottom, 4)
+                            .accessibilityLabel("Distance of your last \(model.recentBars.count) drives")
+                    }
+                }
+            }
+            .padding(.horizontal, 18)
+        }
+        .accessibilityHint(expanded ? "Collapses the drive list" : "Expands the drive list")
+    }
+
+    private var vehicleMenu: some View {
+        Menu {
+            Button("All Cars") { actions.selectVehicle(nil) }
+            ForEach(vehicles) { vehicle in
+                Button {
+                    actions.selectVehicle(vehicle.id)
+                } label: {
+                    Label {
+                        Text(vehicle.nickname)
+                    } icon: {
+                        VehicleMark(
+                            style: VehicleMarkStyle.resolve(vehicle.icon),
+                            size: 18,
+                            paint: VehiclePaintColor.resolve(vehicle.paintColor)
+                        )
+                    }
+                }
+            }
+        } label: {
+            HStack(spacing: 4) {
+                Text(vehicleFilterLabel.uppercased())
+                    .font(VS.TextStyle.label())
+                    .foregroundStyle(VS.Color.accent)
+                    .lineLimit(1)
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 8, weight: .heavy))
+                    .foregroundStyle(VS.Color.accent)
+            }
+            .padding(.vertical, 6)
+            .contentShape(Rectangle())
+        }
+        .accessibilityLabel("Car filter, \(vehicleFilterLabel)")
+    }
+
+    private var sortMenu: some View {
+        Menu {
+            ForEach(DriveSort.allCases) { option in
+                Button {
+                    actions.selectSort(option)
+                } label: {
+                    if sort == option {
+                        Label(option.label, systemImage: "checkmark")
+                    } else {
+                        Text(option.label)
+                    }
+                }
+            }
+        } label: {
+            // Lit when the list isn't in its default order, so a non-default sort is never hidden.
+            let isDefault = sort == .recent
+            Image(systemName: "arrow.up.arrow.down")
+                .font(.system(size: 12, weight: .bold))
+                .foregroundStyle(isDefault ? VS.Color.textSecondary : VS.Color.navPill)
+                .frame(width: 32, height: 32)
+                .background(isDefault ? VS.Color.chip : VS.Color.accent, in: Circle())
+                .overlay(Circle().stroke(isDefault ? VS.Color.hairline : .clear, lineWidth: 1))
+        }
+        .accessibilityLabel("Sort, \(sort.label)")
     }
 
     private var emptyState: some View {
