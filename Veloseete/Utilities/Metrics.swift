@@ -402,13 +402,19 @@ enum InsightGenerator {
         // different cars can't be subtracted from each other.
         guard let vehicleId else {
             let ids = Set(trips.map(\.vehicleId)).union(logs.map(\.vehicleId))
-            return ids.reduce(0) { $0 + totalKilometersDriven(trips: trips, logs: logs, vehicleId: $1) }
+            let perCar = ids.reduce(0) { $0 + totalKilometersDriven(trips: trips, logs: logs, vehicleId: $1) }
+            // Across the garage this is *your* driving, so km you drove in a rental or a
+            // friend's car count here (and only here — never on a car's own total).
+            let inOtherVehicles = trips
+                .filter { $0.tripVehicle == .other && $0.countsAsDriven }
+                .reduce(0) { $0 + max(0, $1.distanceKm) }
+            return perCar + inOtherVehicles
         }
 
-        // Km this car moved, plus km you drove. A ride as a passenger in someone
-        // else's vehicle is neither, so it never inflates a car's distance.
+        // Only km this car actually moved. Drives marked "another vehicle" are filed under
+        // the car they were recorded on but must never add to its distance.
         let tripKm = trips
-            .filter { $0.vehicleId == vehicleId && ($0.countsOnVehicle || $0.countsAsDriven) }
+            .filter { $0.vehicleId == vehicleId && $0.countsOnVehicle }
             .reduce(0) { $0 + max(0, $1.distanceKm) }
 
         let vehicleLogs = logs

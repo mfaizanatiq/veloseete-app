@@ -122,6 +122,16 @@ final class DriverProfileSnapshotTests: XCTestCase {
         XCTAssertEqual(total, 1_500)
     }
 
+    func testAnotherVehicleKmNeverAddToACarsOwnDistance() {
+        var mine = trip(daysAgo: 1, km: 20); mine.vehicleId = "a"; mine.vehicleKind = "garage"
+        var rental = trip(daysAgo: 1, km: 50); rental.vehicleId = "a"; rental.vehicleKind = "other"
+        var wife = trip(daysAgo: 1, km: 7); wife.vehicleId = "a"; wife.role = "passenger"; wife.vehicleKind = "garage"
+        // The car moved 20 + 7; the 50 km rental is not its distance.
+        XCTAssertEqual(InsightGenerator.totalKilometersDriven(trips: [mine, rental, wife], logs: [], vehicleId: "a"), 27)
+        // Your own driving across the garage does include the rental (you drove it).
+        XCTAssertEqual(InsightGenerator.totalKilometersDriven(trips: [mine, rental, wife], logs: [], vehicleId: nil), 77)
+    }
+
     // MARK: - Who drove x which vehicle
 
     private func contextTrip(role: String, kind: String?, endedHoursAgo: Double = 2) -> Trip {

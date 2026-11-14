@@ -142,6 +142,27 @@ struct TripsView: View {
         isConfirmingAll = false
     }
 
+    /// Files the picked review drives as "someone else drove, in another vehicle": off every car's
+    /// odometer and fuel, off your driving stats, kept in My Drives.
+    private func markPendingAsOther(_ ids: Set<String>) async {
+        guard !isConfirmingAll else { return }
+        let picked = drives.pending
+            .filter { ids.contains($0.id.uuidString) }
+            .map { pending -> PendingTripSave in
+                var edited = pending
+                edited.role = TripRole.passenger.rawValue
+                edited.vehicleKind = TripVehicle.other.rawValue
+                return edited
+            }
+        guard !picked.isEmpty else { return }
+        isConfirmingAll = true
+        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        let result = await store.saveTrips(picked)
+        recorder.markPendingSaved(ids: result.saved)
+        UINotificationFeedbackGenerator().notificationOccurred(result.error == nil ? .success : .warning)
+        isConfirmingAll = false
+    }
+
     private func openTrip(id: String) {
         guard let trip = drives.trips.first(where: { $0.id == id }) else { return }
         UIImpactFeedbackGenerator(style: .light).impactOccurred()
@@ -1040,6 +1061,7 @@ struct TripsView: View {
                 openTrip: { openTrip(id: $0) },
                 openPending: { openPending(id: $0) },
                 confirmAll: { Task { await confirmAllPending() } },
+                markAsOther: { ids in Task { await markPendingAsOther(ids) } },
                 setUpTracking: { requestLocationAccess(for: .autoTrack) },
                 loadMore: { loadMoreDrives() }
             )
@@ -3020,10 +3042,10 @@ struct TrackingInsights {
         let calendar = Calendar.current
         let monthStart = calendar.date(from: calendar.dateComponents([.year, .month], from: Date())) ?? Date()
         let tripsKm = store.trips
-            .filter { $0.vehicleId == vehicle.id && $0.startedAt >= monthStart }
+            .filter { $0.vehicleId == vehicle.id && $0.countsOnVehicle && $0.startedAt >= monthStart }
             .reduce(0.0) { $0 + $1.distanceKm }
         let pendingKm = pending
-            .filter { $0.vehicleId == vehicle.id && $0.startedAt >= monthStart }
+            .filter { $0.vehicleId == vehicle.id && $0.tripVehicle == .garage && $0.startedAt >= monthStart }
             .reduce(0.0) { $0 + $1.distanceKm }
         insights.monthKm = tripsKm + pendingKm
 
@@ -3069,6 +3091,8 @@ private struct DrivesDrawer: View, Equatable {
         var openTrip: (String) -> Void
         var openPending: (String) -> Void
         var confirmAll: () -> Void
+        /// Pending drive ids to save as "someone else drove, another vehicle".
+        var markAsOther: (Set<String>) -> Void = { _ in }
         var setUpTracking: () -> Void
         var loadMore: () -> Void = {}
     }
@@ -3086,6 +3110,8 @@ private struct DrivesDrawer: View, Equatable {
 
     @State private var dragTranslation: CGFloat = 0
     @GestureState private var isDragging = false
+    @State private var isSelecting = false
+    @State private var selected: Set<String> = []
 
     private static let settleSpring = Animation.spring(response: 0.38, dampingFraction: 0.86)
 
@@ -3139,6 +3165,9 @@ private struct DrivesDrawer: View, Equatable {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .overlay(alignment: .bottom) {
+            if isSelecting { selectionBar }
+        }
         .background(
             RoundedRectangle(cornerRadius: VS.Radius.panel, style: .continuous)
                 .fill(Color(hex: 0x161916))
@@ -3286,7 +3315,18 @@ private struct DrivesDrawer: View, Equatable {
                     pendingHeader
                         .padding(.bottom, 10)
 
-                    groupedRows(model.pendingRows, highlight: VS.Color.warning) { actions.openPending($0) }
+                    groupedRows(
+                        model.pendingRows,
+                        highlight: VS.Color.warning,
+                        selectable: isSelecting
+                    ) { id in
+                        if isSelecting {
+                            UISelectionFeedbackGenerator().selectionChanged()
+                            if selected.contains(id) { selected.remove(id) } else { selected.insert(id) }
+                        } else {
+                            actions.openPending(id)
+                        }
+                    }
                 }
 
                 if model.isChronological {
@@ -3349,17 +3389,29 @@ private struct DrivesDrawer: View, Equatable {
     private func groupedRows(
         _ rows: [DriveRowModel],
         highlight: Color? = nil,
+        selectable: Bool = false,
         open: @escaping (String) -> Void
     ) -> some View {
         let lastIndex = rows.count - 1
         ForEach(Array(rows.enumerated()), id: \.element.id) { index, row in
+            let isPicked = selectable && selected.contains(row.id)
             Button { open(row.id) } label: {
                 DriveListRow(
                     row: row,
                     isFirst: index == 0,
                     isLast: index == lastIndex,
-                    highlight: highlight
+                    highlight: isPicked ? VS.Color.accent : highlight
                 )
+                .overlay(alignment: .topLeading) {
+                    if selectable {
+                        Image(systemName: isPicked ? "checkmark.circle.fill" : "circle.fill")
+                            .font(.system(size: 22, weight: .semibold))
+                            .foregroundStyle(isPicked ? VS.Color.accent : Color.black.opacity(0.55))
+                            .background(Circle().stroke(isPicked ? .clear : VS.Color.textTertiary, lineWidth: 2))
+                            .padding(.leading, 8)
+                            .padding(.top, 8)
+                    }
+                }
             }
             .buttonStyle(.plain)
         }
@@ -3377,28 +3429,92 @@ private struct DrivesDrawer: View, Equatable {
                 .padding(.vertical, 3)
                 .background(VS.Color.warning, in: Capsule())
             Spacer()
-            Button(action: actions.confirmAll) {
-                HStack(spacing: 6) {
-                    if isConfirmingAll {
-                        ProgressView()
-                            .controlSize(.mini)
-                            .tint(VS.Color.navPill)
-                    } else {
-                        VSIcon(icon: .checkCircle, size: 13, weight: .bold, tint: VS.Color.navPill)
-                    }
-                    Text(isConfirmingAll ? "Locking in…" : TrackyVoice.confirmAll())
-                        .font(VS.TextStyle.tag())
-                        .foregroundStyle(VS.Color.navPill)
+            if isSelecting {
+                headerPill("All") {
+                    selected = Set(model.pendingRows.map(\.id))
                 }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
-                .background(VS.Color.accent, in: Capsule())
+                headerPill("Cancel") {
+                    isSelecting = false
+                    selected = []
+                }
+            } else {
+                Menu {
+                    Button {
+                        selected = []
+                        isSelecting = true
+                    } label: {
+                        Label("Select drives…", systemImage: "checkmark.circle")
+                    }
+                } label: {
+                    Image(systemName: "ellipsis")
+                        .font(.system(size: 13, weight: .bold))
+                        .foregroundStyle(VS.Color.textSecondary)
+                        .frame(width: 32, height: 32)
+                        .background(VS.Color.chip, in: Circle())
+                        .overlay(Circle().stroke(VS.Color.hairline, lineWidth: 1))
+                }
+                .accessibilityLabel("More review actions")
+                Button(action: actions.confirmAll) {
+                    HStack(spacing: 6) {
+                        if isConfirmingAll {
+                            ProgressView()
+                                .controlSize(.mini)
+                                .tint(VS.Color.navPill)
+                        } else {
+                            VSIcon(icon: .checkCircle, size: 13, weight: .bold, tint: VS.Color.navPill)
+                        }
+                        Text(isConfirmingAll ? "Locking in…" : TrackyVoice.confirmAll())
+                            .font(VS.TextStyle.tag())
+                            .foregroundStyle(VS.Color.navPill)
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .background(VS.Color.accent, in: Capsule())
+                }
+                .buttonStyle(.plain)
+                .disabled(isConfirmingAll)
+                .accessibilityLabel("Confirm all pending drives")
             }
-            .buttonStyle(.plain)
-            .disabled(isConfirmingAll)
-            .accessibilityLabel("Confirm all pending drives")
         }
         .padding(.top, 2)
+    }
+
+    private func headerPill(_ title: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(title)
+                .font(VS.TextStyle.tag())
+                .foregroundStyle(VS.Color.textPrimary)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .background(VS.Color.chip, in: Capsule())
+                .overlay(Capsule().stroke(VS.Color.hairline, lineWidth: 1))
+        }
+        .buttonStyle(.plain)
+    }
+
+    /// Floating bar while picking drives: one tap files them all as someone else driving another vehicle.
+    private var selectionBar: some View {
+        Button {
+            let ids = selected
+            isSelecting = false
+            selected = []
+            actions.markAsOther(ids)
+        } label: {
+            Text(selected.isEmpty ? "Pick drives to move" : "Mark \(selected.count) as other driver · other vehicle")
+                .font(VS.TextStyle.subheadline(.semibold))
+                .foregroundStyle(selected.isEmpty ? VS.Color.textSecondary : VS.Color.navPill)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 14)
+                .background(selected.isEmpty ? Color(hex: 0x3A3D3A) : VS.Color.accent, in: Capsule())
+        }
+        .buttonStyle(.plain)
+        .disabled(selected.isEmpty)
+        .padding(.horizontal, 18)
+        .padding(.bottom, 16)
+        .padding(.top, 22)
+        .background(
+            LinearGradient(colors: [.clear, Color(hex: 0x161916)], startPoint: .top, endPoint: UnitPoint(x: 0.5, y: 0.4))
+        )
     }
 
     private var emptyState: some View {
